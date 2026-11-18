@@ -266,8 +266,8 @@ export function DividendTable({
   };
   if (data.length === 0) {
     return (
-      <div className="border border-gray-700 rounded-lg overflow-hidden bg-gray-900">
-        <div className="py-8 flex items-center justify-center text-gray-400">
+      <div className="border border-rule rounded-lg bg-paper-card">
+        <div className="py-8 flex items-center justify-center text-ink-muted">
           暂无数据
         </div>
       </div>
@@ -276,8 +276,8 @@ export function DividendTable({
 
   return (
     <>
-      <div className="border border-rule rounded-lg overflow-hidden bg-paper-card">
-      <table className="w-full">
+      <div className="border border-rule rounded-lg overflow-x-auto bg-paper-card">
+      <table className="w-full min-w-[1320px]">
         <thead className="bg-paper-deep border-b-2 border-ink-strong">
           <tr>
             <th className="w-16 px-2 py-3 text-center text-[11px] font-semibold text-ink-strong uppercase tracking-wider" title="收藏 / 挡位监控">
@@ -328,7 +328,7 @@ export function DividendTable({
             <th className="w-56 px-2 py-3 text-left text-[11px] font-semibold text-ink-strong whitespace-nowrap">
               昨日/M120
             </th>
-            <th className="w-64 px-2 py-3 text-center text-[11px] font-semibold text-ink-strong uppercase tracking-wider">
+            <th className="w-64 px-2 py-3 text-center text-[11px] font-semibold text-ink-strong uppercase tracking-wider sticky right-0 z-20 bg-paper-deep border-l border-rule">
               操作
             </th>
           </tr>
@@ -345,10 +345,10 @@ export function DividendTable({
               <tr
                 key={stock.code}
                 className={`
-                  border-b border-rule transition-all duration-200 ease-out cursor-pointer even:bg-paper-tint
+                  border-b border-rule transition-all duration-200 ease-out cursor-pointer group
                   ${isSelected
-                    ? '!bg-info-tint border-l-4 border-l-info'
-                    : 'hover:bg-paper-deep hover:shadow-sm hover:shadow-info/10 border-l-4 border-l-transparent hover:border-l-info'
+                    ? '!bg-info-tint'
+                    : 'even:bg-paper-tint hover:bg-paper-deep hover:shadow-sm hover:shadow-info/10'
                   }
                 `}
                 tabIndex={0}
@@ -551,7 +551,7 @@ export function DividendTable({
                     </div>
                   </div>
                 </td>
-                <td className="w-64 px-2 py-3 text-center">
+                <td className={`w-64 px-2 py-3 text-center sticky right-0 z-10 border-l border-rule ${isSelected ? 'bg-info-tint' : 'bg-paper-card group-even:bg-paper-tint group-hover:bg-paper-deep'}`}>
                   <div className="flex items-center justify-center gap-1">
                     <Button
                       variant={isSelected ? 'primary' : 'ghost'}
@@ -707,7 +707,7 @@ const FinancialPopover = forwardRef<HTMLDivElement, FinancialPopoverProps>(funct
             </span>
           </div>
           {hasLabel && (
-            <div className="text-[10px] text-gray-500 mt-0.5 pl-3.5 font-mono">
+            <div className="text-xs text-gray-400 mt-0.5 pl-3.5 font-mono">
               vs {prevYearQuarterLabel(label)}
             </div>
           )}
@@ -768,7 +768,7 @@ const FinancialPopover = forwardRef<HTMLDivElement, FinancialPopoverProps>(funct
             TTM 股息率
           </span>
         </div>
-        <div className="text-[10px] text-gray-500 mt-0.5 pl-3.5 font-mono">
+        <div className="text-xs text-gray-400 mt-0.5 pl-3.5 font-mono">
           滚动 12 月 / 实时价
         </div>
       </div>
@@ -836,8 +836,8 @@ const PopoverShell = forwardRef<HTMLDivElement, PopoverShellProps>(function Popo
           style={{
             borderLeft: '7px solid transparent',
             borderRight: '7px solid transparent',
-            borderTop: '7px solid rgb(17, 24, 39)',
-            filter: 'drop-shadow(0 1px 0 rgba(59, 130, 246, 0.3))',
+            borderTop: '7px solid var(--color-paper)',
+            filter: 'drop-shadow(0 1px 0 rgba(184, 92, 56, 0.3))',
           }}
         />
       </div>

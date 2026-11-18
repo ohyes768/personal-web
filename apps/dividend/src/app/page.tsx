@@ -117,10 +117,10 @@ function IndexStatusPopover({
   const btnClass = !hasAnyData
     ? 'bg-paper-tint text-gray-400 border border-rule hover:text-ink-strong'
     : successCount === totalCount
-      ? 'bg-green-900/30 text-green-300 border border-green-700/50 hover:bg-green-900/40'
+      ? 'bg-up-tint text-emerald-700 border border-emerald-400/40 hover:bg-up-tint/70'
       : failedCount === totalCount
-        ? 'bg-red-900/40 text-red-300 border border-red-700/50 hover:bg-red-900/50'
-        : 'bg-amber-900/30 text-amber-300 border border-amber-700/50 hover:bg-amber-900/40';
+        ? 'bg-down-tint text-red-700 border border-red-400/40 hover:bg-down-tint/70'
+        : 'bg-warn-tint text-amber-900 border border-amber-400/40 hover:bg-warn-tint/70';
 
   return (
     <div className="relative">
@@ -164,6 +164,7 @@ function IndexStatusPopover({
               aria-label="关闭"
             >✕</button>
           </div>
+          <div className="px-3 pt-1.5 text-[11px] text-ink-soft">持仓缺失 = 成分股名单未同步，点击「重试」重新拉取</div>
           <div className="max-h-96 overflow-y-auto">
             {CORE_DIVIDEND_INDEXES.map(({ code, label }, idx) => {
               const state = getRowState(code);
@@ -208,7 +209,7 @@ function IndexStatusPopover({
                     <span className="text-xs text-green-400 shrink-0">✓ 持仓已有</span>
                   ) : state.kind === 'missing_in_holdings' ? (
                     <>
-                      <span className="text-xs text-red-400 shrink-0">✗ 持仓缺失</span>
+                      <span className="text-xs text-red-400 shrink-0" title="指数成分股名单未同步，点击「重试」重新拉取">✗ 持仓缺失</span>
                       <button
                         type="button"
                         onClick={() => onRetry(code)}
@@ -386,10 +387,11 @@ function DividendPageContent() {
   // 股息率数据：仅"全部"Tab 加载主列表；挡位监控/选股关注不拉全量 stocks
   const { data, total, loading, error, refetch } = useDividendData(activeTab === 'all');
 
-  // 全量股票数（来自 /api/dividend/stats，未应用 min_yield 筛选；仅"全部"Tab 需要）
+  // 全量股票数（来自 /api/dividend/stats，未应用 min_yield 筛选）。
+  // mount 时拉一次、与 activeTab 无关：头部副标题与「全部」徽标在任意 tab 都显示稳定值，
+  // 避免切走 tab 时因 useDividendData 停止拉取而把计数清零。
   const [totalCollected, setTotalCollected] = useState<number | null>(null);
   useEffect(() => {
-    if (activeTab !== 'all') return;
     let cancelled = false;
     dividendApi.getStats().then((s) => {
       if (!cancelled) setTotalCollected(s.total_stocks);
@@ -398,7 +400,7 @@ function DividendPageContent() {
       console.error('获取全量股票数失败:', err);
     });
     return () => { cancelled = true; };
-  }, [activeTab]);
+  }, []);
 
   // 刷新计数，用于强制表格重新渲染
   const [refreshKey, setRefreshKey] = useState(0);
@@ -653,16 +655,14 @@ function DividendPageContent() {
     return stocksWithTechnical;
   }, [searchRows, stocksWithTechnical, activeTab, favOnly, independentFavorites, searchActive]);
 
-  // 搜索状态文案：范围（已收集总数来自 /stats，不硬编码）与命中数
+  // 搜索状态文案：仅在搜索中/出错时显示（idle 时占位符已说明用途，不重复）
   const searchStatus = searchError
     ? `搜索失败：${searchError}`
     : searchActive
       ? (searchLoading
         ? '正在匹配已收集股票…'
         : `在 ${totalCollected ?? '—'} 只已收集股票中匹配到 ${searchResults.length} 只`)
-      : (totalCollected != null
-        ? `按名称或代码搜索已收集的 ${totalCollected} 只股票`
-        : '按名称或代码搜索已收集股票');
+      : undefined;
 
   // 搜索无匹配：显示明确空状态（不做全市场搜索，也不触发采集）
   const showSearchEmptyState = activeTab === 'all'
@@ -713,9 +713,13 @@ function DividendPageContent() {
             </Link>
             <h1 className="text-4xl font-bold mt-4 text-ink">股息率</h1>
             <p className="text-ink-muted mt-1">
-              {activeTab === 'screening' ? '按分红与经营质量筛选，收藏后持续关注' : totalCollected !== null
+              {activeTab === 'all' && totalCollected !== null
                 ? `共收集 ${totalCollected} 只股票，其中 ${total} 只 3年股息率 ≥ ${minYieldInput}%`
-                : `共 ${total} 只股票 | 3年股息率 ≥ ${minYieldInput}%`}
+                : activeTab === 'all'
+                  ? `共 ${total} 只股票 | 3年股息率 ≥ ${minYieldInput}%`
+                  : activeTab === 'alerts'
+                    ? `已收藏 ${watchlist.total} 只，按估值挡位跟踪监控`
+                    : '按分红与经营质量筛选，收藏后持续关注'}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -765,15 +769,15 @@ function DividendPageContent() {
                   <span className="text-blue-400">刷新中…</span>
                 ) : updateState.dividend === 'success' && updateState.dividend_failed_count !== undefined ? (
                   updateState.dividend_failed_count > 0 ? (
-                    <span className="text-amber-400">完成 {updateState.dividend_completed_count} 条，失败 {updateState.dividend_failed_count} 条</span>
+                    <span className="text-down">完成 {updateState.dividend_completed_count} 条，失败 {updateState.dividend_failed_count} 条</span>
                   ) : (
                     <span className="text-green-400">已是最新</span>
                   )
                 ) : dividendNeedsUpdate ? (
                   updateState.dividend_target_count ? (
-                    <span className="text-amber-400">待完成 {updateState.dividend_target_count - (updateState.dividend_completed_count || 0)}/{updateState.dividend_target_count}</span>
+                    <span className="text-warn-deep">待完成 {updateState.dividend_target_count - (updateState.dividend_completed_count || 0)}/{updateState.dividend_target_count}</span>
                   ) : (
-                    <span className="text-amber-400">本月数据待更新</span>
+                    <span className="text-warn-deep">本月数据待更新</span>
                   )
                 ) : (
                   <span className="text-green-400">已是最新</span>
@@ -791,7 +795,7 @@ function DividendPageContent() {
                 auxAnyLoading ? (
                   <span className="text-blue-400">更新中…</span>
                 ) : auxPendingCount > 0 ? (
-                  <span className="text-amber-400">{auxPendingCount} 项待更新</span>
+                  <span className="text-warn-deep">{auxPendingCount} 项待更新</span>
                 ) : (
                   <span className="text-green-400">全部最新</span>
                 )
@@ -828,7 +832,7 @@ function DividendPageContent() {
                                               拉取中
                                             </span>
                                           ) : (
-                                            <span className={`text-[11px] font-mono ${isCurrent ? 'text-emerald-400' : 'text-amber-400'}`}>
+                                            <span className={`text-[11px] font-mono ${isCurrent ? 'text-emerald-400' : 'text-warn-deep'}`}>
                                               {daysAgo != null ? `${daysAgo} 天前` : '从未更新'}
                                             </span>
                                           )}
@@ -853,10 +857,10 @@ function DividendPageContent() {
                                       <div className="flex items-center gap-1.5 flex-shrink-0">
                                         <label
                                           className={`
-                                            flex items-center gap-1 text-[10px] uppercase tracking-wider font-mono font-medium
+                                            flex items-center gap-1 text-xs uppercase tracking-wider font-mono font-medium
                                             px-1.5 py-0.5 rounded border cursor-pointer select-none transition-colors
                                             ${rowForce
-                                              ? 'text-amber-400 bg-amber-400/10 border-amber-400/30'
+                                              ? 'text-warn-deep bg-warn-tint border-amber-400/30'
                                               : 'text-gray-500 border-transparent hover:text-gray-400 hover:bg-paper-deep'
                                             }
                                           `}
@@ -901,7 +905,7 @@ function DividendPageContent() {
                 updateState.m120 === 'loading' ? (
                   <span className="text-blue-400">刷新中…</span>
                 ) : m120NeedsUpdate ? (
-                  <span className="text-amber-400">有缺失数据</span>
+                  <span className="text-warn-deep">有缺失数据</span>
                 ) : (
                   <span className="text-green-400">已是最新</span>
                 )
@@ -961,21 +965,19 @@ function DividendPageContent() {
                     className="block w-full text-left px-4 py-2 text-sm text-ink hover:bg-paper-tint first:rounded-t"
                   >
                     <div className="font-medium">A4 一图版（横版）</div>
-                    <div className="text-xs text-ink-muted mt-0.5">适合电脑端分享/打印</div>
                   </button>
                   <button
                     onClick={() => downloadReport('carousel')}
                     className="block w-full text-left px-4 py-2 text-sm text-ink hover:bg-paper-tint border-t border-rule"
                   >
                     <div className="font-medium">手机竖版（轮播）</div>
-                    <div className="text-xs text-ink-muted mt-0.5">1080×1920 · 支持⬇下载原图</div>
+                    <div className="text-xs text-ink-muted mt-0.5">1080×1920 · 可下载原图</div>
                   </button>
                   <button
                     onClick={downloadCsv}
                     className="block w-full text-left px-4 py-2 text-sm text-ink hover:bg-paper-tint border-t border-rule"
                   >
                     <div className="font-medium">CSV 表格</div>
-                    <div className="text-xs text-ink-muted mt-0.5">当前筛选结果 · 全字段</div>
                   </button>
                 </div>
               )}
@@ -1000,47 +1002,47 @@ function DividendPageContent() {
       )}
 
       {/* Tab 切换：全部 / 挡位监控；收藏过滤用右侧"只看收藏"按钮 */}
-      <div className="flex border-b border-gray-700 mb-4 items-center">
+      <div className="flex border-b border-rule mb-4 items-center">
         <button
           onClick={() => handleTabChange('all')}
           className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
             activeTab === 'all'
-              ? 'border-blue-500 text-blue-400'
-              : 'border-transparent text-gray-400 hover:text-gray-200'
+              ? 'border-accent text-accent-deep'
+              : 'border-transparent text-ink-muted hover:text-ink'
           }`}
         >
           全部
-          <span className="ml-2 text-xs bg-gray-700 px-1.5 py-0.5 rounded">{stocksWithTechnical.length}</span>
+          <span className="ml-2 text-xs bg-paper-deep text-ink px-1.5 py-0.5 rounded tabular-nums">{activeTab === 'all' ? stocksWithTechnical.length : (totalCollected ?? '')}</span>
         </button>
         <button
           onClick={() => handleTabChange('alerts')}
           className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
             activeTab === 'alerts'
-              ? 'border-indigo-500 text-indigo-400'
-              : 'border-transparent text-gray-400 hover:text-gray-200'
+              ? 'border-accent text-accent-deep'
+              : 'border-transparent text-ink-muted hover:text-ink'
           }`}
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.196-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.783-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.518-4.674z" />
           </svg>
           收藏跟踪
-          <span className="ml-1 text-xs bg-gray-700 px-1.5 py-0.5 rounded">{watchlist.total}</span>
+          <span className="ml-1 text-xs bg-paper-deep text-ink px-1.5 py-0.5 rounded tabular-nums">{watchlist.total}</span>
         </button>
-        <button onClick={() => handleTabChange('screening')} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'screening' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-ink-muted hover:text-ink'}`}>选股关注</button>
+        <button onClick={() => handleTabChange('screening')} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'screening' ? 'border-accent text-accent-deep' : 'border-transparent text-ink-muted hover:text-ink'}`}>选股关注</button>
         {/* 只看收藏 toggle：仅 all tab 显示，过滤当前列表 */}
         {activeTab === 'all' && (
           <button
             onClick={handleToggleFav}
             className={`ml-auto mb-[-1px] px-3 py-1.5 text-sm rounded-md flex items-center gap-1.5 border transition-colors ${
               favOnly
-                ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/50'
-                : 'text-yellow-600/80 hover:text-yellow-400 border-transparent hover:border-yellow-500/40 hover:bg-yellow-500/10'
+                ? 'bg-yellow-500/15 text-warn-deep border-yellow-500/50'
+                : 'text-ink-muted hover:text-warn-deep border-transparent hover:border-yellow-500/40 hover:bg-yellow-500/10'
             }`}
             title={favOnly ? '当前仅显示收藏股，点击恢复全部' : '只看收藏的股票'}
           >
             <StarIconOutline className="w-4 h-4" />
             只看收藏
-            <span className="text-xs bg-gray-700 px-1.5 py-0.5 rounded">{watchlist.total}</span>
+            <span className="text-xs bg-paper-deep text-ink px-1.5 py-0.5 rounded tabular-nums">{watchlist.total}</span>
           </button>
         )}
       </div>
@@ -1094,7 +1096,7 @@ function DividendPageContent() {
                   px-4 py-1.5 rounded font-medium transition-all flex items-center gap-2 text-sm
                   ${loading
                     ? 'bg-paper-deep text-ink-muted cursor-not-allowed'
-                    : 'bg-indigo-600 text-white hover:bg-indigo-500'
+                    : 'bg-accent text-white hover:bg-accent-hover'
                   }
                 `}
               >

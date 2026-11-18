@@ -19,6 +19,7 @@
   --color-rule-strong: #C5BFB0;
 
   --color-up:          #3F7D58;
+  --color-up-deep:     #2F6345;   /* 文字/徽标用深绿（~5.1:1 on up-tint） */
   --color-up-tint:     #E8F0E5;
   --color-down:        #A8453A;
   --color-down-tint:   #F5E8E5;
@@ -26,9 +27,15 @@
 
   --color-accent:        #B85C38;
   --color-accent-hover:  #C56A45;
+  --color-accent-deep:   #8F4426;   /* 文字用深强调色（~5.9:1 on paper），亮 accent 留给边框/填充按钮 */
 
   --color-info:        #4A6B8A;
   --color-info-tint:   #E8EEF3;
+
+  /* 警告色：独立于 accent（暖橙棕）的琥珀，专用于“待更新 / 待确认 / 需重评” */
+  --color-warn:        #B07A0F;
+  --color-warn-deep:   #8A5F0B;   /* 小字号警告文字（~5.5:1 on paper），warn 留给大字号/图形 */
+  --color-warn-tint:   #F3E9D2;
 
   /* === Tailwind 默认色重映射（暖白主题）=== */
   /* gray scale 反转：gray-900 = 最浅（页面底），gray-100 = 最深（最强文字）*/
@@ -36,36 +43,59 @@
   --color-gray-800:    var(--color-paper-card);  /* #FFFFFF */
   --color-gray-700:    var(--color-paper-tint);  /* #FAF8F3 */
   --color-gray-600:    var(--color-paper-deep);  /* #F2EDE3 */
-  --color-gray-500:    var(--color-rule-strong); /* #C5BFB0 */
+  --color-gray-500:    var(--color-ink-muted);   /* 副文字需 ≥4.5:1，不再指向 rule-strong（#C5BFB0，1.76:1 近隐形） */
   --color-gray-400:    var(--color-ink-muted);   /* #6B6864 */
   --color-gray-300:    var(--color-ink);         /* #2B2A28 */
   --color-gray-200:    var(--color-ink-strong);  /* #1F1E1B */
   --color-gray-100:    var(--color-ink-strong);  /* #1F1E1B */
 
-  /* 涨跌色去饱和 */
+  /* 涨跌色去饱和（300/400 同为 up：状态徽章文字需 ≥4.5:1）*/
   --color-green-400:   var(--color-up);          /* #3F7D58 */
   --color-green-500:   #2D5C40;                  /* 稍深 */
-  --color-green-300:   #5A9472;                  /* 稍浅 */
+  --color-green-300:   var(--color-up);          /* #3F7D58 */
   --color-green-900:   var(--color-up-tint);     /* #E8F0E5 */
-  --color-green-700:   #5A9472;
-  --color-green-800:   #2D5C40;
-  --color-green-600:   #4A8862;
+  --color-green-700:   #2D5C40;
+  --color-green-800:   #234A34;
+  --color-green-600:   #356A4C;
 
   --color-red-400:     var(--color-down);        /* #A8453A */
   --color-red-500:     #8C3528;                  /* 稍深 */
-  --color-red-300:     #C66959;                  /* 稍浅 */
+  --color-red-300:     #A04A3C;                  /* 浅底徽章用，保证对比 */
   --color-red-900:     var(--color-down-tint);   /* #F5E8E5 */
   --color-red-700:     #B85A4D;
   --color-red-800:     #8C3528;
   --color-red-600:     #94402F;
 
+  /* 浅底徽章（此前漏出原生近白底）→ 语义 tint */
+  --color-red-50:      var(--color-down-tint);
+  --color-amber-50:    var(--color-warn-tint);
+
+  /* 成功态（emerald 系，此前漏出原生色）→ 与 up 同族去饱和绿 */
+  --color-emerald-50:  var(--color-up-tint);
+  --color-emerald-300: var(--color-up);          /* TTM 中档值（此前漏出原生 #6EE7B7，1.46:1） */
+  --color-emerald-400: var(--color-up);
+  --color-emerald-500: #356A4C;
+  --color-emerald-600: var(--color-up);
+  --color-emerald-700: #2D5C40;
+
+  /* 负值/信息点缀：此前完全未映射，原生色直接泄漏（rose-400 #FB7185 2.58:1、sky-500 #0EA5E9） */
+  --color-rose-400:    var(--color-down);
+  --color-rose-500:    #94402F;
+  --color-sky-500:     var(--color-info);
+
   --color-yellow-400:  var(--color-star);        /* #C9951F */
-  --color-yellow-500:  #B07A0F;
+  --color-yellow-500:  var(--color-warn);
+  --color-yellow-600:  var(--color-warn);        /* 星标深态，不再漏出原生黄 */
 
-  --color-amber-400:   #B85C38;                  /* 暖橙 */
-  --color-amber-500:   #A04A28;
+  /* amber 系 = 警告色（独立于 accent），不再借用暖橙棕 */
+  --color-amber-300:   #6B430C;
+  --color-amber-400:   var(--color-warn);
+  --color-amber-500:   #96650D;
+  --color-amber-700:   #8A5A0A;
+  --color-amber-900:   #6B430C;
 
-  /* 强调色：暖橘红替代 indigo */
+  /* 强调色：暖橘红替代 indigo（含 400，补齐此前漏出原生紫的档位）*/
+  --color-indigo-400:  var(--color-accent-hover);
   --color-indigo-600:  var(--color-accent);
   --color-indigo-500:  var(--color-accent-hover);
   --color-indigo-700:  var(--color-accent);
@@ -106,6 +136,12 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+}
+
+/* 占位文字：浏览器默认 #757575 类冷灰在本纸面上仅 3.0:1，统一抬到 ink-muted（4.8:1） */
+::placeholder {
+  color: var(--color-ink-muted);
+  opacity: 1;
 }
 
 /* 数字/财务表格纵向对齐 */

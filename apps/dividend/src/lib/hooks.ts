@@ -422,6 +422,12 @@ export function useCompare(maxSelect: number = 5) {
 
 /**
  * 高亮信息计算 Hook
+ *
+ * 「最优值」徽标规则（显式、可预期）：
+ * - 高者为优（取 max）：3年股息率、ROE、扣非同比、3年CAGR、分红比例、
+ *   2025/2024/2023 年度股息率、最高涨幅
+ * - 低者为优（取 min）：昨日/M120 比率、最高跌幅（按绝对值）
+ * - 不标徽标（跨公司不可直接比优劣）：股东户数、最新季度扣非金额（规模相关）
  */
 export function useHighlights(stocks: DividendStock[]) {
   return useMemo(() => {
@@ -455,6 +461,16 @@ export function useHighlights(stocks: DividendStock[]) {
     // 加权净资产收益率，最大值为最优
     const roeValues = stocks.map(s => s.roe ?? -Infinity);
     const roeIndex = roeValues.indexOf(Math.max(...roeValues));
+    // 分红比例，最大值为最优
+    const payoutRatioValues = stocks.map(s => s.payout_ratio ?? -Infinity);
+    const payoutRatioIndex = payoutRatioValues.indexOf(Math.max(...payoutRatioValues));
+    // 年度股息率（2023/2024/2025），最大值为最优
+    const yield2025Values = stocks.map(s => s.yield_2025 ?? -Infinity);
+    const yield2025Index = yield2025Values.indexOf(Math.max(...yield2025Values));
+    const yield2024Values = stocks.map(s => s.yield_2024 ?? -Infinity);
+    const yield2024Index = yield2024Values.indexOf(Math.max(...yield2024Values));
+    const yield2023Values = stocks.map(s => s.yield_2023 ?? -Infinity);
+    const yield2023Index = yield2023Values.indexOf(Math.max(...yield2023Values));
 
     return {
       yieldIndex: yieldIndex >= 0 ? yieldIndex : null,
@@ -464,6 +480,10 @@ export function useHighlights(stocks: DividendStock[]) {
       nonRecurringYoYIndex: nonRecurringYoYIndex >= 0 ? nonRecurringYoYIndex : null,
       cagr3yIndex: cagr3yIndex >= 0 ? cagr3yIndex : null,
       roeIndex: roeIndex >= 0 ? roeIndex : null,
+      payoutRatioIndex: payoutRatioIndex >= 0 ? payoutRatioIndex : null,
+      yield2025Index: yield2025Index >= 0 ? yield2025Index : null,
+      yield2024Index: yield2024Index >= 0 ? yield2024Index : null,
+      yield2023Index: yield2023Index >= 0 ? yield2023Index : null,
     };
   }, [stocks]);
 }

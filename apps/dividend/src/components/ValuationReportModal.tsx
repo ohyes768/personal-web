@@ -128,7 +128,7 @@ export function ValuationReportModal({
                         </span>
                       )}
                     </div>
-                    <div className="text-[10px] font-mono text-ink-muted tabular-nums">
+                    <div className="text-xs font-mono text-ink-muted tabular-nums">
                       PE {point.pe != null ? point.pe.toFixed(1) : '—'} · PB {point.pb != null ? point.pb.toFixed(2) : '—'}
                     </div>
                   </div>
@@ -176,7 +176,7 @@ export function ValuationReportModal({
         {/* 证据来源 */}
         {report.evidence.length > 0 && (
           <details className="text-sm">
-            <summary className="cursor-pointer text-accent">研究材料与来源（{report.evidence.length}）</summary>
+            <summary className="cursor-pointer text-accent-deep">研究材料与来源（{report.evidence.length}）</summary>
             <ul className="mt-2 space-y-1.5">
               {report.evidence.map((ev, i) => (
                 <li key={i} className="text-xs text-ink-muted">

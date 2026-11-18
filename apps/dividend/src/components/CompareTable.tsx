@@ -3,9 +3,23 @@
  */
 'use client';
 
+import type { ReactNode } from 'react';
 import { StarIcon, XMarkIcon, TagIcon, ChartBarIcon, CalendarIcon, ArrowTrendingUpIcon, ArrowTrendingDownIcon, PresentationChartLineIcon, UsersIcon } from '@heroicons/react/24/outline';
 import { CompareTableProps, DividendStockWithTechnical } from '@/lib/types';
 import { useHighlights } from '@/lib/hooks';
+
+/**
+ * 「最优值」徽标：高者为优 / 低者为优，悬停可见方向，规则与 useHighlights 一致。
+ */
+const HighlightBadge = ({ direction, children }: { direction: 'higher' | 'lower'; children: ReactNode }) => (
+  <div
+    className="inline-flex items-center gap-1 px-2 py-1 bg-up-tint text-up-deep rounded"
+    title={direction === 'higher' ? '最优值：高者为优' : '最优值：低者为优'}
+  >
+    <StarIcon className="w-4 h-4 text-yellow-400" aria-hidden="true" />
+    {children}
+  </div>
+);
 
 const formatValue = (value: number | null | undefined): string => {
   if (value === null || value === undefined) return '-';
@@ -50,11 +64,11 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
   if (stocks.length === 0) {
     return (
       <div className="text-center py-16">
-        <XMarkIcon className="w-16 h-16 mx-auto text-gray-600 mb-4" />
-        <h3 className="text-lg font-semibold text-gray-400 mb-2">
+        <XMarkIcon className="w-16 h-16 mx-auto text-ink-soft mb-4" />
+        <h3 className="text-lg font-semibold text-ink-muted mb-2">
           暂无对比数据
         </h3>
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-ink-soft">
           请从列表中选择 2-5 只股票进行对比
         </p>
       </div>
@@ -65,18 +79,18 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         {/* 表头 */}
-        <thead className="bg-gray-800 sticky top-0 z-10">
+        <thead className="bg-paper-deep sticky top-0 z-10">
           <tr>
-            <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider min-w-[100px] w-[100px]">
+            <th className="px-4 py-3 text-left text-xs font-medium text-ink-muted uppercase tracking-wider min-w-[100px] w-[100px]">
               维度
             </th>
             {stocks.map((stock) => (
               <th key={stock.code} className="px-4 py-3 text-center min-w-[120px]">
                 <div className="flex items-center justify-center gap-2">
-                  <div className="font-medium text-gray-200">{stock.name}</div>
+                  <div className="font-medium text-ink-strong">{stock.name}</div>
                   <button
                     onClick={() => onRemove(stock.code)}
-                    className="flex items-center gap-1 px-2 py-0.5 text-xs text-gray-400 hover:text-red-400 hover:bg-gray-700 rounded transition-colors"
+                    className="flex items-center gap-1 px-2 py-0.5 text-xs text-ink-muted hover:text-red-400 hover:bg-paper-tint rounded transition-colors"
                     aria-label={`移除 ${stock.name}`}
                   >
                     <XMarkIcon className="w-4 h-4" />
@@ -90,40 +104,40 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
         <tbody>
           {/* 元数据 */}
           <tr className="hover:bg-paper-tint">
-            <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
+            <td className="px-4 py-2 text-ink border-b border-rule">
               <div className="flex items-center gap-2">
                 <TagIcon className="w-4 h-4 text-blue-400" />
                 <span>代码</span>
               </div>
             </td>
             {stocks.map((stock) => (
-              <td key={stock.code} className="px-4 py-2 text-center text-gray-300 font-mono border-b border-gray-700">
+              <td key={stock.code} className="px-4 py-2 text-center text-ink font-mono border-b border-rule">
                 {stock.code}
               </td>
             ))}
           </tr>
           <tr className="hover:bg-paper-tint">
-            <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
+            <td className="px-4 py-2 text-ink border-b border-rule">
               <div className="flex items-center gap-2">
                 <TagIcon className="w-4 h-4 text-blue-400" />
                 <span>名称</span>
               </div>
             </td>
             {stocks.map((stock) => (
-              <td key={stock.code} className="px-4 py-2 text-center text-gray-300 border-b border-gray-700">
+              <td key={stock.code} className="px-4 py-2 text-center text-ink border-b border-rule">
                 {stock.name}
               </td>
             ))}
           </tr>
           <tr className="hover:bg-paper-tint">
-            <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
+            <td className="px-4 py-2 text-ink border-b border-rule">
               <div className="flex items-center gap-2">
                 <TagIcon className="w-4 h-4 text-blue-400" />
                 <span>申万行业</span>
               </div>
             </td>
             {stocks.map((stock) => (
-              <td key={stock.code} className="px-4 py-2 text-center text-gray-300 border-b border-gray-700">
+              <td key={stock.code} className="px-4 py-2 text-center text-ink border-b border-rule">
                 {stock.sw_level1 || '-'}
               </td>
             ))}
@@ -131,7 +145,7 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
 
           {/* 基础指标 */}
           <tr className="hover:bg-paper-tint">
-            <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
+            <td className="px-4 py-2 text-ink border-b border-rule">
               <div className="flex items-center gap-2">
                 <ChartBarIcon className="w-4 h-4 text-green-400" />
                 <span>3年股息率</span>
@@ -140,12 +154,9 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
             {stocks.map((stock, idx) => {
               const isHighlighted = highlights.yieldIndex === idx;
               return (
-                <td key={stock.code} className="px-4 py-2 text-center border-b border-gray-700">
+                <td key={stock.code} className="px-4 py-2 text-center border-b border-rule">
                   {isHighlighted ? (
-                    <div className="inline-flex items-center gap-1 px-2 py-1 bg-green-900/20 text-green-400 rounded">
-                      <StarIcon className="w-4 h-4 text-yellow-400" aria-label="最优值" />
-                      <span className="font-mono">{formatPercent(stock.avg_yield_3y)}</span>
-                    </div>
+                    <HighlightBadge direction="higher"><span className="font-mono">{formatPercent(stock.avg_yield_3y)}</span></HighlightBadge>
                   ) : (
                     <span className="font-mono">{formatPercent(stock.avg_yield_3y)}</span>
                   )}
@@ -154,7 +165,7 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
             })}
           </tr>
           <tr className="hover:bg-paper-tint">
-            <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
+            <td className="px-4 py-2 text-ink border-b border-rule">
               <div className="flex items-center gap-2">
                 <ChartBarIcon className="w-4 h-4 text-green-400" />
                 <span>昨日/M120</span>
@@ -164,14 +175,11 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
               const technical = stock.technical;
               const ratio = technical?.close && technical?.m120 ? technical.close / technical.m120 : null;
               return (
-                <td key={stock.code} className="px-4 py-2 text-center border-b border-gray-700">
+                <td key={stock.code} className="px-4 py-2 text-center border-b border-rule">
                   {ratio !== null ? (
                     <>
                       {highlights.ratioIndex === idx ? (
-                        <div className="inline-flex items-center gap-1 px-2 py-1 bg-green-900/20 text-green-400 rounded">
-                          <StarIcon className="w-4 h-4 text-yellow-400" aria-label="最优值" />
-                          <span className="font-mono">{ratio.toFixed(3)}</span>
-                        </div>
+                        <HighlightBadge direction="lower"><span className="font-mono">{ratio.toFixed(3)}</span></HighlightBadge>
                       ) : (
                         <span className="font-mono">{ratio.toFixed(3)}</span>
                       )}
@@ -186,7 +194,7 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
 
           {/* 财务成长 */}
           <tr className="hover:bg-paper-tint">
-            <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
+            <td className="px-4 py-2 text-ink border-b border-rule">
               <div className="flex items-center gap-2">
                 <PresentationChartLineIcon className="w-4 h-4 text-cyan-400" />
                 <span>ROE</span>
@@ -196,13 +204,10 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
               const value = stock.roe;
               const isHighlighted = highlights.roeIndex === idx;
               return (
-                <td key={stock.code} className="px-4 py-2 text-center border-b border-gray-700">
+                <td key={stock.code} className="px-4 py-2 text-center border-b border-rule">
                   {value !== null && value !== undefined ? (
                     isHighlighted ? (
-                      <div className="inline-flex items-center gap-1 px-2 py-1 bg-green-900/20 text-green-400 rounded">
-                        <StarIcon className="w-4 h-4 text-yellow-400" aria-label="最优值" />
-                        <span className="font-mono">{formatPercent(value)}</span>
-                      </div>
+                      <HighlightBadge direction="higher"><span className="font-mono">{formatPercent(value)}</span></HighlightBadge>
                     ) : (
                       <span className="font-mono">{formatPercent(value)}</span>
                     )
@@ -214,7 +219,7 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
             })}
           </tr>
           <tr className="hover:bg-paper-tint">
-            <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
+            <td className="px-4 py-2 text-ink border-b border-rule">
               <div className="flex items-center gap-2">
                 <PresentationChartLineIcon className="w-4 h-4 text-cyan-400" />
                 <span>扣非净利润同比</span>
@@ -224,13 +229,10 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
               const value = stock.net_profit_ex_non_recurring_yoy;
               const isHighlighted = highlights.nonRecurringYoYIndex === idx;
               return (
-                <td key={stock.code} className="px-4 py-2 text-center border-b border-gray-700">
+                <td key={stock.code} className="px-4 py-2 text-center border-b border-rule">
                   {value !== null && value !== undefined ? (
                     isHighlighted ? (
-                      <div className="inline-flex items-center gap-1 px-2 py-1 bg-green-900/20 text-green-400 rounded">
-                        <StarIcon className="w-4 h-4 text-yellow-400" aria-label="最优值" />
-                        <span className="font-mono">{formatPercent(value)}</span>
-                      </div>
+                      <HighlightBadge direction="higher"><span className="font-mono">{formatPercent(value)}</span></HighlightBadge>
                     ) : (
                       <span className="font-mono">{formatPercent(value)}</span>
                     )
@@ -242,7 +244,7 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
             })}
           </tr>
           <tr className="hover:bg-paper-tint">
-            <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
+            <td className="px-4 py-2 text-ink border-b border-rule">
               <div className="flex items-center gap-2">
                 <PresentationChartLineIcon className="w-4 h-4 text-cyan-400" />
                 <span>3年CAGR</span>
@@ -252,13 +254,10 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
               const value = stock.net_profit_cagr_3y;
               const isHighlighted = highlights.cagr3yIndex === idx;
               return (
-                <td key={stock.code} className="px-4 py-2 text-center border-b border-gray-700">
+                <td key={stock.code} className="px-4 py-2 text-center border-b border-rule">
                   {value !== null && value !== undefined ? (
                     isHighlighted ? (
-                      <div className="inline-flex items-center gap-1 px-2 py-1 bg-green-900/20 text-green-400 rounded">
-                        <StarIcon className="w-4 h-4 text-yellow-400" aria-label="最优值" />
-                        <span className="font-mono">{formatPercent(value)}</span>
-                      </div>
+                      <HighlightBadge direction="higher"><span className="font-mono">{formatPercent(value)}</span></HighlightBadge>
                     ) : (
                       <span className="font-mono">{formatPercent(value)}</span>
                     )
@@ -270,18 +269,23 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
             })}
           </tr>
           <tr className="hover:bg-paper-tint">
-            <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
+            <td className="px-4 py-2 text-ink border-b border-rule">
               <div className="flex items-center gap-2">
                 <PresentationChartLineIcon className="w-4 h-4 text-cyan-400" />
                 <span>分红比例</span>
               </div>
             </td>
-            {stocks.map((stock) => {
+            {stocks.map((stock, idx) => {
               const value = stock.payout_ratio;
+              const isHighlighted = highlights.payoutRatioIndex === idx;
               return (
-                <td key={stock.code} className="px-4 py-2 text-center text-gray-300 border-b border-gray-700">
+                <td key={stock.code} className="px-4 py-2 text-center text-ink border-b border-rule">
                   {value !== null && value !== undefined ? (
-                    <span className="font-mono">{formatPercent(value)}</span>
+                    isHighlighted ? (
+                      <HighlightBadge direction="higher"><span className="font-mono">{formatPercent(value)}</span></HighlightBadge>
+                    ) : (
+                      <span className="font-mono">{formatPercent(value)}</span>
+                    )
                   ) : (
                     <span>-</span>
                   )}
@@ -290,7 +294,7 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
             })}
           </tr>
           <tr className="hover:bg-paper-tint">
-            <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
+            <td className="px-4 py-2 text-ink border-b border-rule">
               <div className="flex items-center gap-2">
                 <PresentationChartLineIcon className="w-4 h-4 text-cyan-400" />
                 <span>最新季度扣非</span>
@@ -300,7 +304,7 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
               const amount = stock.latest_quarter_net_profit_ex_non_recurring;
               const yoy = stock.latest_quarter_yoy_pct;
               return (
-                <td key={stock.code} className="px-4 py-2 text-center text-gray-300">
+                <td key={stock.code} className="px-4 py-2 text-center text-ink">
                   {amount !== null && amount !== undefined ? (
                     <div className="flex flex-col items-center gap-0.5">
                       {yoy !== null && yoy !== undefined ? (
@@ -308,9 +312,9 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
                           {formatPercent(yoy)}
                         </span>
                       ) : (
-                        <span className="font-mono text-sm text-gray-500">同比 -</span>
+                        <span className="font-mono text-sm text-ink-soft">同比 -</span>
                       )}
-                      <span className="font-mono text-xs text-gray-500">{formatYi(amount)}</span>
+                      <span className="font-mono text-xs text-ink-muted">{formatYi(amount)}</span>
                     </div>
                   ) : (
                     <span>-</span>
@@ -322,7 +326,7 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
 
           {/* 股东户数 */}
           <tr className="hover:bg-paper-tint">
-            <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
+            <td className="px-4 py-2 text-ink border-b border-rule">
               <div className="flex items-center gap-2">
                 <UsersIcon className="w-4 h-4 text-pink-400" />
                 <span>股东户数</span>
@@ -331,7 +335,7 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
             {stocks.map((stock) => {
               const value = stock.shareholder_count;
               return (
-                <td key={stock.code} className="px-4 py-2 text-center text-gray-300 border-b border-gray-700">
+                <td key={stock.code} className="px-4 py-2 text-center text-ink border-b border-rule">
                   {value !== null && value !== undefined ? (
                     <span className="font-mono">{formatShareholderCount(value)}</span>
                   ) : (
@@ -344,7 +348,7 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
 
           {/* 价格波动 */}
           <tr className="hover:bg-paper-tint">
-            <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
+            <td className="px-4 py-2 text-ink border-b border-rule">
               <div className="flex items-center gap-2">
                 <ArrowTrendingUpIcon className="w-4 h-4 text-orange-400" />
                 <span>最高涨幅</span>
@@ -354,16 +358,13 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
               const highChange = stock.high_change_pct_2025;
               const isHighlighted = highlights.highChangeIndex === idx;
               return (
-                <td key={stock.code} className="px-4 py-2 text-center border-b border-gray-700">
+                <td key={stock.code} className="px-4 py-2 text-center border-b border-rule">
                   {highChange !== null && highChange !== undefined ? (
                     <>
                       {isHighlighted ? (
-                        <div className="inline-flex items-center gap-1 px-2 py-1 bg-green-900/20 text-green-400 rounded">
-                          <StarIcon className="w-4 h-4 text-yellow-400" aria-label="最优值" />
-                          <span className="font-mono">{formatPercent(highChange)}</span>
-                        </div>
+                        <HighlightBadge direction="higher"><span className="font-mono">{formatPercent(highChange)}</span></HighlightBadge>
                       ) : (
-                        <span className="font-mono text-red-400">{formatPercent(highChange)}</span>
+                        <span className="font-mono text-ink-muted">{formatPercent(highChange)}</span>
                       )}
                     </>
                   ) : (
@@ -374,7 +375,7 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
             })}
           </tr>
           <tr className="hover:bg-paper-tint">
-            <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
+            <td className="px-4 py-2 text-ink border-b border-rule">
               <div className="flex items-center gap-2">
                 <ArrowTrendingDownIcon className="w-4 h-4 text-red-400" />
                 <span>最高跌幅</span>
@@ -384,16 +385,13 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
               const lowChange = stock.low_change_pct_2025;
               const isHighlighted = highlights.lowChangeIndex === idx;
               return (
-                <td key={stock.code} className="px-4 py-2 text-center border-b border-gray-700">
+                <td key={stock.code} className="px-4 py-2 text-center border-b border-rule">
                   {lowChange !== null && lowChange !== undefined ? (
                     <>
                       {isHighlighted ? (
-                        <div className="inline-flex items-center gap-1 px-2 py-1 bg-green-900/20 text-green-400 rounded">
-                          <StarIcon className="w-4 h-4 text-yellow-400" aria-label="最优值" />
-                          <span className="font-mono">{formatPercent(lowChange)}</span>
-                        </div>
+                        <HighlightBadge direction="lower"><span className="font-mono">{formatPercent(lowChange)}</span></HighlightBadge>
                       ) : (
-                        <span className="font-mono text-green-400">{formatPercent(lowChange)}</span>
+                        <span className="font-mono text-ink-muted">{formatPercent(lowChange)}</span>
                       )}
                     </>
                   ) : (
@@ -406,18 +404,23 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
 
           {/* 历史股息率 */}
           <tr className="hover:bg-paper-tint">
-            <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
+            <td className="px-4 py-2 text-ink border-b border-rule">
               <div className="flex items-center gap-2">
                 <CalendarIcon className="w-4 h-4 text-purple-400" />
                 <span>2025年股息率</span>
               </div>
             </td>
-            {stocks.map((stock) => {
+            {stocks.map((stock, idx) => {
               const yield2025 = stock.yield_2025;
+              const isHighlighted = highlights.yield2025Index === idx;
               return (
-                <td key={stock.code} className="px-4 py-2 text-center text-gray-300 border-b border-gray-700">
+                <td key={stock.code} className="px-4 py-2 text-center text-ink border-b border-rule">
                   {yield2025 !== null && yield2025 !== undefined ? (
-                    <span className="font-mono">{formatPercent(yield2025)}</span>
+                    isHighlighted ? (
+                      <HighlightBadge direction="higher"><span className="font-mono">{formatPercent(yield2025)}</span></HighlightBadge>
+                    ) : (
+                      <span className="font-mono">{formatPercent(yield2025)}</span>
+                    )
                   ) : (
                     <span>-</span>
                   )}
@@ -426,18 +429,23 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
             })}
           </tr>
           <tr className="hover:bg-paper-tint">
-            <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
+            <td className="px-4 py-2 text-ink border-b border-rule">
               <div className="flex items-center gap-2">
                 <CalendarIcon className="w-4 h-4 text-purple-400" />
                 <span>2024年股息率</span>
               </div>
             </td>
-            {stocks.map((stock) => {
+            {stocks.map((stock, idx) => {
               const yield2024 = stock.yield_2024;
+              const isHighlighted = highlights.yield2024Index === idx;
               return (
-                <td key={stock.code} className="px-4 py-2 text-center text-gray-300 border-b border-gray-700">
+                <td key={stock.code} className="px-4 py-2 text-center text-ink border-b border-rule">
                   {yield2024 !== null && yield2024 !== undefined ? (
-                    <span className="font-mono">{formatPercent(yield2024)}</span>
+                    isHighlighted ? (
+                      <HighlightBadge direction="higher"><span className="font-mono">{formatPercent(yield2024)}</span></HighlightBadge>
+                    ) : (
+                      <span className="font-mono">{formatPercent(yield2024)}</span>
+                    )
                   ) : (
                     <span>-</span>
                   )}
@@ -446,18 +454,23 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
             })}
           </tr>
           <tr className="hover:bg-paper-tint">
-            <td className="px-4 py-2 text-gray-300">
+            <td className="px-4 py-2 text-ink">
               <div className="flex items-center gap-2">
                 <CalendarIcon className="w-4 h-4 text-purple-400" />
                 <span>2023年股息率</span>
               </div>
             </td>
-            {stocks.map((stock) => {
+            {stocks.map((stock, idx) => {
               const yield2023 = stock.yield_2023;
+              const isHighlighted = highlights.yield2023Index === idx;
               return (
-                <td key={stock.code} className="px-4 py-2 text-center text-gray-300">
+                <td key={stock.code} className="px-4 py-2 text-center text-ink">
                   {yield2023 !== null && yield2023 !== undefined ? (
-                    <span className="font-mono">{formatPercent(yield2023)}</span>
+                    isHighlighted ? (
+                      <HighlightBadge direction="higher"><span className="font-mono">{formatPercent(yield2023)}</span></HighlightBadge>
+                    ) : (
+                      <span className="font-mono">{formatPercent(yield2023)}</span>
+                    )
                   ) : (
                     <span>-</span>
                   )}

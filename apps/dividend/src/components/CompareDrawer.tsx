@@ -65,7 +65,7 @@ export function CompareDrawer({
       {/* 抽屉 */}
       <div
         ref={drawerRef}
-        className={`fixed top-0 right-0 bottom-0 z-50 bg-gray-900 shadow-xl transform transition-transform duration-300 flex flex-col ${getDrawerWidth()}`}
+        className={`fixed top-0 right-0 bottom-0 z-50 bg-paper-card shadow-xl transform transition-transform duration-300 flex flex-col ${getDrawerWidth()}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="compare-drawer-title"
@@ -73,7 +73,7 @@ export function CompareDrawer({
         tabIndex={-1}
       >
         {/* 固定头部 */}
-        <div className="sticky top-0 z-10 bg-gray-900 border-b border-gray-700">
+        <div className="sticky top-0 z-10 bg-paper-card border-b border-rule">
           <div className="flex items-center justify-between px-6 py-4">
             <h2
               id="compare-drawer-title"
@@ -83,7 +83,7 @@ export function CompareDrawer({
             </h2>
             <button
               onClick={onClose}
-              className="min-h-10 min-w-10 flex items-center justify-center text-gray-400 hover:text-ink-strong hover:bg-gray-700 rounded transition-colors"
+              className="min-h-10 min-w-10 flex items-center justify-center text-ink-muted hover:text-ink-strong hover:bg-paper-tint rounded transition-colors"
               aria-label="关闭对比窗口"
             >
               <XMarkIcon className="w-6 h-6" />

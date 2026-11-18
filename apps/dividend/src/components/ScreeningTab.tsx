@@ -14,6 +14,13 @@ import { ScreeningStockDetailModal } from './ScreeningStockDetailModal';
 
 const STORAGE_KEY = 'dividend-screening-conditions-v1';
 const pct = (value?: number | null) => value == null || !Number.isFinite(value) ? '待补' : `${value.toFixed(2)}%`;
+const formatTimestamp = (value?: string | null) => {
+  if (!value) return '暂无记录';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
 const isDeclining = (value?: number | null) => value != null && Number.isFinite(value) && value < 0;
 const statusNames: Record<ScreeningStatus, string> = { eligible: '符合条件', excluded: '未符合', insufficient_data: '待补数据' };
 const buttonClass = 'rounded border border-rule-strong px-3 py-2 text-sm text-ink hover:border-accent disabled:opacity-40';
@@ -121,7 +128,6 @@ export function ScreeningTab({ watchlist, refreshRevision = 0, sourceQuery = 'ta
   return <section aria-label="选股关注" className="space-y-4">
     <form onSubmit={event => { event.preventDefault(); if (!valid) return; try { localStorage.setItem(STORAGE_KEY, JSON.stringify(conditions)); } catch {} void query(conditions); }} className="rounded-xl border border-rule bg-paper-card p-5">
       <h2 className="text-lg font-semibold text-ink">选出值得持续关注的公司</h2>
-      <p className="mt-1 text-sm text-ink-muted">分红稳定、ROE 达标、最近年度扣非净利润为正且同比不下滑；连续两季扣非同比为负或任一季降幅达到所设阈值时排除。当前股息率由你人工判断。</p>
       <div className="mt-4 flex flex-wrap items-end gap-4">
         {([['min_yield', '近三年平均股息率 ≥'], ['min_roe_avg_3y', '近三年平均 ROE ≥'], ['min_roe', '最近年度 ROE ≥'], ['max_quarter_profit_decline_pct', '单季扣非利润最大降幅']] as const).map(([key, label]) => <label key={key} className="text-sm text-ink">
           <span className="block mb-1">{label}</span>
@@ -131,11 +137,11 @@ export function ScreeningTab({ watchlist, refreshRevision = 0, sourceQuery = 'ta
         <button className={`${buttonClass} bg-indigo-600 text-white`} disabled={loading || saving || !valid}>{loading ? '筛选中…' : '查询候选'}</button>
         <button type="button" className={buttonClass} disabled={loading || saving} onClick={() => { const next = { ...DEFAULT_SCREENING }; setConditions(next); try { localStorage.removeItem(STORAGE_KEY); } catch {} void query(next); }}>恢复默认</button>
       </div>
-      <p className="mt-3 text-xs text-ink-muted">固定条件：近三年每年分红、最近年度扣非净利润 &gt; 0、年度扣非同比 ≥ 0、不能连续两季单季扣非同比为负。单季同比 ≤ −所设降幅时排除。条件在此浏览器保存。</p>
+      <p className="mt-3 text-xs text-ink-muted">固定条件：近三年每年分红、最近年度扣非净利润为正且不下滑；当前股息率由你人工判断。</p>
     </form>
     {error && <p role="alert" className="text-red-600">{error}<button className={`${buttonClass} ml-3`} onClick={() => void query(conditions)} disabled={!valid}>重试筛选</button></p>}
     {result && <>
-      <p className="text-sm text-ink-muted">已采集股票池 {result.total} 只 · 分红年度 {result.dividend_years.join(' / ')} · 分红数据更新 {result.last_updated || '暂无记录'} · 财务更新 {result.financial_last_updated || '暂无记录'}（报告期见各行）</p>
+      <p className="text-sm text-ink-muted">已采集股票池 {result.total} 只 · 分红年度 {result.dividend_years.join(' / ')} · 分红数据更新 <span title={result.last_updated ?? undefined}>{formatTimestamp(result.last_updated)}</span> · 财务更新 <span title={result.financial_last_updated ?? undefined}>{formatTimestamp(result.financial_last_updated)}</span>（报告期见各行）</p>
       {changed && <p className="text-sm text-amber-700">条件已修改，当前仍显示上次查询结果，请点击「查询候选」。</p>}
       <div className="flex flex-wrap items-center gap-2">
         {(Object.keys(statusNames) as ScreeningStatus[]).filter(status => status !== 'insufficient_data' || result.counts[status] > 0).map(status => <button key={status} className={`${buttonClass} ${activeView === status ? 'bg-paper-deep border-accent' : ''}`} onClick={() => setView(status)}>{statusNames[status]} {result.counts[status]}</button>)}
@@ -155,8 +161,7 @@ export function ScreeningTab({ watchlist, refreshRevision = 0, sourceQuery = 'ta
         {lastAdded.length > 0 && <button className={`${buttonClass} ml-2`} disabled={quickPending || !qualityConfigured} title={qualityConfigured ? '用 Hermes 四挡位估值评估这些新收藏（约几分钟）' : 'Hermes 未配置，无法估值'} onClick={() => void quickEvaluate(lastAdded)}>{quickPending ? '提交中…' : `评估挡位 (${lastAdded.length})`}</button>}
         {quickNotice && <span className="ml-3 text-ink-muted">{quickNotice}</span>}
       </p>}
-      {activeView === 'insufficient_data' && <p className="text-sm text-ink-muted">缺少必需数据的股票暂不入选。请通过「数据更新」刷新财务指标后重新查询。旧财务缓存补齐年度扣非净利润金额、年度及历史字段时，请对全量股票勾选「强制」刷新；来源仍缺失的数据继续待补。</p>}
-      <p className="text-xs text-ink-muted">五维评分各 1–5 分，— 表示未评分。{currentSkillVersion ? `当前 Skill v${currentSkillVersion}，版本不同或未知的评分建议重评。` : '当前已部署 Skill 版本暂不可用，无法自动判断评分是否过期。'}</p>
+      {activeView === 'insufficient_data' && <p className="text-sm text-ink-muted">缺少必需数据的股票暂不入选，通过「数据更新」刷新财务指标后重新查询。</p>}
       <div className="overflow-x-auto rounded-xl border border-rule bg-paper-card">
         <table className="w-full text-sm text-ink whitespace-nowrap"><thead className="bg-paper-deep text-left"><tr>
           <th className="p-3"><input aria-label="勾选全部候选" type="checkbox" disabled={activeView !== 'eligible' || eligibleCodes.length === 0 || saving} checked={eligibleCodes.length > 0 && eligibleCodes.every(code => selected.has(code))} onChange={event => setSelected(new Set(event.target.checked ? eligibleCodes : []))} /></th>

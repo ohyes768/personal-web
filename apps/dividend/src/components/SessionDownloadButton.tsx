@@ -7,7 +7,7 @@
 import { useState } from 'react';
 import { ApiHttpError } from '@/lib/api-client';
 
-const buttonClass = 'text-xs text-accent hover:underline underline-offset-4 disabled:opacity-40 disabled:no-underline';
+const buttonClass = 'text-xs text-accent-deep hover:underline underline-offset-4 disabled:opacity-40 disabled:no-underline';
 
 export function SessionDownloadButton({ runId, download }: {
   runId: string | null | undefined;

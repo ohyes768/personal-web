@@ -37,19 +37,19 @@ export function CompareFloatingBar({
     : stockNames;
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-40 bg-gray-800 border-t border-gray-700 shadow-lg transform transition-transform duration-300">
+    <div className="fixed bottom-0 left-0 right-0 z-40 bg-paper-card border-t border-rule-strong shadow-lg transform transition-transform duration-300">
       <div className="container mx-auto px-8 lg:px-16">
         <div className="flex items-center justify-between h-14 gap-4">
           {/* 左侧：清空按钮 + 进度 */}
           <div className="flex items-center gap-4 min-w-0">
             <button
               onClick={onClear}
-              className="px-3 py-1.5 text-sm text-gray-300 hover:text-ink-strong hover:bg-gray-700 rounded transition-colors"
+              className="px-3 py-1.5 text-sm text-ink hover:text-ink-strong hover:bg-paper-tint rounded transition-colors"
               aria-label="清空已选股票"
             >
               清空
             </button>
-            <div className="flex items-center gap-2 text-sm text-gray-300">
+            <div className="flex items-center gap-2 text-sm text-ink">
               <span>已选 {selectedCount}/{maxSelect}</span>
               <div className="flex items-center gap-1 ml-2">
                 {progressDots}
@@ -59,7 +59,7 @@ export function CompareFloatingBar({
 
           {/* 中间：股票名称 */}
           <div className="flex items-center justify-center flex-1 min-w-0">
-            <span className="text-sm text-gray-200 truncate" title={stockDisplay}>
+            <span className="text-sm text-ink-strong truncate" title={stockDisplay}>
               {stockDisplay}
             </span>
           </div>
@@ -68,7 +68,7 @@ export function CompareFloatingBar({
           <button
             onClick={onOpenCompare}
             disabled={selectedCount < 2}
-            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded transition-colors"
+            className="px-4 py-2 text-sm font-medium text-white bg-accent hover:bg-accent-hover disabled:bg-paper-deep disabled:cursor-not-allowed rounded transition-colors"
             aria-label={`开始对比${selectedCount}只股票`}
           >
             开始对比

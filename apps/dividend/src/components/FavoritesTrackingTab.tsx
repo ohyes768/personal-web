@@ -42,9 +42,9 @@ const FILTERS: Array<{ key: TrackingFilterKey; label: string }> = [
 ];
 
 const chip = 'rounded border px-2.5 py-1 text-xs transition-colors';
-const chipActive = 'bg-paper-deep border-accent text-accent font-medium';
+const chipActive = 'bg-paper-deep border-accent text-accent-deep font-medium';
 const chipIdle = 'border-rule text-ink-muted hover:text-ink hover:border-rule-strong';
-const linkBtn = 'text-xs text-accent hover:underline underline-offset-4 disabled:opacity-40 disabled:no-underline';
+const linkBtn = 'text-xs text-accent-deep hover:underline underline-offset-4 disabled:opacity-40 disabled:no-underline';
 const ghostBtn = 'rounded border border-rule-strong px-2.5 py-1 text-xs text-ink hover:bg-paper-tint disabled:opacity-40';
 const primaryBtn = 'rounded bg-accent px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50';
 
@@ -206,10 +206,9 @@ export function FavoritesTrackingTab({
             </button>
           ))}
         </div>
-        <p className="ml-auto text-xs text-ink-muted">
-          {rows.length} 只收藏 · {monitoringCount} 只监控中
-          {pendingApplyCount > 0 && <span className="text-accent font-medium"> · {pendingApplyCount} 份待确认</span>}
-        </p>
+        {monitoringCount > 0 && (
+          <p className="ml-auto text-xs text-ink-muted">{monitoringCount} 只监控中</p>
+        )}
         <QualityQueuePanel view={valuationQueueView} onCancel={cancelQueueItem} onMove={moveQueueItem} label="估值" />
         <input
           type="search"
@@ -236,7 +235,10 @@ export function FavoritesTrackingTab({
         </p>
       )}
       {!configured && (
-        <p className="text-sm text-ink-muted">Hermes 未配置（需 HERMES_BASE_URL 与 HERMES_API_KEY），暂无法提交估值；阅读与手动挡位设置不受影响。</p>
+        <div className="rounded-lg border border-amber-400/40 bg-warn-tint px-4 py-2.5 text-sm text-amber-900">
+          自动评估未启用（后端缺 HERMES_BASE_URL / HERMES_API_KEY）。
+          不影响阅读与监控——每行「挡位设置」可手动配置价格挡位，配置后自动接管。
+        </div>
       )}
 
       {/* 主表 */}
@@ -282,9 +284,7 @@ export function FavoritesTrackingTab({
           </tbody>
         </table>
       </div>
-      <p className="text-xs text-ink-muted">
-        显示 {visible.length} / {rows.length} 只收藏 · 待应用包含仍在使用旧挡位监控的股票 · 评估完成后由你确认应用
-      </p>
+
 
       {/* 报告面板 */}
       <ValuationReportModal
@@ -416,12 +416,12 @@ function TrackingRow({
             >
               {currentPrice.toFixed(2)}
             </div>
-            <div className="text-[10px] font-mono text-ink-muted tabular-nums">
+            <div className="text-xs font-mono text-ink-muted tabular-nums">
               PE {price?.pe != null ? price.pe.toFixed(1) : '—'} · PB {price?.pb != null ? price.pb.toFixed(2) : '—'}
             </div>
             {/* 距各档距离：条上只表达位置关系，精确数字放现价列（行高由条决定，这里不额外加高） */}
             {distanceNote && (
-              <div className="mt-0.5 text-[10px] font-mono text-ink-muted tabular-nums whitespace-normal max-w-[150px]">
+              <div className="mt-0.5 text-xs font-mono text-ink-muted tabular-nums whitespace-normal max-w-[150px]">
                 {distanceNote}
               </div>
             )}
@@ -516,7 +516,7 @@ function TrackingRow({
           <div className="mt-1 text-xs text-ink-muted max-w-[180px] whitespace-normal">{meta.note}</div>
         )}
         {derived.pendingApply && derived.effective && (
-          <div className="mt-1 text-xs text-accent">新评估待应用 · 旧挡位仍生效</div>
+          <div className="mt-1 text-xs text-accent-deep">新评估待应用 · 旧挡位仍生效</div>
         )}
       </td>
 

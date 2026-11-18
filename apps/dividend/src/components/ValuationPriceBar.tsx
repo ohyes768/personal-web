@@ -236,7 +236,7 @@ export function ValuationPriceBar({
         {/* 行1 现价签 */}
         {hasPrice && markerPct !== null && (
           <div
-            className="absolute left-0 -translate-x-1/2 whitespace-nowrap text-accent font-mono font-bold text-xs tabular-nums drop-shadow-sm pointer-events-none"
+            className="absolute left-0 -translate-x-1/2 whitespace-nowrap text-accent-deep font-mono font-bold text-xs tabular-nums drop-shadow-sm pointer-events-none"
             style={{ left: `${Math.max(6, Math.min(94, markerPct))}%`, top: currentRow === 0 ? '0.05rem' : '1rem' }}
           >
             {belowAll ? '↓ ' : aboveAll ? '↑ ' : ''}¥{fmtPrice(currentPrice)}
@@ -364,7 +364,7 @@ export function ValuationPriceBar({
                 className="absolute top-0 whitespace-nowrap"
                 style={{ left: `${left}%`, transform: isFirst ? 'translateX(0)' : 'translateX(-50%)' }}
               >
-                <span className={`inline-flex items-center gap-1 text-[9px] ${isCurrent ? 'text-ink font-medium' : 'text-ink-muted'}`}>
+                <span className={`inline-flex items-center gap-1 text-[10px] ${isCurrent ? 'text-ink font-medium' : 'text-ink-muted'}`}>
                   <span
                     className="inline-block w-1.5 h-1.5 rounded-full shrink-0"
                     style={{ backgroundColor: SEG_COLORS[seg.side] }}
@@ -377,14 +377,14 @@ export function ValuationPriceBar({
           });
         })()}
         {belowAll && (
-          <span className="absolute left-0 top-0 text-[9px] text-accent whitespace-nowrap">低于重仓线</span>
+          <span className="absolute left-0 top-0 text-[10px] text-accent-deep whitespace-nowrap">低于重仓线</span>
         )}
         {aboveAll && (
-          <span className="absolute right-0 top-0 text-[9px] text-accent whitespace-nowrap">高于全卖线</span>
+          <span className="absolute right-0 top-0 text-[10px] text-accent-deep whitespace-nowrap">高于全卖线</span>
         )}
         {variant === 'candidate' && (
           <span
-            className="absolute right-0 top-0 text-[9px] text-ink-muted whitespace-nowrap"
+            className="absolute right-0 top-0 text-[10px] text-ink-muted whitespace-nowrap"
             title="评估结果尚未应用，监控未启用"
           >
             未启用
@@ -427,12 +427,12 @@ function YieldPopover({
       aria-label={`${title}股息率`}
     >
       <div className="flex items-center justify-between gap-2 mb-1">
-        <span className={`text-[10px] font-semibold tracking-wide ${accent ? 'text-accent' : 'text-ink-muted'}`}>
+        <span className={`text-xs font-semibold tracking-wide ${accent ? 'text-accent-deep' : 'text-ink-muted'}`}>
           {title} · 股息率
         </span>
         <button
           type="button"
-          className="text-[10px] text-ink-muted hover:text-ink leading-none cursor-pointer"
+          className="text-xs text-ink-muted hover:text-ink leading-none cursor-pointer"
           onClick={e => {
             e.stopPropagation();
             onClose();
@@ -450,11 +450,11 @@ function YieldPopover({
       ) : (
         <div className="font-mono text-sm text-ink-muted">—</div>
       )}
-      <div className="text-[9px] text-ink-muted mt-1 font-mono">
+      <div className="text-[10px] text-ink-muted mt-1 font-mono">
         2025分红 / ¥{fmtPrice(price)}
       </div>
       {yieldTtm != null && (
-        <div className="text-[10px] text-ink-muted mt-1.5 border-t border-dashed border-rule pt-1.5">
+        <div className="text-xs text-ink-muted mt-1.5 border-t border-dashed border-rule pt-1.5">
           TTM{' '}
           <span className="font-mono font-semibold tabular-nums">{yieldTtm.toFixed(2)}%</span>
         </div>

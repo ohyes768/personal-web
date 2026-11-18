@@ -266,7 +266,7 @@ export function AlertSettingsModal({
               <div key={key} className="grid grid-cols-[100px_1fr_1fr_1fr_28px] gap-2 px-3 py-2 items-center border-t border-rule">
                 <div className="flex flex-col">
                   <span className="text-sm text-ink">{emoji} {label}</span>
-                  <span className="text-[10px] text-ink-muted">{hint}</span>
+                  <span className="text-xs text-ink-muted">{hint}</span>
                 </div>
                 <input
                   type="number"
