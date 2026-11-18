@@ -31,6 +31,8 @@ class FundListItem(BaseModel):
     name: str
     fund_type: str
     market_subtype: Optional[str] = None  # akshare 精确子类（fund_type 全空，用这个做 UI 展示）
+    # 来源分段标记（11-15-source-segmented）：in_curated = code ∈ 三分法 yaml 名单
+    in_curated: Optional[bool] = None
     size_yi: Optional[float] = None
     age_years: Optional[float] = None
     dd_3y: Optional[float] = None
@@ -77,6 +79,7 @@ class FundListItem(BaseModel):
 class ScreenResponse(BaseModel):
     total: int
     items: list[FundListItem]
+    source: Optional[str] = None  # 来源分段（curated/market/all；旧 discovery 路由无此字段）
 
 
 class ManagerListItem(BaseModel):
@@ -123,6 +126,15 @@ class ManagerTenureItem(BaseModel):
     annual_return: Optional[float] = None
     is_current: bool = True
     affiliation: Optional[TenureAffiliation] = None
+    # 当前夏普（FundRiskMetrics.sharpe，近 3 年窗口；与股基主表夏普列同口径）
+    sharpe: Optional[float] = None
+    # 基金自身口径的近 1 年 / 近 3 年 / 近 5 年收益与同类排名（与股票 tab 主表同口径）
+    ret_1y: Optional[float] = None
+    ret_3y: Optional[float] = None
+    ret_5y: Optional[float] = None
+    rank_1y: Optional[RankPercentileDTO] = None
+    rank_3y: Optional[RankPercentileDTO] = None
+    rank_5y: Optional[RankPercentileDTO] = None
 
 
 class ManagerDetailResponse(ManagerListItem):
@@ -234,16 +246,33 @@ class SharpeBoardAttemptDTO(BaseModel):
 
 
 class SharpeBoardItemDTO(BaseModel):
-    """榜单列表项（R3：排序 (listed_weeks DESC, latest_sharpe DESC, code ASC)）"""
+    """榜单列表项（R3：排序 (listed_weeks DESC, latest_sharpe DESC, code ASC)）
+
+    v2（11-13 任务）：listed_weeks 改为 52 周窗口内计数；新增近12周达标
+    与同类分位展示字段。
+    v4 口径（11-14-sharpe-board-gap-weeks）：新增可评周数与数据缺口周——
+    数据缺口周（无榜 / 样本未更新）不计入在榜、也不打断连续周数。
+    """
     code: str
     name: str                      # 最近上榜观测的名称快照（改名不抹历史）
-    listed_weeks: int              # 累计在榜周数（全历史）
-    consecutive_weeks: int         # 最近一段连续在榜周数（缺席/未知中断）
+    listed_weeks: int              # 52 周窗口内在榜周数（分子）
+    evaluable_weeks: int = 0       # 可评周数（分母）：窗口内该基金有有效样本的周数
+    consecutive_weeks: int         # 窗口内最近一段连续在榜周数（数据缺口周不中断）
+    gap_weeks: list[date] = []     # 该基金的数据缺口周（无榜 / 样本未更新）
     latest_sharpe: Optional[float] = None  # 最近上榜夏普（不是「当前夏普」）
     last_listed_week: Optional[date] = None
     on_latest_board: bool = False  # 是否在最新成功（complete）榜单内
     ret_1y: Optional[float] = None  # 近 1 年收益（FundPerformance，回退 MarketFundRank；仅展示）
     ret_3y: Optional[float] = None  # 近 3 年收益（同上）
+    near_12w_qualified: Optional[int] = None  # 近12周夏普≥0.8 的周数
+    near_12w_total: Optional[int] = None      # 分母（不足12周为实际周数）
+    # v2 滚动口径（保留以支持 v2 版本查询）
+    peer_pct: Optional[float] = None          # 同类排名分位（%，如 14.2）
+    peer_as_of: Optional[str] = None          # 同类排名数据日期 ISO
+    # v3 年度口径（11-14 任务）
+    peer_years: Optional[dict] = None         # {"2023": 8.2, "2024": None, ...}
+    peer_qualified_years: Optional[int] = None  # 达标年数（3 年中）
+    peer_window: Optional[list[str]] = None  # 评估年度 ["2023","2024","2025"]
 
 
 class SharpeBoardSeriesDTO(BaseModel):
@@ -256,6 +285,7 @@ class SharpeBoardSeriesDTO(BaseModel):
 class SharpeBoardDiagnosticsDTO(BaseModel):
     """数据状态透明化（R6/R7：成功空榜/采集失败/样本未更新可区分）"""
     no_board_weeks: list[date] = []    # 周历内无 complete 榜的周（失败/停机/未跑）
+    gap_weeks: list[date] = []         # 周历内数据不可用的周（没发榜 或 有基金样本未更新）
     latest_diagnostics: dict = {}      # 最新尝试行的 diagnostics_json 原样（stale_codes 等）
 
 
@@ -274,3 +304,67 @@ class SharpeBoardResponse(BaseModel):
     weeks: list[date] = []         # 统一周历（周一日期），range 只裁起点
     series: list[SharpeBoardSeriesDTO] = []
     diagnostics: SharpeBoardDiagnosticsDTO = SharpeBoardDiagnosticsDTO()
+
+
+# ──────────────────────────────────────────────────────────────────
+# 夏普走势（GET /api/funds/sharpe-trend/{code}），任务 11-13-fund-sharpe-trend
+# ⚠ 每个顶层字段都必须显式声明：response_model 序列化会静默丢弃未声明字段
+#   （contracts §3a 陷阱）。后端 DTO 加字段要三处同步：models.py ↔
+#   apps/fund-select/src/lib/sharpe-trend.ts ↔ 页面消费。
+# ──────────────────────────────────────────────────────────────────
+
+class SharpeTrendPointDTO(BaseModel):
+    """一个周观测点：该自然周最后一个交易日的 trailing-3y 夏普。
+
+    sharpe=None 表示该周样本不足或无定义（前端断线不补零）。
+    """
+    date: date
+    sharpe: Optional[float] = None
+    sample_days: int = 0
+
+
+class SharpeTrendStatsDTO(BaseModel):
+    """展示区间内稳定性统计（None 表示无定义 / 点数不足）"""
+    threshold: float = 0.8
+    current: Optional[float] = None
+    max: Optional[float] = None
+    min: Optional[float] = None
+    mean: Optional[float] = None
+    above_count: int = 0
+    valid_count: int = 0
+    above_ratio: Optional[float] = None
+    consecutive_above: int = 0
+    longest_below: int = 0
+    trend_12w: Optional[float] = None
+
+
+class SharpeTrendResponse(BaseModel):
+    """单基金夏普走势响应（现算，不落库）。
+
+    rf_basis：zero = risk_free_rate 表为空按 rf=0（生产库现状）；rate = 用库内利率。
+    diagnostics：insufficient_history / no_valid_points / nav_end_date / total_points。
+    """
+    code: str
+    name: Optional[str] = None
+    range: str = "all"
+    rf_basis: str = "zero"
+    algorithm_version: str = "trend-v1"
+    threshold: float = 0.8
+    points: list[SharpeTrendPointDTO] = []
+    stats: SharpeTrendStatsDTO = SharpeTrendStatsDTO()
+    diagnostics: dict = {}
+
+
+class FundLookupResponse(BaseModel):
+    """基金代码 → 所属 tab 的路由判定（11-14-fund-code-quick-search）
+
+    ⚠ 所有字段显式声明：response_model 会静默丢弃未声明字段（contracts §3a）。
+    found=False 时 tab/path 为 None（HTTP 仍返回 200，不是错误）。
+    """
+    code: str
+    found: bool
+    name: Optional[str] = None
+    tab: Optional[str] = None              # bond|stock|discovery-bond|discovery-stock
+    market_type: Optional[str] = None
+    in_yaml: Optional[str] = None          # 'bond'|'stock'|None（命中哪份精选名单）
+    path: Optional[str] = None             # '/discovery-stock?code=002910'（相对路径）

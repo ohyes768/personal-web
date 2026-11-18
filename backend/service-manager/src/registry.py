@@ -22,9 +22,11 @@ from src.errors import bad_request, conflict, not_found
 from src.models import (
     ComponentOverrideInput,
     EndpointInput,
+    EndpointKind,
     EndpointRecord,
     PortNoteInput,
     PortNoteRecord,
+    PrimaryEndpointView,
     ReleaseSourceInput,
     ReleaseSourceRecord,
     ServiceCreate,
@@ -51,7 +53,6 @@ def _row_to_service(row: sqlite3.Row) -> dict[str, Any]:
         "id": row["id"],
         "name": row["name"],
         "description": row["description"],
-        "category": row["category"],
         "tags": json.loads(row["tags"] or "[]"),
         "notes": row["notes"],
         "revision": int(row["revision"]),
@@ -115,13 +116,13 @@ class Registry:
         service_id = _new_id()
         with self.store.transaction() as conn:
             conn.execute(
-                "INSERT INTO services(id, name, description, category, tags, notes,"
-                " revision, created_at, updated_at) VALUES (?,?,?,?,?,?,1,?,?)",
+                "INSERT INTO services(id, name, description, tags, notes,"
+                " revision, created_at, updated_at)"
+                " VALUES (?,?,?,?,?,1,?,?)",
                 (
                     service_id,
                     payload.name,
                     payload.description,
-                    payload.category,
                     json.dumps(payload.tags, ensure_ascii=False),
                     payload.notes,
                     now,
@@ -135,7 +136,6 @@ class Registry:
         self,
         *,
         query: str = "",
-        category: str = "",
         tag: str = "",
         page: int = 1,
         page_size: int = 50,
@@ -149,19 +149,17 @@ class Registry:
             like = f"%{query.lower()}%"
             clauses.append(
                 "(lower(s.name) LIKE ? OR lower(s.description) LIKE ? OR "
-                "lower(s.category) LIKE ? OR lower(s.tags) LIKE ? OR s.id IN ("
+                "lower(s.tags) LIKE ? OR s.id IN ("
                 "SELECT e.service_id FROM endpoints e WHERE lower(e.url) LIKE ?) OR "
                 "s.id IN (SELECT c.service_id FROM service_components c WHERE "
                 "lower(c.source_key) LIKE ?))"
             )
-            params.extend([like] * 6)
-        if category:
-            clauses.append("s.category = ?")
-            params.append(category)
+            params.extend([like] * 5)
         if tag:
             clauses.append("s.tags LIKE ?")
             params.append(f'%"{tag}"%')
         where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        primary_views = self.primary_endpoint_views()
         with self.store.read() as conn:
             total = int(
                 conn.execute(
@@ -201,11 +199,11 @@ class Registry:
                         id=service["id"],
                         name=service["name"],
                         description=service["description"],
-                        category=service["category"],
                         tags=service["tags"],
                         revision=service["revision"],
                         updated_at=service["updated_at"],
                         primary_url=primary,
+                        primary_endpoint=primary_views.get(service["id"]),
                         component_count=component_count,
                     )
                 )
@@ -263,8 +261,6 @@ class Registry:
                 updates["name"] = payload.name
             if payload.description is not None:
                 updates["description"] = payload.description
-            if payload.category is not None:
-                updates["category"] = payload.category
             if payload.tags is not None:
                 updates["tags"] = json.dumps(payload.tags, ensure_ascii=False)
             if payload.notes is not None:
@@ -412,6 +408,42 @@ class Registry:
                 bucket.append(project)
         return result
 
+    def migrate_category_to_tags(self) -> dict[str, int]:
+        """分类退役迁移：把 category 的值并进 tags，然后删掉 category 列。
+
+        顺序是**先转标签、后删列**，两者在同一事务里完成，中途失败整笔回滚、
+        数据不会丢。删列不可逆：原分类值此后只以标签形式存在（可从标签反推，
+        但不再是独立字段）。
+
+        幂等：列已不存在时什么都不做（新建的库本来就没有这一列）。
+        """
+        migrated = 0
+        with self.store.transaction() as conn:
+            columns = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(services)")
+            }
+            if "category" not in columns:
+                return {"migrated": 0, "column_removed": 0}
+            rows = conn.execute(
+                "SELECT id, category, tags FROM services WHERE category != ''"
+            ).fetchall()
+            for row in rows:
+                try:
+                    current = json.loads(row["tags"] or "[]")
+                except json.JSONDecodeError:
+                    current = []
+                merged = sorted({*(str(item) for item in current), row["category"]})
+                conn.execute(
+                    "UPDATE services SET tags = ? WHERE id = ?",
+                    (json.dumps(merged, ensure_ascii=False), row["id"]),
+                )
+                migrated += 1
+            removed = Store._drop_column(conn, "services", "category")
+            if migrated:
+                Store.bump_registry_revision(conn)
+            return {"migrated": migrated, "column_removed": 1 if removed else 0}
+
     # ------------------------------------------------------------------
     # 部署信息覆盖
     # ------------------------------------------------------------------
@@ -551,6 +583,107 @@ class Registry:
             if cur.rowcount == 0:
                 raise not_found("入口不存在")
             Store.bump_registry_revision(conn)
+
+    # ------------------------------------------------------------------
+    # 主入口（列表页用）
+    # ------------------------------------------------------------------
+
+    def primary_endpoints(self) -> dict[str, EndpointRecord]:
+        """service_id → 它的主入口（external 优先，否则第一个）。
+
+        一服务一入口是既有的用法（20 条入口覆盖 20 条服务）。
+        """
+        buckets: dict[str, list[EndpointRecord]] = {}
+        for endpoint in self.list_endpoints(only_enabled=True):
+            buckets.setdefault(endpoint.service_id, []).append(endpoint)
+        result: dict[str, EndpointRecord] = {}
+        for service_id, items in buckets.items():
+            external = [item for item in items if item.kind == EndpointKind.EXTERNAL]
+            result[service_id] = (external or items)[0]
+        return result
+
+    def primary_endpoint_views(self) -> dict[str, PrimaryEndpointView]:
+        """service_id → 主入口视图（含证书状态与到期天数）。
+
+        证书状态来自最近一次 TLS 检查；没查过就是 unknown（前端显示「未检查」）。
+        """
+        checks = self.tls_checks()
+        views: dict[str, PrimaryEndpointView] = {}
+        for service_id, endpoint in self.primary_endpoints().items():
+            check = checks.get(endpoint.id, {})
+            payload = check.get("payload") or {}
+            days = payload.get("days_remaining")
+            server_port: int | None = None
+            try:
+                server_port = parse_http_url(endpoint.url).effective_port
+            except Exception:  # noqa: BLE001 - URL 不合法时只是没有端口
+                server_port = None
+            views[service_id] = PrimaryEndpointView(
+                id=endpoint.id,
+                url=endpoint.url,
+                server_port=server_port,
+                label=endpoint.label,
+                kind=endpoint.kind,
+                tls_check=endpoint.tls_check,
+                tls_state=str(check.get("state") or "unknown"),
+                tls_days_remaining=int(days) if isinstance(days, (int, float)) else None,
+                tls_not_after=payload.get("not_after"),
+                tls_invalid_reason=payload.get("invalid_reason"),
+            )
+        return views
+
+    def tls_checks(self) -> dict[str, dict[str, Any]]:
+        """endpoint_id → 最近一次 TLS 检查的 {state, payload, error}。"""
+        with self.store.read() as conn:
+            rows = conn.execute(
+                "SELECT target_id, check_status, current_state, last_success_payload,"
+                " error_message FROM check_results WHERE check_kind = 'tls'"
+            ).fetchall()
+        result: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            payload: dict[str, Any] = {}
+            if row["last_success_payload"]:
+                try:
+                    payload = json.loads(row["last_success_payload"])
+                except json.JSONDecodeError:
+                    payload = {}
+            result[row["target_id"]] = {
+                "status": row["check_status"],
+                "state": row["current_state"] or "unknown",
+                "payload": payload,
+                "error": row["error_message"],
+            }
+        return result
+
+    def upsert_primary_endpoint(self, service_id: str, url: str) -> EndpointRecord:
+        """按 URL 登记/更新主入口。
+
+        类型与是否查证书**按 URL 自动判定**（规则只写这一处）：
+        - 内网地址（192.168 / 10. / 172.16-31.）→ internal，不查证书
+        - 其余 → external；`https` 才查证书
+        """
+        parsed = parse_http_url(url)
+        kind = (
+            EndpointKind.INTERNAL
+            if parsed.host.startswith(("192.168.", "10.", "172."))
+            else EndpointKind.EXTERNAL
+        )
+        tls_check = parsed.scheme == "https"
+        existing = self.primary_endpoints().get(service_id)
+        payload = EndpointInput(
+            label=existing.label if existing else "",
+            kind=kind,
+            url=url,
+            probe_url=existing.probe_url if existing else None,
+            enabled=True,
+            expected_status_ranges=existing.expected_status_ranges if existing else [],
+            tls_check=tls_check,
+            route_target=existing.route_target if existing else None,
+            renewal_note=existing.renewal_note if existing else "",
+        )
+        if existing is None:
+            return self.add_endpoint(service_id, payload)
+        return self.update_endpoint(service_id, existing.id, payload)
 
     def list_endpoints(self, *, only_enabled: bool = False) -> list[EndpointRecord]:
         sql = "SELECT * FROM endpoints"

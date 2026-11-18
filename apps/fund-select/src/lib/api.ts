@@ -12,10 +12,16 @@ import {
   type StatsResponse,
 } from './types';
 import type { FundFilters } from './types';
+import { searchCodeApiQuery } from './search-code';
 
 const BASE = '/funds/api/funds';  // 原生 fetch 不吃 basePath，需带全路径
 
 function buildQuery(filters: Partial<FundFilters>, coarseMapping?: Record<string, string[]>): string {
+  // 代码搜索态（11-16）：只发 code=，不带任何阈值——后端在搜索短路里也会忽略它们，
+  // 这里不拼是为了让网络面板里一眼看出「这是搜索，不是筛选」。
+  const searchCode = searchCodeApiQuery(filters.search_code);
+  if (searchCode !== null) return `?${searchCode}`;
+
   const params = new URLSearchParams();
   if (filters.min_age != null) params.set('min_age', String(filters.min_age));
   if (filters.min_size_yi != null) params.set('min_size_yi', String(filters.min_size_yi));
@@ -25,6 +31,8 @@ function buildQuery(filters: Partial<FundFilters>, coarseMapping?: Record<string
   if (filters.sort) params.set('sort', filters.sort);
   if (filters.order) params.set('order', filters.order);
   if (filters.exclude_qdii) params.set('exclude_qdii', 'true');
+  // 来源分段（11-15-source-segmented）：curated 默认不传（后端默认一致）
+  if (filters.source && filters.source !== 'curated') params.set('source', filters.source);
   // market_types：粗类别 → 精确 subtype 展开（前端持有 UI 粗类别，后端只认精确值）
   if (filters.market_types && filters.market_types.length > 0) {
     const expanded = coarseMapping
@@ -50,7 +58,8 @@ export async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> 
 
 export const fundApi = {
   screen(filters: Partial<FundFilters>, signal?: AbortSignal): Promise<ScreenResponse> {
-    return getJson(`${BASE}/screen${buildQuery(filters)}`);
+    // 债基侧粗类别 → 精确 subtype 展开（前端持有 UI 粗类别，后端只认精确值）
+    return getJson(`${BASE}/screen${buildQuery(filters, COARSE_TO_SUBTYPES_BOND)}`, signal);
   },
 
   getDetail(code: string): Promise<FundDetail> {
@@ -78,7 +87,8 @@ const STOCK_BASE = '/funds/api/funds/stock';
 
 export const stockApi = {
   screen(filters: Partial<FundFilters>, signal?: AbortSignal): Promise<ScreenResponse> {
-    return getJson(`${STOCK_BASE}/screen${buildQuery(filters)}`);
+    // 股基侧粗类别 → 精确 subtype 展开
+    return getJson(`${STOCK_BASE}/screen${buildQuery(filters, COARSE_TO_SUBTYPES_STOCK)}`, signal);
   },
 
   getDetail(code: string): Promise<FundDetail> {
@@ -103,7 +113,7 @@ const DISCOVERY_STOCK_BASE = '/funds/api/funds/discovery-stock';
 
 export const discoveryBondApi = {
   screen(filters: Partial<FundFilters>, signal?: AbortSignal): Promise<ScreenResponse> {
-    return getJson(`${DISCOVERY_BOND_BASE}/screen${buildQuery(filters, COARSE_TO_SUBTYPES_BOND)}`);
+    return getJson(`${DISCOVERY_BOND_BASE}/screen${buildQuery(filters, COARSE_TO_SUBTYPES_BOND)}`, signal);
   },
 
   getStats(): Promise<StatsResponse> {
@@ -135,7 +145,7 @@ export const discoveryBondApi = {
 
 export const discoveryStockApi = {
   screen(filters: Partial<FundFilters>, signal?: AbortSignal): Promise<ScreenResponse> {
-    return getJson(`${DISCOVERY_STOCK_BASE}/screen${buildQuery(filters, COARSE_TO_SUBTYPES_STOCK)}`);
+    return getJson(`${DISCOVERY_STOCK_BASE}/screen${buildQuery(filters, COARSE_TO_SUBTYPES_STOCK)}`, signal);
   },
 
   getStats(): Promise<StatsResponse> {

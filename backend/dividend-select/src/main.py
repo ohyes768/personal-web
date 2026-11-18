@@ -29,7 +29,6 @@ from src.services.refresh_jobs import RefreshJobManager
 from src.services.quality_service import QualityService
 from src.services.valuation_service import ValuationService
 from src.services.hermes_limiter import HermesLimiter
-from src.services.alert_service import init_alert_service
 from src.services.data_reader import DataReader
 from src.services.favorites_service import FavoritesService
 from src.services.filter_service import FilterService
@@ -88,15 +87,6 @@ async def lifespan(app: FastAPI):
     # 设置服务到路由
     set_services(data_reader, filter_service, sort_service, m120_service, pe_service,
                  shareholder_reader, financial_reader, favorites_service)
-
-    # 初始化挡位监控服务（依赖 favorites + m120 + pe + data_reader）
-    init_alert_service(
-        favorites_service=favorites_service,
-        m120_service=m120_service,
-        pe_service=pe_service,
-        data_reader=data_reader,
-    )
-    logger.info("挡位监控服务（AlertService）已初始化")
 
     # 检查数据文件
     if data_reader.check_csv_exists():

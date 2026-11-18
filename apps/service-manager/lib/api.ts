@@ -37,30 +37,14 @@ export type JobState =
   | "interrupted";
 export type RefreshKind = "docker" | "url" | "tls" | "releases" | "all";
 
-export interface CheckView {
-  check_kind: string;
-  check_status: CheckStatus;
-  current_state: string | null;
-  last_attempt_at: string | null;
-  last_success_at: string | null;
-  error_code: string | null;
-  error_message: string | null;
-  next_due_at: string | null;
-  stale: boolean;
-  payload: Record<string, unknown> | null;
-}
+/** 列表页用到的状态：只保留**运行**与**健康**两个维度。
 
+ * URL / 证书 / 发布三个维度随入口与发布维护下线而不再展示（后端仍在检查，
+ * 见 .trellis/spec/backend/service-manager/backend/index.md）。
+ */
 export interface ServiceStatus {
   runtime: RuntimeState;
   health: HealthState;
-  url: UrlState;
-  tls: TlsState;
-  release: ReleaseState;
-  url_check: CheckView | null;
-  tls_check: CheckView | null;
-  release_check: CheckView | null;
-  unread_releases: number;
-  primary_url: string | null;
   component_states: Record<string, string>;
 }
 
@@ -88,70 +72,28 @@ export interface PortView {
   source: "docker" | "manual";
 }
 
-export interface ComponentView {
-  source_key: string;
-  project: string | null;
-  service_name: string | null;
-  container_name: string;
-  container_id: string;
-  image_ref: string;
-  image_id: string;
-  state: string;
-  health: HealthState;
-  network_mode: string;
-  ports: PortView[];
-  mounts: MountView[];
-  compose_working_dir: string | null;
-  compose_files: ComposeFileView[];
-  data_paths: string[];
-  last_seen_at: string | null;
-  present: boolean;
-  required: boolean;
-  label: string;
-  override_source: "docker" | "manual";
-}
-
-export interface RouteTarget {
-  component_source_key: string | null;
-  scheme: "http" | "https";
-  host: string;
-  port: number | null;
-  path_prefix: string;
-  note: string;
-}
-
-export interface EndpointRecord {
+/** 主入口（列表页的「主入口」与「证书」两列的数据源）。 */
+export interface PrimaryEndpointView {
   id: string;
-  service_id: string;
-  label: string;
-  kind: EndpointKind;
   url: string;
-  probe_url: string | null;
-  enabled: boolean;
-  expected_status_ranges: string[];
+  label: string;
+  kind: "internal" | "external" | "admin";
   tls_check: boolean;
-  route_target: RouteTarget | null;
-  renewal_note: string;
-  revision: number;
+  /** 证书状态：valid / expiring / expired / invalid / unknown */
+  tls_state: string;
+  tls_days_remaining: number | null;
+  tls_not_after: string | null;
+  tls_invalid_reason: string | null;
+  /** 服务器端口：主入口 URL 上的端口（省略时取 scheme 默认 443/80） */
+  server_port: number | null;
 }
 
-export interface PortNoteRecord {
+/** 写操作（新建 / 改标签 / 改名称用途）之后前端要用到的字段。 */
+export interface ServicePatchResult {
   id: string;
-  service_id: string;
-  host_ip: string;
-  host_port: number;
-  container_port: number | null;
-  protocol: "tcp" | "udp";
-  note: string;
-  revision: number;
-}
-
-export interface ReleaseSourceRecord {
-  id: string;
-  service_id: string;
-  owner: string;
-  repo: string;
-  installed_tag_note: string;
+  name: string;
+  description: string;
+  tags: string[];
   revision: number;
 }
 
@@ -159,31 +101,15 @@ export interface ServiceListItem {
   id: string;
   name: string;
   description: string;
-  category: string;
   tags: string[];
   revision: number;
   updated_at: string;
   primary_url: string | null;
+  /** 主入口（含证书状态）；没有登记入口时为 null */
+  primary_endpoint: PrimaryEndpointView | null;
   component_count: number;
-  /** 该服务包含的 compose 项目（自己开发的 vs 其他，用来分 tab） */
+  /** 该服务包含的 compose 项目（来源信息，不再决定分组） */
   projects: string[];
-  status: ServiceStatus;
-}
-
-export interface ServiceDetail {
-  id: string;
-  name: string;
-  description: string;
-  category: string;
-  tags: string[];
-  notes: string;
-  revision: number;
-  created_at: string;
-  updated_at: string;
-  components: ComponentView[];
-  endpoints: EndpointRecord[];
-  port_notes: PortNoteRecord[];
-  release_source: ReleaseSourceRecord | null;
   status: ServiceStatus;
 }
 
@@ -230,73 +156,29 @@ export interface PortOverviewResponse {
   scope_note: string;
 }
 
-export interface DomainOverviewRow {
-  host: string;
-  scheme: string;
-  port: number | null;
-  path: string;
-  url: string;
-  endpoint_id: string;
-  endpoint_label: string;
-  endpoint_kind: EndpointKind;
-  service_id: string;
-  service_name: string;
-  route_target: RouteTarget | null;
-  tls_state: TlsState;
-  tls_days_remaining: number | null;
-  /** 证书无效的原因（self_signed 等） */
-  tls_invalid_reason: string | null;
-  is_ip: boolean;
-}
-
-export interface CertificateOverviewRow {
-  host: string;
-  port: number;
-  tls_state: TlsState;
-  subject: string;
-  issuer: string;
-  sans: string[];
-  not_before: string | null;
-  not_after: string | null;
-  days_remaining: number | null;
-  fingerprint: string;
-  used_by: string[];
-  error: string | null;
-  invalid_reason: string | null;
-}
-
-export interface ReleaseView {
-  owner: string;
-  repo: string;
-  release_id: number;
-  tag: string;
-  name: string;
-  published_at: string | null;
-  body: string;
-  html_url: string;
-  read: boolean;
-}
-
-export interface ReleaseListResponse {
-  source: ReleaseSourceRecord | null;
-  items: ReleaseView[];
-  check: CheckView | null;
-  truncated: boolean;
-  latest_release_id: number | null;
-}
-
 export interface SummaryResponse {
   services: number;
   components: number;
+  /** 上次扫描观测到的容器总数 */
+  docker_components: number;
+  /** 其中正在运行的 */
+  docker_running: number;
+  /** 其中已消失（成功扫描里没出现）的 */
+  docker_missing: number;
+  /** 发现但没关联到任何业务服务的容器 */
+  unregistered_components: number;
+  /** 未入账里被标记忽略的（有意不入账） */
+  ignored_components: number;
   docker_available: boolean;
   docker_error: string | null;
   docker_last_success_at: string | null;
   counts: Record<string, Record<string, number>>;
+  /** 全库标签词表：筛选栏的候选来源 */
+  all_tags: string[];
   unread_releases: number;
   registry_revision: number;
   checker_heartbeat: string | null;
   /** 「我自己开发的」compose 项目名（列表据此分 tab） */
-  own_projects: string[];
 }
 
 export interface RefreshJobView {
@@ -376,7 +258,6 @@ export const api = {
   // 服务台账
   listServices: (params: {
     query?: string;
-    category?: string;
     tag?: string;
     page?: number;
     page_size?: number;
@@ -384,75 +265,22 @@ export const api = {
     request<{ items: ServiceListItem[]; total: number; page: number; page_size: number }>(
       `/services${query(params)}`,
     ),
-  getService: (id: string) => request<ServiceDetail>(`/services/${id}`),
   createService: (body: Record<string, unknown>) =>
-    request<ServiceDetail>("/services", { method: "POST", body: JSON.stringify(body) }),
+    request<ServicePatchResult>("/services", { method: "POST", body: JSON.stringify(body) }),
   patchService: (id: string, body: Record<string, unknown>) =>
-    request<ServiceDetail>(`/services/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+    request<ServicePatchResult>(`/services/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  /** 登记/更新主入口：只收 URL，类型与是否查证书由后端按 URL 判定。 */
+  upsertPrimaryEndpoint: (serviceId: string, url: string) =>
+    request<{ id: string; url: string; kind: string; tls_check: boolean }>(
+      `/services/${serviceId}/primary-endpoint`,
+      { method: "PUT", body: JSON.stringify({ url }) },
+    ),
   deleteService: (id: string) =>
     request<{ deleted: string }>(`/services/${id}`, { method: "DELETE" }),
 
   // 入口
-  addEndpoint: (serviceId: string, body: Record<string, unknown>) =>
-    request<EndpointRecord>(`/services/${serviceId}/endpoints`, {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
-  updateEndpoint: (serviceId: string, endpointId: string, body: Record<string, unknown>) =>
-    request<EndpointRecord>(`/services/${serviceId}/endpoints/${endpointId}`, {
-      method: "PUT",
-      body: JSON.stringify(body),
-    }),
-  deleteEndpoint: (serviceId: string, endpointId: string) =>
-    request<{ ok: boolean }>(`/services/${serviceId}/endpoints/${endpointId}`, {
-      method: "DELETE",
-    }),
-
-  // 手工端口
-  addPortNote: (serviceId: string, body: Record<string, unknown>) =>
-    request<PortNoteRecord>(`/services/${serviceId}/port-notes`, {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
-  deletePortNote: (serviceId: string, noteId: string) =>
-    request<{ ok: boolean }>(`/services/${serviceId}/port-notes/${noteId}`, {
-      method: "DELETE",
-    }),
-
-  // 组件
-  setComponentRequired: (serviceId: string, sourceKey: string, required: boolean) =>
-    request<{ ok: boolean }>(
-      `/services/${serviceId}/components/${encodeURIComponent(sourceKey)}/required${query({ required })}`,
-      { method: "POST" },
-    ),
-  unbindComponent: (serviceId: string, sourceKey: string) =>
-    request<{ ok: boolean }>(
-      `/services/${serviceId}/components/${encodeURIComponent(sourceKey)}`,
-      { method: "DELETE" },
-    ),
-  setOverride: (sourceKey: string, body: Record<string, unknown>) =>
-    request<{ ok: boolean }>(`/components/${encodeURIComponent(sourceKey)}/override`, {
-      method: "PUT",
-      body: JSON.stringify(body),
-    }),
-
-  // GitHub 仓库
-  setReleaseSource: (serviceId: string, body: Record<string, unknown>) =>
-    request<ReleaseSourceRecord>(`/services/${serviceId}/release-source`, {
-      method: "PUT",
-      body: JSON.stringify(body),
-    }),
   deleteReleaseSource: (serviceId: string) =>
     request<{ ok: boolean }>(`/services/${serviceId}/release-source`, { method: "DELETE" }),
-  listReleases: (serviceId: string) =>
-    request<ReleaseListResponse>(`/services/${serviceId}/releases`),
-  markReleasesRead: (serviceId: string, releaseIds: number[]) =>
-    request<{ updated: number }>(`/services/${serviceId}/releases/read`, {
-      method: "POST",
-      body: JSON.stringify({ release_ids: releaseIds }),
-    }),
-
-  // 发现
   discovery: (params: {
     project?: string;
     state?: string;
@@ -473,12 +301,6 @@ export const api = {
   // 资源
   ports: (params: { only_registered?: boolean; query?: string; protocol?: string }) =>
     request<PortOverviewResponse>(`/resources/ports${query(params)}`),
-  domains: (params: { query?: string }) =>
-    request<{ items: DomainOverviewRow[] }>(`/resources/domains${query(params)}`),
-  certificates: (params: { query?: string }) =>
-    request<{ items: CertificateOverviewRow[] }>(`/resources/certificates${query(params)}`),
-
-  // 刷新
   refresh: (kind: RefreshKind, targetId?: string | null) =>
     request<RefreshJobView>("/refresh", {
       method: "POST",

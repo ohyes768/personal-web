@@ -28,6 +28,8 @@ export interface SharpeChartInput {
   minLatestSharpe: number | null;
   /** 图例取消选中的 code 集（列表隐藏/聚焦联动）；缺省全部可见 */
   hiddenCodes?: ReadonlySet<string>;
+  /** 数据缺口周（没发榜 / 样本未更新）：画竖线标记，tooltip 单独提示 */
+  gapWeeks?: readonly string[];
 }
 
 /** 孤立点判定：所在连续非空段长度为 1 的点（单点可见的依据，可独立测试） */
@@ -119,9 +121,10 @@ function weekLabel(value: string): string {
  * - 下限参考线挂在第一条 series 的 markLine（无 series 时无线可挂，图区由调用方提示）
  */
 export function buildSharpeChartOption(input: SharpeChartInput): SharpeChartOption {
-  const { weeks, series, minLatestSharpe, hiddenCodes } = input;
+  const { weeks, series, minLatestSharpe, hiddenCodes, gapWeeks = [] } = input;
   const hidden = hiddenCodes ?? new Set<string>();
   const nameByCode = new Map<string, string>(series.map(s => [s.code, s.name]));
+  const gapSet = new Set(gapWeeks);
 
   const seriesSpecs: SeriesSpec[] = series.map((s, idx) => {
     const iso = isolatedPoints(s.values);
@@ -142,11 +145,18 @@ export function buildSharpeChartOption(input: SharpeChartInput): SharpeChartOpti
     return spec;
   });
 
-  // 夏普下限参考线（含等于只是筛选语义；线只提示位置）
-  if (minLatestSharpe !== null && seriesSpecs.length > 0) {
-    seriesSpecs[0].markLine = {
-      silent: true,
-      symbol: 'none',
+  // 标注挂载点：优先第一条**可见**曲线（图例隐藏的 series 不绘制 markLine），
+  // 全部隐藏时退回第一条。
+  const anchorIdx = seriesSpecs.findIndex(
+    (_spec, idx) => !hidden.has(series[idx].code),
+  );
+  const anchor = anchorIdx >= 0 ? anchorIdx : 0;
+
+  // 夏普下限参考线 + 数据缺口周标记（同一 markLine 的 data 数组）
+  const markLineData: Record<string, unknown>[] = [];
+  if (minLatestSharpe !== null) {
+    markLineData.push({
+      yAxis: minLatestSharpe,
       lineStyle: { type: 'dashed', color: '#c56722', width: 1.2 },
       label: {
         show: true,
@@ -155,7 +165,26 @@ export function buildSharpeChartOption(input: SharpeChartInput): SharpeChartOpti
         fontSize: 11,
         color: '#c56722',
       },
-      data: [{ yAxis: minLatestSharpe }],
+    });
+  }
+  for (const week of gapWeeks) {
+    markLineData.push({
+      xAxis: week,
+      lineStyle: { type: 'dashed', color: '#8c6847', width: 1, opacity: 0.9 },
+      label: {
+        show: true,
+        position: 'insideEndTop',
+        formatter: '数据缺口周',
+        fontSize: 11,
+        color: '#8c6847',
+      },
+    });
+  }
+  if (markLineData.length > 0 && seriesSpecs.length > 0) {
+    seriesSpecs[anchor].markLine = {
+      silent: true,
+      symbol: 'none',
+      data: markLineData,
     };
   }
 
@@ -186,13 +215,16 @@ export function buildSharpeChartOption(input: SharpeChartInput): SharpeChartOpti
         const hits = list.filter(p => typeof p.value === 'number');
         const shown = hits.slice(0, 10);
         const lines: string[] = [`<b>${week}</b>`];
+        if (gapSet.has(week)) {
+          lines.push('<span style="color:#c56722">数据缺口周：无榜 / 样本未更新（不计入在榜、不打断连续）</span>');
+        }
         for (const p of shown) {
           const code = p.seriesName ?? '';
           const name = nameByCode.get(code) ?? '';
           lines.push(`${name}（${code}）　<b>${(p.value as number).toFixed(2)}</b>`);
         }
         if (hits.length > shown.length) lines.push(`…另有 ${hits.length - shown.length} 只`);
-        if (hits.length === 0) lines.push('本周无在榜记录');
+        if (hits.length === 0 && !gapSet.has(week)) lines.push('本周无在榜记录');
         return lines.join('<br/>');
       },
     },

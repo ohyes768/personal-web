@@ -34,7 +34,7 @@
 #   /macro/*     → macro-frontend:3001   (basePath = /macro)
 #   /api/macro/*    → macro-backend:8094/api/*  (nginx 直转后端；macro 前端 BFF 已删除)
 #   /funds/*         → fund-select-frontend:3005  (basePath = /funds，apps/fund-select/)
-#   /api/funds/*   → fund-select-backend:8095/api/*  (nginx 直转后端；fund-select 前端 BFF 仅本地)
+#   /api/funds/*   → fund-select-backend:8095/api/funds/*  (nginx 原样直转后端)
 #   /map/*         → housing-map-frontend:3007  (basePath = /map，apps/housing-map/)
 #   /api/map/*     → housing-map-backend:8096/api/*  (nginx 直转后端)
 #   /skills/*      → skill-manager-frontend:3008  (basePath = /skills，apps/skill-manager/)
@@ -697,12 +697,15 @@ services:
                   "SERVICE_MANAGER_ADMIN_PASSWORD=${SERVICE_MANAGER_ADMIN_PASSWORD:?service-manager 需要管理口令}",
                   "SERVICE_MANAGER_SESSION_SECRET=${SERVICE_MANAGER_SESSION_SECRET:?service-manager 需要会话签名密钥}",
                   "SERVICE_MANAGER_PUBLIC_ORIGIN=${SERVICE_MANAGER_PUBLIC_ORIGIN:-https://web.duomi77.cn:9443}",
-                  "SERVICE_MANAGER_ALLOWED_ORIGINS=${SERVICE_MANAGER_ALLOWED_ORIGINS:-}",
+                  # 允许的额外写请求来源。默认带上前端容器的回环入口：直连
+                  # 127.0.0.1:3012（SSH 隧道、e2e）时 Next rewrite 会把 Host 改写成
+                  # 后端地址，后端按 Origin==Host 判同源就会拒掉写操作；生产走 nginx
+                  # 时 nginx 原样透传 Host，走同一条判定的第 1 条路径，不受影响。
+                  "SERVICE_MANAGER_ALLOWED_ORIGINS=${SERVICE_MANAGER_ALLOWED_ORIGINS:-http://127.0.0.1:3012,http://localhost:3012}",
                   "SERVICE_MANAGER_GITHUB_TOKEN=${SERVICE_MANAGER_GITHUB_TOKEN:-}",
                   "SERVICE_MANAGER_DOCKER_HOST=tcp://service-manager-socket-proxy:2375",
                   SERVICE_MANAGER_DATA_DIR=/app/data,
                   SERVICE_MANAGER_SECURE_COOKIE=true,
-                  "SERVICE_MANAGER_OWN_PROJECTS=${SERVICE_MANAGER_OWN_PROJECTS:-personal-web}",
                   SERVICE_MANAGER_SERVICE_PORT=8102]
     networks: [app-net, sm-docker-net]
     depends_on:

@@ -7,6 +7,12 @@
 - screen_discovery_bond  — 债基·市场 tab（akshare market_subtype 子类精确 IN）
 - screen_discovery_stock — 股基·市场 tab
 
+来源合并（11-15-source-segmented，两 tab + 来源分段控件）：
+- screen / screen_stock 新增 source 参数（curated|market|all，默认 curated）：
+  curated = yaml 名单；market = akshare 子类圈定；all = 两者并集。
+  行上带 in_curated 标记（code ∈ yaml 名单），供「全部」态徽章展示。
+- screen_discovery_* 保留为 market 薄包装（旧路由兼容，不再从导航进入）。
+
 fund_type 只当表格展示字段，不做成员判定。
 yaml 手工名单已经分好债基/股票宇宙，不需要 LIKE 股票型/QDII/混合型。
 市场 tab 用 akshare 子类（market_subtype 字段）+ market_type tab 分类作为成员判定。
@@ -32,6 +38,7 @@ from src.data.market_subtype_map import (
     DISCOVERY_BOND_SUBTYPES,
     DISCOVERY_STOCK_SUBTYPES,
 )
+from src.utils.rank import parse_peer_rank
 
 # 各 tab 的默认市场 universe（akshare 子类精确枚举）
 DEFAULT_DISCOVERY_UNIVERSE: dict[str, list[str]] = {
@@ -70,18 +77,9 @@ def _parse_peer_rank(value: str | None) -> dict | None:
     """'1694/5606' → {'pct': 30.2, 'total': 5606, 'rank': 1694}；格式异常/缺分母 → None。
 
     用于股票 tab 同类排名显示；债基 tab 永远返回 None（无入库数据）。
+    实现已移至 src/utils/rank.py（经理明细的历任基金行共用）。
     """
-    if not value or "/" not in value:
-        return None
-    try:
-        rank_s, total_s = value.split("/", 1)
-        rank = int(rank_s.strip())
-        total = int(total_s.strip())
-    except (ValueError, TypeError):
-        return None
-    if rank <= 0 or total <= 0 or rank > total:
-        return None
-    return {"pct": round(rank / total * 100, 1), "total": total, "rank": rank}
+    return parse_peer_rank(value)
 
 
 # stock tab 主表 4 个排名口径：(period_kind, period) → DTO 键
@@ -108,6 +106,10 @@ def entry_predicate(
     min_mgr_exp: Optional[float] = None,
     min_sharpe: Optional[float] = None,
     exclude_qdii: bool = False,
+    min_ir: Optional[float] = None,
+    min_sample_days: Optional[float] = None,
+    max_peer_pct: Optional[float] = None,
+    min_yearly_years: Optional[float] = None,
 ):
     """入选谓词（行级）：实时 SQL 筛选（_screen 的 where 链）与夏普榜单 capture
     冻结数据共用的同一份阈值语义。
@@ -124,6 +126,20 @@ def entry_predicate(
       「互认基金」——字段是 market_subtype（精确 akshare 子类），不是 fund_type
     - 市场子类成员判定（market_types IN 精确 subtype）不在此谓词内：与 _screen
       一致，成员判定是 universe 层（SQL .in_），调用方自行组合
+
+    v2 新增三道门（11-13-sharpe-board-v2-rules）：三个参数默认 None 时行为与
+    v1 逐字节一致，供 v1 profile 继续沿用；v2 profile 才传值。
+    - min_ir：信息比率 ≥ X；NULL 不命中（QDII 无基准等场景）
+    - min_sample_days：样本交易日数 ≥ X；NULL 不命中
+    - max_peer_pct：同类分位 ≤ X%（即前 X%），含等号；无数据/格式异常 →
+      freeze_peer_rows 阶段已丢弃该 code，此处 peer_pct 为 None 即不命中。
+      同类排名的 90 天陈旧过滤在冻结阶段完成，谓词保持纯函数（不依赖 today()）。
+
+    v3 新增年度同类排名门槛（min_yearly_years，默认 None = 不判断）：
+    - 语义：最近 N 个完整年度中，同类分位 ≤ top_pct 的年数 ≥ min_yearly_years
+    - 谓词只读冻结好的 qualified_years（阈值与达标年数在 freeze_yearly_peer_rows
+      里按本轮 profile 快照算好），保持纯函数；无证据（None）不命中
+    - 与 max_peer_pct 不可混用：后者是滚动口径「单个分位 ≤ X」，语义不同
     """
     def predicate(row) -> bool:
         if exclude_qdii:
@@ -157,6 +173,27 @@ def entry_predicate(
             # sharpe 为 NULL（无风险指标）一并排除，与 SQL 筛选惯例一致
             if v is None or v < min_sharpe:
                 return False
+        # ---- v2 三道新门槛（参数 None 时整段跳过，v1 行为不变）----
+        if min_ir is not None:
+            v = _predicate_field(row, "ir")
+            if v is None or v < min_ir:
+                return False
+        if min_sample_days is not None:
+            v = _predicate_field(row, "sample_days")
+            if v is None or v < min_sample_days:
+                return False
+        if max_peer_pct is not None:
+            v = _predicate_field(row, "peer_pct")
+            # 前 X%：rank/total*100 <= X（含等号）
+            if v is None or v > max_peer_pct:
+                return False
+        # ---- v3 年度同类排名门槛（参数 None 时整段跳过）----
+        if min_yearly_years is not None:
+            # qualified_years 由 freeze_yearly_peer_rows 冻结时算好
+            # （阈值也在冻结时快照），谓词只做数值比较，不重复算分位
+            v = _predicate_field(row, "qualified_years")
+            if v is None or v < min_yearly_years:
+                return False
         return True
 
     return predicate
@@ -165,6 +202,10 @@ def entry_predicate(
 class FilterService:
     def __init__(self, db: Session):
         self.db = db
+
+    # 来源分段（11-15-source-segmented）：curated=三分法 yaml 名单，market=akshare 子类，
+    # all=并集。行上带 in_curated 标记供「全部」态徽章展示。
+    SOURCE_VALUES = ("all", "curated", "market")
 
     def screen(
         self,
@@ -178,11 +219,20 @@ class FilterService:
         universe_codes: list[str] | None = None,
         page: int = 1,
         limit: int = 50,
+        source: str = "curated",
+        market_types: list[str] | None = None,
     ) -> dict:
-        return self._screen(
-            "bond", min_age, min_size_yi, max_dd_3y, min_mgr_exp,
-            sort, order, universe_codes, exclude_qdii,
-            page=page, limit=limit,
+        """债基筛选：source=curated（yaml 名单，默认=旧债基 tab）/ market / all（并集）。
+
+        market_types：精确 market_subtype 白名单（前端把 UI 粗类别展开后传）。
+        None = 不按类型收窄。
+        """
+        return self._screen_sourced(
+            curated_kind="bond", market_kind="discovery-bond", source=source,
+            min_age=min_age, min_size_yi=min_size_yi, max_dd_3y=max_dd_3y,
+            min_mgr_exp=min_mgr_exp, sort=sort, order=order,
+            universe_codes=universe_codes, exclude_qdii=exclude_qdii,
+            page=page, limit=limit, market_types=market_types,
         )
 
     def screen_stock(
@@ -198,13 +248,165 @@ class FilterService:
         universe_codes: list[str] | None = None,
         page: int = 1,
         limit: int = 50,
+        source: str = "curated",
+        market_types: list[str] | None = None,
     ) -> dict:
-        """股票 tab 筛选：成员 = funds_stock.yaml ∩ is_active（不看 fund_type）。"""
-        return self._screen(
-            "stock", min_age, min_size_yi, max_dd_3y, min_mgr_exp,
-            sort, order, universe_codes, exclude_qdii, min_sharpe,
-            page=page, limit=limit,
+        """股基筛选：source=curated（funds_stock.yaml，默认=旧股票 tab）/ market / all。
+
+        market_types：精确 market_subtype 白名单（前端把 UI 粗类别展开后传）。
+        None = 不按类型收窄。
+        """
+        return self._screen_sourced(
+            curated_kind="stock", market_kind="discovery-stock", source=source,
+            min_age=min_age, min_size_yi=min_size_yi, max_dd_3y=max_dd_3y,
+            min_mgr_exp=min_mgr_exp, sort=sort, order=order,
+            universe_codes=universe_codes, exclude_qdii=exclude_qdii,
+            min_sharpe=min_sharpe, page=page, limit=limit,
+            market_types=market_types,
         )
+
+    def _screen_sourced(
+        self,
+        *,
+        curated_kind: str,
+        market_kind: str,
+        source: str,
+        min_age: Optional[float] = None,
+        min_size_yi: Optional[float] = None,
+        max_dd_3y: Optional[float] = None,
+        min_mgr_exp: Optional[float] = None,
+        min_sharpe: Optional[float] = None,
+        sort: str = "size_yi",
+        order: str = "desc",
+        exclude_qdii: bool = False,
+        universe_codes: list[str] | None = None,
+        page: int = 1,
+        limit: int = 50,
+        market_types: list[str] | None = None,
+    ) -> dict:
+        """统一入口：按 source 决定成员判定，_screen 完成筛选与排序。
+
+        - curated：yaml 名单（resolve_universe_codes），in_curated 恒 True
+        - market：akshare 子类圈定（DEFAULT_DISCOVERY_UNIVERSE），in_curated 按
+          code 是否 ∈ yaml 名单逐行算（市场子类 ∩ 名单有交集）
+        - all：两个 universe 的 code 并集（SQL IN，不取回再过滤）
+
+        market_types（精确 subtype 白名单）与 source 正交：三种 source 下都作为
+        额外的 WHERE 条件生效（market 态下还会把 universe 子类集合同步收窄，
+        两者等价）。前端只在「市场」态暴露这个筛选。
+        """
+        if source not in self.SOURCE_VALUES:
+            raise ValueError(f"unknown source: {source}")
+        curated_codes = resolve_universe_codes(curated_kind, universe_codes)
+        # 子类白名单：空列表 = 不限；None 与空列表语义一致
+        subtype_filter = list(market_types) if market_types else None
+
+        if source == "curated":
+            if not curated_codes:
+                return {"total": 0, "items": []}
+            result = self._screen(
+                curated_kind, min_age, min_size_yi, max_dd_3y, min_mgr_exp,
+                sort, order, curated_codes, exclude_qdii, min_sharpe,
+                page=page, limit=limit, subtype_filter=subtype_filter,
+            )
+        else:
+            types = DEFAULT_DISCOVERY_UNIVERSE[market_kind]
+            if source == "market":
+                # universe 子类集合同步收窄（与 subtype_filter 叠加后等价于交集）
+                if subtype_filter:
+                    allow = set(subtype_filter)
+                    types = [t for t in types if t in allow]
+                if not types:
+                    return {"total": 0, "items": []}
+                result = self._screen(
+                    market_kind, min_age, min_size_yi, max_dd_3y, min_mgr_exp,
+                    sort, order, None, exclude_qdii, min_sharpe, types,
+                    page=page, limit=limit, subtype_filter=subtype_filter,
+                )
+            else:  # all：yaml ∪ 子类（并集 code IN，一次查询）
+                if not types and not curated_codes:
+                    return {"total": 0, "items": []}
+                union_codes = list(dict.fromkeys(curated_codes))  # 去重保序
+                if types:
+                    union_extra = self.db.execute(
+                        select(Fund.code).where(
+                            Fund.is_active == True,  # noqa: E712
+                            Fund.market_subtype.in_(types),
+                        )
+                    ).scalars().all()
+                    union_codes = list(dict.fromkeys(union_codes + union_extra))
+                if not union_codes:
+                    return {"total": 0, "items": []}
+                result = self._screen(
+                    "all-codes", min_age, min_size_yi, max_dd_3y, min_mgr_exp,
+                    sort, order, union_codes, exclude_qdii, min_sharpe,
+                    page=page, limit=limit, subtype_filter=subtype_filter,
+                )
+
+        # in_curated 标记：curated 态恒 True；market/all 态按名单成员逐行算
+        curated_set = set(curated_codes)
+        for it in result.get("items", []):
+            it["in_curated"] = it["code"] in curated_set
+        result["source"] = source
+        return result
+
+    def search_by_code(self, code: str, curated_kind: str) -> dict:
+        """代码搜索：按 code 精确取一只（11-16-fund-code-search-list-result）。
+
+        与 `_screen` 的差别（**故意**，勿"补齐"成筛选语义）：
+        - **不套任何阈值**：搜的是「库里这一只」，不是「当前筛选命中的这一只」。
+          否则用户搜 002910 却因规模 4.9 亿看不到结果，会以为代码错了。
+        - **不要求 is_active**：代码搜索是查询动作，已清盘基金也该能点开看历史。
+        - **不要求 ∈ 当前 tab 宇宙**：正常路径前端已先经 lookup 判定 tab；这里只认 code。
+        - **不排序不分页**：结果最多 1 条。
+
+        返回值与 `/screen` 同构（`{total, items}`），条目带 `in_curated`，
+        表格与文案因此可以完全复用。
+        """
+        row = self.db.execute(
+            select(Fund, FundPerformance, FundFees, FundHoldingsBond,
+                   FundRiskMetrics, MarketFundRank)
+            .outerjoin(FundPerformance, Fund.code == FundPerformance.code)
+            .outerjoin(FundFees, Fund.code == FundFees.code)
+            .outerjoin(FundHoldingsBond, Fund.code == FundHoldingsBond.code)
+            .outerjoin(FundRiskMetrics, Fund.code == FundRiskMetrics.code)
+            .outerjoin(MarketFundRank, Fund.code == MarketFundRank.code)
+            .where(Fund.code == code)
+        ).first()
+        if row is None:
+            return {"total": 0, "items": []}
+
+        f = row[0]
+        # 排名：与 _screen 同口径（4 个周期各一行）
+        ach_for_code: dict[tuple[str, str], str | None] = {}
+        pairs = [(pk, pp) for pk, pp, _ in RANK_PERIODS]
+        ach_rows = self.db.execute(
+            select(
+                FundAchievementRank.period_kind,
+                FundAchievementRank.period,
+                FundAchievementRank.peer_rank,
+            )
+            .where(FundAchievementRank.code == code)
+            .where(
+                or_(*[
+                    and_(
+                        FundAchievementRank.period_kind == pk,
+                        FundAchievementRank.period == pp,
+                    )
+                    for pk, pp in pairs
+                ])
+            )
+        ).all()
+        for r in ach_rows:
+            ach_for_code[(r.period_kind, r.period)] = r.peer_rank
+
+        item = self._to_dto(
+            f, row[1], row[2], row[3], row[4], row[5], ach_for_code=ach_for_code,
+        )
+        item["in_curated"] = code in set(
+            resolve_universe_codes(curated_kind)
+        )
+        return {"total": 1, "items": [item]}
 
     def screen_discovery_bond(
         self,
@@ -316,6 +518,68 @@ class FilterService:
             "with_holdings": with_hold,
         }
 
+    def universe_stats_sourced(
+        self,
+        curated_kind: str,
+        market_kind: str,
+        source: str = "curated",
+    ) -> dict:
+        """按来源分段统计（与 _screen_sourced 的成员判定一致）。
+
+        - curated：yaml 名单
+        - market：akshare 子类圈定
+        - all：yaml ∪ 子类（并集）
+        """
+        empty = {"total": 0, "with_performance": 0, "with_fees": 0, "with_holdings": 0}
+        if source == "curated":
+            return self.universe_stats(curated_kind)
+        if source == "market":
+            return self.universe_stats(market_kind)
+        if source == "all":
+            curated_codes = set(resolve_universe_codes(curated_kind))
+            types = DEFAULT_DISCOVERY_UNIVERSE[market_kind]
+            active_q = select(Fund.code).where(Fund.is_active == True)  # noqa: E712
+            if types:
+                active_q = active_q.where(Fund.market_subtype.in_(types))
+            active = set(self.db.execute(active_q).scalars().all())
+            # 名单基金不一定在子类里（或子类字段为空）——并集要显式加回来
+            curated_active = self.db.execute(
+                select(Fund.code).where(
+                    Fund.is_active == True,  # noqa: E712
+                    Fund.code.in_(curated_codes),
+                )
+            ).scalars().all() if curated_codes else []
+            active |= set(curated_active)
+            if not active:
+                return empty
+            return self._stats_for_codes(active)
+        raise ValueError(f"unknown source: {source}")
+
+    def _stats_for_codes(self, codes: set[str]) -> dict:
+        """对给定 code 集合统计活跃数与关联表覆盖（universe_stats 的并集分支）。"""
+        empty = {"total": 0, "with_performance": 0, "with_fees": 0, "with_holdings": 0}
+        if not codes:
+            return empty
+        with_perf = self.db.execute(
+            select(func.count()).select_from(FundPerformance).where(
+                FundPerformance.code.in_(codes)
+            )
+        ).scalar() or 0
+        with_fees = self.db.execute(
+            select(func.count()).select_from(FundFees).where(FundFees.code.in_(codes))
+        ).scalar() or 0
+        with_hold = self.db.execute(
+            select(func.count()).select_from(FundHoldingsBond).where(
+                FundHoldingsBond.code.in_(codes)
+            )
+        ).scalar() or 0
+        return {
+            "total": len(codes),
+            "with_performance": with_perf,
+            "with_fees": with_fees,
+            "with_holdings": with_hold,
+        }
+
     def _screen(
         self,
         kind: str,
@@ -334,10 +598,17 @@ class FilterService:
         max_nav_stale_days: Optional[int] = None,
         page: int = 1,
         limit: int = 50,
+        subtype_filter: list[str] | None = None,
     ) -> dict:
-        # 成员判定：bond/stock 走 yaml；discovery-* 走 market_subtype
-        if kind in ("bond", "stock"):
-            codes = resolve_universe_codes(kind, universe_codes)
+        """kind 决定成员判定（yaml 名单 / market_subtype / code 并集）。
+
+        subtype_filter：额外的精确 market_subtype 白名单，对**所有** kind 生效
+        （前端 UI 选的是粗类别，展开成精确子类后由这里收窄）。
+        """
+        # 成员判定：bond/stock 走 yaml；discovery-* 走 market_subtype；
+        # all-codes 直接用调用方给定的 code 并集（_screen_sourced 的 all 态）
+        if kind in ("bond", "stock", "all-codes"):
+            codes = resolve_universe_codes(kind, universe_codes) if kind != "all-codes" else (universe_codes or [])
             if not codes:
                 return {"total": 0, "items": []}
             q = (
@@ -368,6 +639,10 @@ class FilterService:
             )
         else:
             raise ValueError(f"unknown screen kind: {kind}")
+
+        # 精确 subtype 白名单（粗类别展开后传入）：与 kind 无关，统一收窄
+        if subtype_filter:
+            q = q.where(Fund.market_subtype.in_(subtype_filter))
 
         if exclude_qdii:
             # market_subtype 为 NULL/空 的保留；只丢掉 QDII* 与「互认基金」

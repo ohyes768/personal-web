@@ -8,7 +8,7 @@
 - complete 零入选、failed、skipped_no_new_data 三种状态区分；complete 同周重试不覆盖
 """
 import json
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from sqlalchemy import create_engine
@@ -607,7 +607,7 @@ class TestPublishWeekBoard:
         assert len({row1.id, row2.id}) == 2
         assert db_session.query(SharpeBoardWeek).count() == 2
         with pytest.raises(KeyError):
-            self._publish(db_session, cap, version="v2")  # 无 v2 profile → 拒绝发布
+            self._publish(db_session, cap, version="v9")  # 真未知版本 → 拒绝发布
 
     def test_naive_started_at_rejected(self, db_session):
         cap = _qualified_capture("run-n1", ["300001"])
@@ -624,3 +624,491 @@ class TestPublishWeekBoard:
         prof = sbs.get_profile("discovery-stock", "v1")
         assert row.profile_hash == sbs.canonical_hash(prof)
         assert row.algorithm_version == prof["algorithm_version"]
+
+
+# ─────────────────────────────────────────────────────────────
+# v2 profile（11-13-sharpe-board-v2-rules，AC1）
+# ─────────────────────────────────────────────────────────────
+class TestV2Profiles:
+    def test_v2_profiles_exist_for_both_sources(self):
+        assert sbs.get_profile("stock", "v2")["source"] == "stock"
+        assert sbs.get_profile("discovery-stock", "v2")["source"] == "discovery-stock"
+
+    def test_v2_filters_are_v1_plus_three_gates(self):
+        v1 = sbs.get_profile("stock", "v1")["filters"]
+        v2 = sbs.get_profile("stock", "v2")["filters"]
+        # v1 五条件原封不动
+        for k, v in v1.items():
+            assert v2[k] == v, f"v2 丢失/篡改了 v1 条件 {k}"
+        # 新增恰好三道门
+        assert set(v2) - set(v1) == {"min_ir", "min_sample_days", "max_peer_pct"}
+        assert v2["min_ir"] == 0.5
+        assert v2["min_sample_days"] == 700
+        assert v2["max_peer_pct"] == 20.0
+
+    def test_v1_profile_not_polluted_by_v2(self):
+        """AC1：v1 profile 必须仍是原始五条件，一字不改。"""
+        expected = {
+            "min_age": 3, "min_size_yi": 5, "max_dd_3y": 30,
+            "min_mgr_exp": 5, "min_sharpe": 0.8, "exclude_qdii": False,
+        }
+        assert sbs.get_profile("stock", "v1")["filters"] == expected
+        assert sbs.get_profile("discovery-stock", "v1")["filters"] == expected
+
+    def test_v2_algorithm_version_bumped(self):
+        v1_ver = sbs.get_profile("stock", "v1")["algorithm_version"]
+        v2_ver = sbs.get_profile("stock", "v2")["algorithm_version"]
+        assert v1_ver != v2_ver
+        assert v2_ver == "risk-3y-v2"
+        assert (v2_ver
+                == sbs.get_profile("discovery-stock", "v2")["algorithm_version"])
+
+    def test_v2_prefilters_and_subtypes_match_v1(self):
+        for src in ("stock", "discovery-stock"):
+            p1 = sbs.get_profile(src, "v1")
+            p2 = sbs.get_profile(src, "v2")
+            assert p2["collection_prefilters"] == p1["collection_prefilters"]
+            assert p2["market_subtypes"] == p1["market_subtypes"]
+
+    def test_profile_copies_are_independent(self):
+        """深拷贝：改 v2 返回值不污染常量或 v1。"""
+        p = sbs.get_profile("stock", "v2")
+        p["filters"]["min_ir"] = 999
+        assert sbs.get_profile("stock", "v2")["filters"]["min_ir"] == 0.5
+        assert "min_ir" not in sbs.get_profile("stock", "v1")["filters"]
+
+
+# ─────────────────────────────────────────────────────────────
+# v2 发布（11-13-sharpe-board-v2-rules，AC3/AC5）：三道门 + gate_missing 诊断
+# ─────────────────────────────────────────────────────────────
+def _v2_capture(run_id: str, rows: dict[str, dict]) -> SharpeRunCapture:
+    """v2 发布测试工厂。
+
+    rows: code -> {base?, risk?, peer?}；缺省按「全部达标」填充。
+    """
+    base_rows, risk_rows, peer_rows = {}, {}, {}
+    for code, spec in rows.items():
+        base_rows[code] = {
+            "name": f"基金{code}", "market_subtype": "股票型", "age_years": 6.0,
+            "size_yi": 20.0, "mgr_experience_years": 8.0,
+            "mgr_experience_years_max": 8.0, "dd_3y": -10.0,
+            **(spec.get("base") or {}),
+        }
+        risk_rows[code] = {
+            "sharpe": 1.0, "ir": 0.7, "sample_days": 746,
+            "returns_end_date": date(2026, 10, 30),
+            "calculated_at": datetime(2026, 10, 31, 8, 40, tzinfo=UTC),
+            "benchmark_source": "fetched",
+            **(spec.get("risk") or {}),
+        }
+        peer = spec.get("peer", {"peer_pct": 10.0, "peer_raw": "195/1951",
+                                 "as_of": "2026-11-07"})
+        if peer is not None:
+            peer_rows[code] = peer
+    return SharpeRunCapture(
+        run_id=run_id, base_rows=base_rows, risk_rows=risk_rows,
+        peer_rows=peer_rows, universe_codes=list(rows),
+    )
+
+
+class TestV2PublishGates:
+    WEEK = date(2026, 11, 2)
+
+    def _publish(self, db, capture, *, version="v2"):
+        from datetime import timedelta
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo("Asia/Shanghai")
+        started = datetime.combine(self.WEEK + timedelta(days=5),
+                                   datetime.min.time(), tzinfo=tz) + timedelta(hours=8, minutes=5)
+        return sbs.publish_week_board(
+            db, source="stock", profile_version=version, capture=capture,
+            trigger="scheduled", started_at=started,
+            finished_at=started + timedelta(hours=1),
+        )
+
+    def test_all_gates_pass_writes_v2(self, db_session):
+        cap = _v2_capture("run-v2a", {"400001": {}})
+        row, written = self._publish(db_session, cap)
+        assert written is True
+        assert row.profile_version == "v2"
+        assert row.algorithm_version == "risk-3y-v2"
+        assert row.selected_count == 1
+        obs = db_session.query(SharpeBoardObservation).all()
+        assert len(obs) == 1
+        ev = json.loads(obs[0].evidence_json)
+        assert ev["peer"]["peer_pct"] == 10.0
+        assert ev["risk"]["ir"] == 0.7
+        assert ev["base"]["mgr_experience_years_max"] == 8.0
+
+    def test_each_gate_blocks(self, db_session):
+        """三道门任一不达标 / 数据缺失 → 不入榜。"""
+        cap = _v2_capture("run-v2b", {
+            "400010": {"risk": {"ir": 0.4}},               # IR 不达标
+            "400011": {"risk": {"sample_days": 699}},      # 样本不足
+            "400012": {"peer": {"peer_pct": 21.0}},        # 同类分位不达标
+            "400013": {"risk": {"ir": None}},              # IR 缺失
+            "400014": {"risk": {"sample_days": None}},    # 样本缺失
+            "400015": {"peer": None},                      # peer 缺失
+            "400016": {},                                  # 全部达标
+        })
+        row, _ = self._publish(db_session, cap, )
+        assert row.selected_count == 1
+        assert [o.code for o in db_session.query(SharpeBoardObservation).all()] == ["400016"]
+
+    def test_gate_missing_diagnostics_only_missing(self, db_session):
+        """AC5：诊断只记「数据缺失」，不记「不达标」（后者是正常筛选）。"""
+        cap = _v2_capture("run-v2c", {
+            "400020": {"risk": {"ir": None}},              # 缺失 → 诊断
+            "400021": {"risk": {"ir": 0.4}},               # 不达标 → 不进诊断
+            "400022": {"peer": None},                      # peer 缺失 → 诊断
+            "400023": {"risk": {"sample_days": None}},     # 样本缺失 → 诊断
+            "400024": {},                                  # 正常入选
+        })
+        row, _ = self._publish(db_session, cap)
+        diag = json.loads(row.diagnostics_json)
+        gm = diag["gate_missing"]
+        assert set(gm["ir"]) == {"400020"}
+        assert set(gm["sample_days"]) == {"400023"}
+        assert set(gm["peer"]) == {"400022"}
+        assert "400021" not in str(gm)     # 不达标不进诊断
+        assert row.selected_count == 1
+
+    def test_v1_profile_ignores_new_gates(self, db_session):
+        """v1 profile 无三道门参数 → 缺 ir/peer 也不影响 v1 发布（向后兼容）。"""
+        cap = _v2_capture("run-v2d", {
+            "400030": {"risk": {"ir": None, "sample_days": None}, "peer": None},
+        })
+        row, _ = self._publish(db_session, cap, version="v1")
+        assert row.profile_version == "v1"
+        assert row.selected_count == 1
+        diag = json.loads(row.diagnostics_json) if row.diagnostics_json else {}
+        assert "gate_missing" not in diag
+
+
+# ─────────────────────────────────────────────────────────────
+# 52 周窗口与稳定性统计（11-13 任务 AC8/AC9b/AC9c）
+# ─────────────────────────────────────────────────────────────
+class TestFiftyTwoWeekWindow:
+    """窗口只作用于聚合，不删除任何观测行。"""
+
+    WEEK = date(2026, 11, 2)      # 作为「当前周」固定
+
+    def _seed_weeks(self, db, weeks, *, code="500001", sharpe=1.0, version="v2"):
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo("Asia/Shanghai")
+        for i, w in enumerate(weeks):
+            row = SharpeBoardWeek(
+                source="stock", profile_version=version, week_start=w,
+                profile_json="{}", profile_hash="h",
+                algorithm_version="risk-3y-v2", status="complete",
+                selected_count=1,
+                started_at=datetime.combine(w, datetime.min.time(), tzinfo=tz),
+            )
+            db.add(row)
+            db.flush()
+            db.add(SharpeBoardObservation(
+                week_id=row.id, code=code, name=f"基金{code}", sharpe=sharpe,
+                evidence_json=json.dumps({"peer": {"peer_pct": 12.5,
+                                                   "as_of": "2026-11-07"}}),
+            ))
+        db.commit()
+
+    def _agg(self, db, monkeypatch, **kw):
+        monkeypatch.setattr(sbs, "_current_week", lambda: self.WEEK)
+        return sbs.aggregate_board(db, source="stock", profile_version="v2", **kw)
+
+    def test_100_weeks_history_capped_at_52(self, db_session, monkeypatch):
+        weeks = [self.WEEK - timedelta(weeks=i) for i in range(100)][::-1]
+        self._seed_weeks(db_session, weeks)
+        body = self._agg(db_session, monkeypatch)
+        it = body["items"][0]
+        assert it["listed_weeks"] == 52
+        assert it["consecutive_weeks"] == 52
+        assert len(body["weeks"]) == 52
+        assert body["weeks"][0] == self.WEEK - timedelta(weeks=51)
+        assert (body["weeks"][-1] - body["weeks"][0]).days == 51 * 7
+        assert all(w.weekday() == 0 for w in body["weeks"])
+        # AC9c：窗口不删数据
+        assert db_session.query(SharpeBoardObservation).count() == 100
+
+    def test_history_shorter_than_52_uses_actual(self, db_session, monkeypatch):
+        weeks = [self.WEEK - timedelta(weeks=i) for i in range(20)][::-1]
+        self._seed_weeks(db_session, weeks)
+        body = self._agg(db_session, monkeypatch)
+        assert body["items"][0]["listed_weeks"] == 20
+        assert len(body["weeks"]) == 20  # 不补零
+
+    def test_window_excluded_fund_dropped_by_default(self, db_session, monkeypatch):
+        """窗口外才有观测 → listed_weeks=0 → 硬门槛（窗口内曾在榜）筛掉。
+
+        占比下限放到 0（不限）也看不到它：min_listed_pct 只管「在榜占比」，
+        「从未在榜」是另一道硬门槛。
+        """
+        # 该 code 只在 60 周前上榜，与窗口内另一只基金共存
+        self._seed_weeks(db_session, [self.WEEK - timedelta(weeks=60)],
+                         code="500002", version="v2")
+        self._seed_weeks(db_session, [self.WEEK], code="500001", version="v2")
+        body = self._agg(db_session, monkeypatch, min_listed_pct=0)
+        assert [it["code"] for it in body["items"]] == ["500001"]
+        assert "500002" not in {it["code"] for it in body["items"]}
+
+    def test_range_aliases_and_grid(self, db_session, monkeypatch):
+        weeks = [self.WEEK - timedelta(weeks=i) for i in range(60)][::-1]
+        self._seed_weeks(db_session, weeks)
+        for key, expected_len in (("all", 52), ("1y", 52), ("6m", 26), ("3m", 13)):
+            body = self._agg(db_session, monkeypatch, range_key=key)
+            assert len(body["weeks"]) == expected_len, key
+            assert all(w.weekday() == 0 for w in body["weeks"]), key
+        assert (self._agg(db_session, monkeypatch, range_key="1y")["weeks"]
+                == self._agg(db_session, monkeypatch, range_key="all")["weeks"])
+
+    def test_near_12w_qualified(self, db_session, monkeypatch):
+        """AC8：近12周达标统计，达标=sharpe>=0.8，分母=窗口内尾部12周。"""
+        weeks = [self.WEEK - timedelta(weeks=i) for i in range(15)][::-1]
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo("Asia/Shanghai")
+        for i, w in enumerate(weeks):
+            row = SharpeBoardWeek(
+                source="stock", profile_version="v2", week_start=w,
+                profile_json="{}", profile_hash="h",
+                algorithm_version="risk-3y-v2", status="complete",
+                selected_count=1,
+                started_at=datetime.combine(w, datetime.min.time(), tzinfo=tz))
+            db_session.add(row)
+            db_session.flush()
+            # 最近 12 周里 8 周达标（0.9），4 周不达标（0.5）；更早 3 周全达标
+            sh = 0.5 if i >= 3 and (i - 3) % 3 == 0 else 0.9
+            db_session.add(SharpeBoardObservation(week_id=row.id, code="500001",
+                                                   name="基金500001", sharpe=sh))
+        db_session.commit()
+        body = self._agg(db_session, monkeypatch)
+        it = body["items"][0]
+        assert it["near_12w_total"] == 12
+        assert it["near_12w_qualified"] == 8
+
+    def test_near_12w_shorter_history(self, db_session, monkeypatch):
+        weeks = [self.WEEK - timedelta(weeks=i) for i in range(6)][::-1]
+        self._seed_weeks(db_session, weeks)
+        it = self._agg(db_session, monkeypatch)["items"][0]
+        assert it["near_12w_total"] == 6
+        assert it["near_12w_qualified"] == 6
+
+    def test_peer_display_from_evidence(self, db_session, monkeypatch):
+        weeks = [self.WEEK - timedelta(weeks=i) for i in range(3)][::-1]
+        self._seed_weeks(db_session, weeks)
+        it = self._agg(db_session, monkeypatch)["items"][0]
+        assert it["peer_pct"] == 12.5
+        assert it["peer_as_of"] == "2026-11-07"
+
+
+# ─────────────────────────────────────────────────────────────
+# v3 profile（11-14-sharpe-board-v3-yearly-peer）
+# ─────────────────────────────────────────────────────────────
+class TestV3Profiles:
+    WEEK = date(2026, 11, 2)
+
+    def test_v3_profiles_exist(self):
+        for src in ("stock", "discovery-stock"):
+            assert sbs.get_profile(src, "v3")["source"] == src
+
+    def test_v3_filters_use_yearly_peer_not_rolling(self):
+        v3 = sbs.get_profile("stock", "v3")["filters"]
+        # 年度口径两个参数
+        assert v3["min_yearly_top_pct"] == 25.0
+        assert v3["min_yearly_years"] == 2
+        # 不再有滚动口径参数（两者语义不同，不可混用）
+        assert "max_peer_pct" not in v3
+        # v1 五条件 + v2 的 IR/样本门都保留
+        for k, v in sbs.get_profile("stock", "v1")["filters"].items():
+            assert v3[k] == v
+        assert v3["min_ir"] == 0.5
+        assert v3["min_sample_days"] == 700
+
+    def test_v1_v2_not_polluted_by_v3(self):
+        v1 = sbs.get_profile("stock", "v1")["filters"]
+        v2 = sbs.get_profile("stock", "v2")["filters"]
+        assert "min_yearly_top_pct" not in v1 and "min_yearly_years" not in v1
+        assert "min_yearly_top_pct" not in v2 and "min_yearly_years" not in v2
+        assert v2["max_peer_pct"] == 20.0   # v2 滚动口径原样
+        assert v1 == {
+            "min_age": 3, "min_size_yi": 5, "max_dd_3y": 30,
+            "min_mgr_exp": 5, "min_sharpe": 0.8, "exclude_qdii": False,
+        }
+
+    def test_three_algorithm_versions_distinct(self):
+        vs = {sbs.get_profile("stock", v)["algorithm_version"]
+              for v in ("v1", "v2", "v3")}
+        assert len(vs) == 3
+        assert "risk-3y-v3" in vs
+
+    def test_v3_inherits_prefilters_and_subtypes(self):
+        for src in ("stock", "discovery-stock"):
+            p2, p3 = sbs.get_profile(src, "v2"), sbs.get_profile(src, "v3")
+            assert p3["collection_prefilters"] == p2["collection_prefilters"]
+            assert p3["market_subtypes"] == p2["market_subtypes"]
+
+
+class TestV3PublishGates:
+    """v3 发布：年度达标才入选，且 evidence 存年度证据。"""
+
+    WEEK = date(2026, 11, 2)
+
+    def _publish(self, db, capture, version="v3"):
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo("Asia/Shanghai")
+        started = datetime.combine(self.WEEK + timedelta(days=5),
+                                   datetime.min.time(), tzinfo=tz) + timedelta(hours=8)
+        return sbs.publish_week_board(
+            db, source="stock", profile_version=version, capture=capture,
+            trigger="scheduled", started_at=started,
+            finished_at=started + timedelta(hours=1),
+        )
+
+    def _cap(self, rows):
+        base, risk, peer = {}, {}, {}
+        for code, spec in rows.items():
+            base[code] = {
+                "name": f"基金{code}", "market_subtype": "股票型",
+                "age_years": 6.0, "size_yi": 20.0,
+                "mgr_experience_years": 8.0, "mgr_experience_years_max": 8.0,
+                "dd_3y": -10.0,
+            }
+            risk[code] = {
+                "sharpe": 1.0, "ir": 0.7, "sample_days": 746,
+                "returns_end_date": date(2026, 10, 30),
+                "calculated_at": datetime(2026, 10, 31, 8, 40, tzinfo=UTC),
+                "benchmark_source": "fetched",
+            }
+            p = spec.get("peer", "qualified")
+            if p == "qualified":
+                peer[code] = {
+                    "years": {"2023": 10.0, "2024": 12.0, "2025": 15.0},
+                    "qualified_years": 3, "yearly_top_pct": 25.0,
+                    "min_years": 2, "qualified": True,
+                    "window": ["2023", "2024", "2025"],
+                }
+            elif p == "partial":
+                peer[code] = {
+                    "years": {"2023": 10.0, "2024": 12.0, "2025": 80.0},
+                    "qualified_years": 2, "yearly_top_pct": 25.0,
+                    "min_years": 2, "qualified": True,
+                    "window": ["2023", "2024", "2025"],
+                }
+            elif p == "fail":
+                peer[code] = {
+                    "years": {"2023": 90.0, "2024": 95.0, "2025": 80.0},
+                    "qualified_years": 0, "yearly_top_pct": 25.0,
+                    "min_years": 2, "qualified": False,
+                    "window": ["2023", "2024", "2025"],
+                }
+        return SharpeRunCapture(
+            run_id="run-v3", base_rows=base, risk_rows=risk,
+            peer_rows=peer, universe_codes=list(rows),
+        )
+
+    def test_yearly_qualified_and_partial_both_pass(self, db_session):
+        cap = self._cap({
+            "900001": {"peer": "qualified"},
+            "900002": {"peer": "partial"},   # 2/3 达标 → 通过
+            "900003": {"peer": "fail"},      # 0/3 → 挡掉
+        })
+        row, _ = self._publish(db_session, cap)
+        assert row.selected_count == 2
+        codes = sorted(o.code for o in db_session.query(SharpeBoardObservation).all())
+        assert codes == ["900001", "900002"]
+
+    def test_evidence_stores_yearly_detail(self, db_session):
+        cap = self._cap({"900010": {"peer": "partial"}})
+        self._publish(db_session, cap)
+        obs = db_session.query(SharpeBoardObservation).one()
+        ev = json.loads(obs.evidence_json)
+        assert ev["peer"]["qualified_years"] == 2
+        assert ev["peer"]["window"] == ["2023", "2024", "2025"]
+        assert ev["peer"]["years"]["2025"] == 80.0
+
+    def test_no_peer_evidence_blocked_and_diagnosed(self, db_session):
+        """无年度数据：既不入选，也不进 gate_missing（因为不在 peer_rows 里）。"""
+        cap = self._cap({"900020": {"peer": None}})
+        row, _ = self._publish(db_session, cap)
+        assert row.selected_count == 0
+
+    def test_v2_profile_ignores_yearly_params(self, db_session):
+        """v2 profile 无 min_yearly_years → 年度不达标也不影响 v2 发布。"""
+        cap = self._cap({"900030": {"peer": "fail"}})
+        # v2 需要 peer_pct 字段，这里补一个合格值
+        cap.peer_rows["900030"]["peer_pct"] = 10.0
+        row, _ = self._publish(db_session, cap, version="v2")
+        assert row.profile_version == "v2"
+        assert row.selected_count == 1
+
+
+class TestAggregateSourceAll:
+    """source=all 聚合两条链路的观测（11-15-source-segmented 回归）。"""
+
+    WEEK = date(2026, 11, 2)
+
+    def _seed(self, db, code, sharpe, *, source):
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo("Asia/Shanghai")
+        row = SharpeBoardWeek(
+            source=source, profile_version="v3", week_start=self.WEEK,
+            profile_json="{}", profile_hash="h",
+            algorithm_version="risk-3y-v3", status="complete",
+            selected_count=1,
+            started_at=datetime.combine(self.WEEK, datetime.min.time(), tzinfo=tz),
+        )
+        db.add(row)
+        db.flush()
+        db.add(SharpeBoardObservation(
+            week_id=row.id, code=code, name=f"基金{code}", sharpe=sharpe,
+            evidence_json=json.dumps({"peer": {"peer_pct": 12.5, "as_of": "2026-11-07"}}),
+        ))
+        db.commit()
+
+    def test_all_merges_both_sources(self, db_session, monkeypatch):
+        """同名基金两条链路同一周都上榜 → 一周只算一次（stock 口径为准）。"""
+        self._seed(db_session, "500001", 0.9, source="stock")
+        self._seed(db_session, "500001", 1.1, source="discovery-stock")
+        monkeypatch.setattr(sbs, "_current_week", lambda: self.WEEK)
+        body = sbs.aggregate_board(db_session, source="all", profile_version="v3")
+        assert body["profile"]["source"] == "all"
+        assert body["total"] == 1
+        it = body["items"][0]
+        assert it["code"] == "500001"
+        assert it["listed_weeks"] == 1
+        assert it["latest_sharpe"] == 0.9  # 同周取三分法观测
+
+    def test_all_distinct_weeks_accumulate(self, db_session, monkeypatch):
+        """同名基金两条链路不同周 → 两周都算（跨来源累计）。"""
+        self._seed(db_session, "500001", 0.9, source="stock")
+        # 第二条 seed 改到上一周
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo("Asia/Shanghai")
+        prev_week = self.WEEK - timedelta(weeks=1)
+        row = SharpeBoardWeek(
+            source="discovery-stock", profile_version="v3", week_start=prev_week,
+            profile_json="{}", profile_hash="h",
+            algorithm_version="risk-3y-v3", status="complete",
+            selected_count=1,
+            started_at=datetime.combine(prev_week, datetime.min.time(), tzinfo=tz),
+        )
+        db_session.add(row)
+        db_session.flush()
+        db_session.add(SharpeBoardObservation(
+            week_id=row.id, code="500001", name="基金500001", sharpe=1.1,
+            evidence_json=json.dumps({"peer": {"peer_pct": 12.5, "as_of": "2026-11-07"}}),
+        ))
+        db_session.commit()
+        monkeypatch.setattr(sbs, "_current_week", lambda: self.WEEK)
+        body = sbs.aggregate_board(db_session, source="all", profile_version="v3")
+        it = body["items"][0]
+        assert it["listed_weeks"] == 2
+        assert it["consecutive_weeks"] == 2
+
+    def test_all_union_of_distinct_codes(self, db_session, monkeypatch):
+        """不同基金分属两条链路 → all 态并集都出现。"""
+        self._seed(db_session, "500001", 0.9, source="stock")
+        self._seed(db_session, "500002", 1.2, source="discovery-stock")
+        monkeypatch.setattr(sbs, "_current_week", lambda: self.WEEK)
+        body = sbs.aggregate_board(db_session, source="all", profile_version="v3")
+        assert {it["code"] for it in body["items"]} == {"500001", "500002"}

@@ -28,6 +28,7 @@ from src.api.models import DividendStock
 from src.services.hermes_client import HermesConfig, HermesError, HermesRunCancelled, HermesRunFailed
 from src.services.hermes_limiter import HermesLimiter
 from src.services.quality_service import QueueConflict
+from src.services.run_log import STATE_CANCELLED, STATE_COMPLETED, STATE_FAILED, RunLog
 from src.services.valuation_version import VERSION_PATTERN, current_valuation_skill_version
 from src.utils.atomic_file import atomic_write
 from src.utils.logger import setup_logger
@@ -35,6 +36,23 @@ from src.utils.logger import setup_logger
 logger = setup_logger(__name__)
 
 SKILL_NAME = "stock-four-level-valuation"
+
+# 随 run 提交的 ephemeral system prompt：预算与收口纪律（每次 API 调用可见，
+# 不被上下文压缩稀释，不落对话记录）。只放 skill 管不住的流程纪律——估值戒律
+# （不映射评分/不以现价比例推导等）由 skill 运行时自己约束，不在这里重复。
+# 数字 6 与宿主 pre_tool_call 硬闸（probe_guard.py，HERMES_PROBE_BUDGET 默认 6）
+# 保持一致：提示词预告过的拦截才是可预期的拦截。
+VALUATION_INSTRUCTIONS = (
+    "预算纪律：检索类调用上限 6 次，超限会被硬闸直接拒绝。"
+    "同一数据主题核验一次即为足，重复确认不产生新信息。\n"
+    "收口纪律：两轮定向补查后仍缺，立即按已有事实收口。"
+    "insufficient_data 是合规产出，禁止为收集完美证据重开研究。\n"
+    "结论固定：每步计算先写下结论再继续；修改假设必须有新证据，禁止无新证据重算；"
+    "上下文被压缩后从工作目录已存文件续做，禁止从头重新核验。\n"
+    "完成定义：写出 draft.json 并通过 finalize 与 check 才算完成。"
+    "优先交付不完美的 result，而不是继续收集证据。"
+)
+
 VALUATION_FILE = "valuation_reports.json"
 LEVEL_KEYS = ("heavy_position", "add_position", "reduce_position", "full_exit")
 ANALYSIS_SECTIONS = ("business", "normalization", "dividend", "valuation", "risk")
@@ -311,6 +329,7 @@ class ValuationService:
     逐股实时状态（queued/running/completed/failed）保存在内存 items，供前端展示；
     受理时快照 payload 与 data_date（幂等键逐项），排队期间数据变化不影响已受理项。
     服务重启后清空（job 置 interrupted，语义一致），已落盘报告保留。
+    最近一次尝试的终态（含失败的 run_id）另存台账文件，重启后失败行仍可下载会话记录。
     """
 
     def __init__(self, reports_path: Path, limiter: HermesLimiter | None = None):
@@ -326,13 +345,20 @@ class ValuationService:
         self._active_job_id: Optional[str] = None
         self._accepting = False
         self._cancel_generations = self._load_generations()
+        # 最近一次分析尝试台账：失败也留 run_id，界面才能下载失败那次的会话记录
+        self._run_log = RunLog(self._run_log_path())
 
     # ---- 逐股状态 ----
 
+    def _run_log_path(self) -> Path:
+        return self.reports_path.with_name("valuation_run_log.json")
+
     def get_per_code(self) -> dict:
+        # 台账有自己的锁：先读出来，别占着 _cond（调度线程频繁取它）
+        failed = self._run_log.failed_entries()
         with self._cond:
             positions = {code: index + 1 for index, code in enumerate(self._pending)}
-            return {code: {
+            result = {code: {
                 "state": item.get("state"),
                 "error": item.get("error"),
                 "updated_at": item.get("updated_at"),
@@ -342,7 +368,26 @@ class ValuationService:
                 "finished_at": item.get("finished_at"),
                 "item_id": item.get("attempt_id"),
                 "position": positions.get(code),
+                "run_id": item.get("run_id"),
             } for code, item in self._items.items()}
+            # 服务重启后内存队列清空：把台账里最近一次失败的记录并回来，
+            # 失败行才能继续下载那次的会话记录（run_id 来自台账，不来自内存）。
+            for code, entry in failed.items():
+                if code in result:
+                    continue
+                result[code] = {
+                    "state": STATE_FAILED,
+                    "error": entry.get("error"),
+                    "updated_at": entry.get("updated_at"),
+                    "name": entry.get("name"),
+                    "queued_at": entry.get("queued_at"),
+                    "started_at": entry.get("started_at"),
+                    "finished_at": entry.get("finished_at"),
+                    "item_id": None,
+                    "position": None,
+                    "run_id": entry.get("run_id"),
+                }
+            return result
 
     def queue_snapshot(self) -> dict:
         per_code = self.get_per_code()
@@ -435,7 +480,7 @@ class ValuationService:
         data_date: str,
         refresh_jobs,
         quality_scores: dict,
-        submit_run_fn: Callable[[HermesConfig, str, str], str],
+        submit_run_fn: Callable[[HermesConfig, str, str, str], str],
         poll_run_fn: Callable[[HermesConfig, str], str],
         market_snapshot_fn: Callable[[str], dict] | None = None,
         stop_run_fn: Optional[Callable[[HermesConfig, str], str]] = None,
@@ -659,10 +704,26 @@ class ValuationService:
                     self._store_generation(code, int(item.get("cancel_generation") or 0) + 1)
                 except OSError:
                     logger.exception("取消后的幂等代数未能落盘 %s", code)
+            self._record_attempt(code, item, kind, error)
             self._finish_item(code, item, kind, error, progress)
         finally:
             if holds_slot:
                 self._limiter.release()
+
+    def _record_attempt(self, code: str, item: dict, kind: str, error: str | None) -> None:
+        """把这一次尝试的终态写进台账：失败也留 run_id，界面才能下载会话记录。"""
+        state = {STATE_COMPLETED: STATE_COMPLETED, STATE_CANCELLED: STATE_CANCELLED}.get(kind, STATE_FAILED)
+        self._run_log.record(
+            code,
+            state=state,
+            run_id=item.get("run_id"),
+            name=item.get("name"),
+            error=error if state == STATE_FAILED else None,
+            attempt_id=item.get("attempt_id"),
+            queued_at=item.get("queued_at"),
+            started_at=item.get("started_at"),
+            finished_at=_now(),
+        )
 
     def _execute(self, item, hermes_config, submit_run_fn, poll_run_fn, stop_run_fn, get_run_fn):
         with self._cond:
@@ -673,7 +734,7 @@ class ValuationService:
         expected_version = item["skill_version"]
         prompt = build_prompt(item["payload"], expected_version, item["data_date"])
         try:
-            run_id = submit_run_fn(hermes_config, prompt, self._idempotency_key(item))
+            run_id = submit_run_fn(hermes_config, prompt, self._idempotency_key(item), VALUATION_INSTRUCTIONS)
         except HermesError as exc:
             return "failed", None, str(exc)[:300], None, False
         with self._cond:

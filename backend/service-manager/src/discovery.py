@@ -15,7 +15,13 @@ from datetime import datetime, timezone
 from typing import Any
 
 from src.db import Store
-from src.docker_reader import ContainerReader, DockerUnavailable, ScanResult, scan
+from src.docker_reader import (
+    ContainerReader,
+    DockerUnavailable,
+    ScanResult,
+    project_from_source_key,
+    scan,
+)
 from src.errors import conflict
 from src.models import (
     ComposeFileView,
@@ -268,13 +274,13 @@ class DiscoveryService:
                 now = datetime.now(timezone.utc).isoformat(timespec="seconds")
                 service_id = str(uuid.uuid4())
                 conn.execute(
-                    "INSERT INTO services(id, name, description, category, tags, notes,"
-                    " revision, created_at, updated_at) VALUES (?,?,?,?,?,?,1,?,?)",
+                    "INSERT INTO services(id, name, description, tags, notes,"
+                    " revision, created_at, updated_at)"
+                    " VALUES (?,?,?,?,?,1,?,?)",
                     (
                         service_id,
                         name,
                         payload.description,
-                        payload.category,
                         json.dumps(payload.tags, ensure_ascii=False),
                         "",
                         now,

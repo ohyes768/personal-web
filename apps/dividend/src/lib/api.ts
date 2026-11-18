@@ -4,7 +4,7 @@ import type { RefreshJob, RefreshKind } from './types';
  * 所有股息率相关 API 调用必须通过此文件
  */
 import { directClient, downloadFile, saveBlob } from './api-client';
-import type { ScreeningConditions, ScreeningResponse, BatchFavoriteResponse } from './screening';
+import type { ScreeningConditions, ScreeningResponse, BatchFavoriteResponse, StockScreeningResponse, ScreeningStatusesResponse } from './screening';
 import type { FavoritesResponse } from './watchlist';
 import type { QualityJob, QualityMoveAction, QualityQueueSnapshot, QualityScoresResponse } from './quality';
 import type {
@@ -38,6 +38,15 @@ import type {
 export const dividendApi = {
   screenStocks: (conditions: ScreeningConditions) =>
     directClient.post<ScreeningResponse>('/api/dividend/stocks/screen', conditions),
+  /** 单股筛选复核：状态 + 原因 + 逐条条件判定（基本面资料阅读页用） */
+  getStockScreening: (code: string, conditions: ScreeningConditions) =>
+    directClient.get<StockScreeningResponse>(
+      `/api/dividend/stocks/${encodeURIComponent(code)}/screening`,
+      { ...conditions },
+    ),
+  /** 批量筛选状态：全池每股只回 code + status（阅读页下拉列表标注用） */
+  getScreeningStatuses: (conditions: ScreeningConditions) =>
+    directClient.get<ScreeningStatusesResponse>('/api/dividend/stocks/screen/statuses', { ...conditions }),
   addFavoritesBatch: (codes: string[]) =>
     directClient.post<BatchFavoriteResponse>('/api/dividend/favorites/batch', { codes }),
   /** 提交五维基本面评级（异步 job；Hermes 未配置返回 503） */
@@ -70,12 +79,11 @@ export const dividendApi = {
   /** 获取全部已落盘估值报告 + 逐股实时状态 */
   getValuationStatus: () =>
     directClient.get<ValuationStatusResponse>('/api/dividend/valuation'),
-  /** 将 ready 报告应用为挡位监控配置（开启监控）；陈旧报告 409，非 ready 400 */
+  /** 将 ready 报告的四条价格线写入该股挡位；陈旧报告 409，非 ready 400 */
   applyValuationReport: (code: string, evaluatedAt: string) =>
     directClient.post<FavoritesResponse>(`/api/dividend/valuation/${code}/apply`, { evaluated_at: evaluatedAt }),
-  /** 暂停/恢复挡位监控：仅翻转 enabled，不改 levels */
-  setAlertsEnabled: (code: string, enabled: boolean) =>
-    directClient.put<FavoritesResponse>(`/api/dividend/favorites/${code}/alerts/enabled`, { enabled }),
+  // 挡位监控的启停（enabled）走挡位设置弹框的整份配置保存（updateAlertConfig），
+  // 行内不再有独立的暂停/恢复入口（2026-11-13）。
   /** 下载估值 run 的 Hermes 会话记录（markdown 文件），用于排查慢跑 */
   downloadValuationSession: async (runId: string) => {
     const blob = await downloadFile(`/api/dividend/valuation/runs/${encodeURIComponent(runId)}/session`);

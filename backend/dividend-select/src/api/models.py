@@ -475,11 +475,6 @@ class AlertConfigRequest(BaseModel):
     levels: AlertLevels = Field(default_factory=AlertLevels)
 
 
-class AlertEnabledRequest(BaseModel):
-    """挡位监控启停请求：仅翻转 enabled，不改 levels（收藏跟踪行暂停/恢复用）"""
-    enabled: bool = Field(..., description="true=恢复监控，false=暂停监控")
-
-
 class ValuationApplyRequest(BaseModel):
     """估值报告应用请求：按报告身份（evaluated_at）应用，防止陈旧报告覆盖"""
     evaluated_at: str = Field(..., min_length=1, description="要应用的估值报告 evaluated_at")
@@ -489,36 +484,19 @@ class ValuationApplyRequest(BaseModel):
 
 
 class AlertStatusItem(BaseModel):
-    """单只股票的挡位状态"""
+    """单只股票的挡位状态（只读：四条价格线，不再有监控开关）"""
     code: str
     name: Optional[str] = None
-    enabled: bool
     has_levels: bool = Field(..., description="是否配置了至少 1 档价格")
     level_count: int = Field(..., description="已配置档位数（0-4）")
     updated_at: Optional[str] = Field(None, description="挡位最后更新时间 (ISO 8601)")
     levels: Optional[AlertLevels] = None
-    triggered_today: list = Field(
-        default_factory=list,
-        description="今日此股触发的档位 key 列表",
-    )
 
 
 class AlertStatusResponse(BaseModel):
-    """所有收藏股票的挡位状态 + 今日触发汇总"""
+    """所有收藏股票的挡位状态（推送已移除，仅提供四条价格线）"""
     total: int = Field(..., description="收藏总数")
-    enabled_count: int = Field(..., description="已启用监控的股票数")
-    triggered_today_count: int = Field(..., description="今日累计触发档位数")
-    dingtalk_configured: bool = Field(..., description="钉钉 webhook 是否已配置")
     items: list[AlertStatusItem] = Field(default_factory=list)
-
-
-class AlertCheckResult(BaseModel):
-    """手动触发挡位检查的返回"""
-    checked_at: str
-    scanned: int
-    triggered: list[dict] = Field(default_factory=list)
-    pushed: bool
-    push_error: Optional[str] = None
 
 
 # ========== Batch API 模型（外部 agent 入口） ==========
@@ -566,6 +544,8 @@ class ScreeningRequest(BaseModel):
     min_yield: float = Field(3.5, ge=0, le=100, allow_inf_nan=False)
     min_roe: float = Field(10, ge=0, le=100, allow_inf_nan=False)
     min_roe_avg_3y: float = Field(10, ge=0, le=100, allow_inf_nan=False)
+    # 扣非净利润3年复合增长率下限（%）；0 = 三年不缩水（默认），5~10 = 要求温和增长
+    min_cagr_3y: float = Field(0, ge=-100, le=100, allow_inf_nan=False)
     exchange: Optional[str] = None
 
 
@@ -574,6 +554,56 @@ class ScreeningItem(BaseModel):
     status: Literal["eligible", "excluded", "insufficient_data"]
     reasons: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+
+
+class ScreeningCheck(BaseModel):
+    """单条筛选条件的逐项判定（阅读页「筛选条件复核」逐条展示用）"""
+    key: str = Field(..., description="稳定标识，如 yield_3y / roe / cagr_3y")
+    label: str = Field(..., description="条件名，如「近三年平均股息率」")
+    # pass=符合；fail=不符合（会被排除）；missing=数据缺失（待补）；warn=只提示不排除
+    result: Literal["pass", "fail", "missing", "warn"]
+    value_text: str = Field("", description="观测值展示文本，如 4.29% / 2023、2024、2025")
+    threshold_text: str = Field("", description="门槛展示文本，如 ≥ 3.5%")
+    detail: str = Field("", description="不符合/缺失/提示的具体说明")
+    # 该条判定对应的失败/缺失事实（进 reasons），提示（进 warnings）留空
+    reason: str = Field("", description="失败或缺失的事实描述")
+    warning: str = Field("", description="提示描述（不参与排除）")
+
+
+class StockScreeningResponse(BaseModel):
+    """单股筛选复核结果：状态 + 原因 + 逐条判定"""
+    code: str
+    name: str
+    status: Literal["eligible", "excluded", "insufficient_data"]
+    reasons: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    checks: list[ScreeningCheck] = Field(default_factory=list)
+    conditions: ScreeningRequest
+    last_updated: Optional[str] = None
+    financial_last_updated: Optional[str] = None
+
+
+class ScreeningResponse(BaseModel):
+    items: list[ScreeningItem]
+    counts: dict[str, int]
+    conditions: ScreeningRequest
+    last_updated: Optional[str] = None
+    financial_last_updated: Optional[str] = None
+    dividend_years: list[int] = Field(default_factory=lambda: [2023, 2024, 2025])
+    total: int
+
+
+class ScreeningStatusItem(BaseModel):
+    """批量筛选状态的最小条目（阅读页下拉列表标注用）"""
+    code: str
+    status: Literal["eligible", "excluded", "insufficient_data"]
+
+
+class ScreeningStatusesResponse(BaseModel):
+    """批量筛选状态：只回 code + status，不带股票明细与逐条判定"""
+    items: list[ScreeningStatusItem] = Field(default_factory=list)
+    total: int
+    conditions: ScreeningRequest
 
 
 class ScreeningResponse(BaseModel):

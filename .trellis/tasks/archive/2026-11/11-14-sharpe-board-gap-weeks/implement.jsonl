@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/fund-select/backend/contracts.md", "reason": "夏普榜单 API/统计合同（§13/§18/§19）：consecutive_weeks 与 DTO 三处同步的既有约定，本次口径变更在此登记"}
+{"file": ".trellis/spec/frontend/fund-sharpe-board.md", "reason": "前端契约：表格列语义、图表纯函数 option、状态文案与测试要求"}

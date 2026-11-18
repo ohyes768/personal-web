@@ -523,10 +523,12 @@ export interface AlertLevels {
 }
 
 /**
- * 单只股票的挡位监控配置
+ * 单只股票的四条挡位价格线
+ *
+ * 挡位钉钉推送与监控已移除（2026-11-14）：不再有 enabled 开关。
+ * 历史数据里残留的 enabled 字段后端读出后会被忽略。
  */
 export interface AlertConfig {
-  enabled: boolean;
   /** 最后更新时间 (ISO 8601)，由后端自动记录，前端只读 */
   updated_at?: string | null;
   levels: AlertLevels;
@@ -537,21 +539,19 @@ export interface AlertConfig {
  *
  * 不带 updated_at：后端在写入时自动 ts 戳，前端不可伪造。
  */
-export type AlertConfigRequest = Pick<AlertConfig, 'enabled' | 'levels'>;
+export type AlertConfigRequest = Pick<AlertConfig, 'levels'>;
 
 /**
- * 挡位状态条目（GET /favorites/alerts/status 返回）
+ * 挡位状态条目（GET /favorites/alerts/status 返回，只读）
  */
 export interface AlertStatusItem {
   code: string;
   name?: string | null;
-  enabled: boolean;
   has_levels: boolean;
   level_count: number;
   /** 挡位最后更新时间（ISO 8601），未配置过返回 null */
   updated_at?: string | null;
   levels?: AlertLevels | null;
-  triggered_today: string[];  // 今日此股触发的 level_key 列表
 }
 
 /**
@@ -559,37 +559,7 @@ export interface AlertStatusItem {
  */
 export interface AlertStatusResponse {
   total: number;
-  enabled_count: number;
-  triggered_today_count: number;
-  dingtalk_configured: boolean;
   items: AlertStatusItem[];
-}
-
-/**
- * 手动触发挡位检查的返回
- */
-export interface AlertCheckResult {
-  checked_at: string;
-  scanned: number;
-  triggered: Array<{
-    code: string;
-    name: string;
-    level_key: string;
-    level_label: string;
-    level_emoji: string;
-    direction: 'buy' | 'sell';
-    level_price: number;
-    level_pe?: number | null;
-    current_price: number;
-    current_pe?: number | null;
-    distance_pct: number;
-    strategy?: string | null;
-    star_rating?: number | null;
-    doc_url?: string | null;
-    triggered_at: string;
-  }>;
-  pushed: boolean;
-  push_error?: string | null;
 }
 
 /**

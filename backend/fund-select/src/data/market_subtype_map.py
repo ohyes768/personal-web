@@ -1,7 +1,7 @@
 """
 akshare `fund_name_em()` 「基金类型」子类 → tab 分类映射
 
-akshare 返回的「基金类型」是「粗分类-子类」拼接（27 个枚举值），不是单纯粗分类。
+akshare 返回的「基金类型」是「粗分类-子类」拼接字符串，不是单纯粗分类。
 本表按"投资标的 + 投资地域"把每个子类精确归到 4 个 tab 分类之一：
 
 - 'bond'   → 债基·市场 universe
@@ -16,7 +16,9 @@ akshare 返回的「基金类型」是「粗分类-子类」拼接（27 个枚�
 from __future__ import annotations
 
 
-# akshare 27 个已知子类 → tab 分类（精确映射；新增子类需显式声明）
+# akshare 已知子类 → tab 分类（精确映射；新增子类需显式声明）
+# 键名必须与 akshare 基金类型列的**原值**逐字一致：写错一个字符（如
+# 「债券型-长期纯债」vs「债券型-长债」）会让整类基金静默降级 other。
 SUBCLASS_TO_CATEGORY: dict[str, str] = {
     # ── 股基·市场（投资标的为股，含海外股基） ──
     "股票型": "stock",
@@ -43,7 +45,9 @@ SUBCLASS_TO_CATEGORY: dict[str, str] = {
     "债券型-混合债": "bond",
     "债券型-利率债": "bond",
     "债券型-信用债": "bond",
-    "债券型-长期纯债": "bond",
+    # akshare 原值就是「长债」（不是「长期纯债」——库里 2653 只全是前者，
+    # 写成「长期纯债」会让这 2653 只长债全部降级 other，混不进债基 universe）
+    "债券型-长债": "bond",
     "指数型-固收": "bond",     # 债指数 → 债基
     "QDII-纯债": "bond",       # 海外债 → 债基
     "QDII-混合债": "bond",

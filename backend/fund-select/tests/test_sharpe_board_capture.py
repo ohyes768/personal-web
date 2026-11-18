@@ -363,7 +363,7 @@ class TestMarketFullPipelineCapture:
         cap = SharpeRunCapture(run_id="run-bond")
         with patch("src.services.market_full_pipeline.SessionLocal", return_value=db_session):
             refresh_market_full_sync(
-                universe_filter=["债券型-中短债", "债券型-长期纯债"],
+                universe_filter=["债券型-中短债", "债券型-长债"],
                 pipeline_profile="bond",
                 preset_task_id="test-cap-bond",
                 capture=cap,
@@ -560,10 +560,13 @@ class TestFreezeBaseRow:
         _seed_fund(db_session, "000001", size_yi=42.0)
         db_session.commit()
         row = freeze_base_row(db_session, "000001")
-        assert row == {
-            "name": "基金000001", "market_subtype": "股票型",
-            "age_years": 6.0, "size_yi": 42.0, "mgr_experience_years": 8.0,
-        }
+        # 断言关键字段而非全等：v2 起 BASE_ROW_FIELDS 还含
+        # mgr_experience_years_max（AC11），全等断言会随字段扩展反复失败。
+        assert row["name"] == "基金000001"
+        assert row["market_subtype"] == "股票型"
+        assert row["age_years"] == 6.0
+        assert row["size_yi"] == 42.0
+        assert row["mgr_experience_years"] == 8.0
 
     def test_freeze_is_snapshot_not_live_reference(self, db_session):
         """冻结后修改 Fund 行，快照不变（纯拷贝）"""
@@ -900,3 +903,298 @@ class TestCalculatedAtFreeze:
         refresh_fund_risks(db_session, ["000001"], capture=cap)
         value = cap.risk_rows["000001"]["calculated_at"]
         assert isinstance(value, dt) and value.tzinfo is UTC
+
+
+# ─────────────────────────────────────────────────────────────
+# v2（11-13-sharpe-board-v2-rules）：冻结字段修复 + peer 数据冻结
+# ─────────────────────────────────────────────────────────────
+from datetime import date as _date, timedelta as _timedelta  # noqa: E402
+
+from src.db.models import FundAchievementRank  # noqa: E402
+from src.services.sharpe_capture import (  # noqa: E402
+    BASE_ROW_FIELDS,
+    PEER_STALE_DAYS,
+    _parse_peer_percentile,
+    freeze_peer_rows,
+)
+
+
+class TestBaseRowFieldsV2:
+    def test_mgr_experience_years_max_in_frozen_fields(self):
+        """AC11：修复既有缺陷——冻结字段必须含共管取最长的经理年限列。"""
+        assert "mgr_experience_years_max" in BASE_ROW_FIELDS
+
+    def test_freeze_base_row_includes_max_field(self, db_session):
+        db_session.add(Fund(
+            code="700001", name="老将+新人共管", fund_type="股票型",
+            age_years=6.0, size_yi=20.0, mgr_name="老将", mgr_company="某司",
+            mgr_days=8000, mgr_experience_years=22.0,
+            mgr_experience_years_max=22.0, is_active=True))
+        db_session.commit()
+        frozen = freeze_base_row(db_session, "700001")
+        assert frozen["mgr_experience_years_max"] == 22.0
+        assert frozen["mgr_experience_years"] == 22.0
+
+
+class TestParsePeerPercentile:
+    def test_normal(self):
+        assert _parse_peer_percentile("278/1951") == 14.2491
+        assert _parse_peer_percentile(" 1/5 ") == 20.0
+        assert _parse_peer_percentile("2/6") == 33.3333
+
+    def test_invalid_formats_return_none(self):
+        for raw in (None, "", "abc", "abc/def", "0/100", "101/100", "-1/100",
+                    "10/0", "10/-5", "10/", "/100"):
+            assert _parse_peer_percentile(raw) is None, raw
+
+
+class TestFreezePeerRows:
+    """AC5 / design §2：批量冻结，90 天陈旧用数据自带 as_of_date。"""
+
+    TODAY = _date(2026, 11, 13)
+
+    def _ach(self, db, code, raw, as_of):
+        db.add(FundAchievementRank(
+            code=code, period_kind="阶段业绩", period="近3年",
+            ret=1.0, max_dd=-5.0, peer_rank=raw, as_of_date=as_of,
+        ))
+        db.commit()
+
+    def test_normal_frozen(self, db_session):
+        self._ach(db_session, "710001", "278/1951", self.TODAY)
+        out = freeze_peer_rows(db_session, ["710001"], today=self.TODAY)
+        assert out["710001"]["peer_pct"] == 14.2491
+        assert out["710001"]["peer_raw"] == "278/1951"
+        assert out["710001"]["as_of"] == "2026-11-13"
+
+    def test_stale_boundary_90_days(self, db_session):
+        # 恰好 90 天：保留；91 天：丢弃
+        self._ach(db_session, "710002", "10/100",
+                  self.TODAY - _timedelta(days=PEER_STALE_DAYS))
+        self._ach(db_session, "710003", "10/100",
+                  self.TODAY - _timedelta(days=PEER_STALE_DAYS + 1))
+        out = freeze_peer_rows(db_session, ["710002", "710003"], today=self.TODAY)
+        assert "710002" in out
+        assert "710003" not in out
+
+    def test_invalid_rank_and_missing_code_excluded(self, db_session):
+        self._ach(db_session, "710004", "abc", self.TODAY)
+        out = freeze_peer_rows(db_session, ["710004", "799999"], today=self.TODAY)
+        assert out == {}
+
+    def test_wrong_period_not_picked(self, db_session):
+        db_session.add(FundAchievementRank(
+            code="710005", period_kind="阶段业绩", period="近1年",
+            peer_rank="1/100", as_of_date=self.TODAY))
+        db_session.commit()
+        assert freeze_peer_rows(db_session, ["710005"], today=self.TODAY) == {}
+
+    def test_batch_over_500_codes(self, db_session):
+        """500+ codes 分块查询，不触发 SQLite 参数上限报错。"""
+        codes = [f"{720000 + i:06d}" for i in range(520)]
+        self._ach(db_session, codes[-1], "1/100", self.TODAY)
+        out = freeze_peer_rows(db_session, codes, today=self.TODAY)
+        assert list(out) == [codes[-1]]
+
+    def test_empty_codes_returns_empty(self, db_session):
+        assert freeze_peer_rows(db_session, [], today=self.TODAY) == {}
+
+
+class TestV2PeerFreezeWiring:
+    """design §11：两条链路都在 achievement 落库后冻结 peer_rows。
+
+    11-14 起冻结口径改为年度（v3），字段从 peer_pct 变为年度达标结构。
+    """
+
+    def test_stock_chain_freezes_peer_rows(self, db_session, monkeypatch):
+        from src.services.sharpe_capture import SharpeRunCapture
+
+        # 预置年度 achievement（模拟 snapshot_fund(fetch_ranking=True) 已写库）
+        for year in ("2023", "2024"):
+            db_session.add(FundAchievementRank(
+                code="300001", period_kind="年度业绩", period=year,
+                ret=1.0, max_dd=-5.0, peer_rank="1/10",
+                as_of_date=date(2026, 9, 9)))
+        db_session.commit()
+
+        helper = TestStockRefreshCapture()
+        cap = SharpeRunCapture(run_id="run-v2w1")
+        # ref_year 固定到 2026 -> 窗口 2023/2024/2025
+        with patch("src.services.sharpe_capture.date") as mock_date:
+            mock_date.today.return_value = date(2026, 11, 14)
+            mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+            helper._run_stock_refresh(db_session, monkeypatch, cap)
+        assert cap.peer_rows["300001"]["qualified_years"] == 2
+        assert cap.peer_rows["300001"]["qualified"] is True
+        assert "300002" not in cap.peer_rows  # 无 achievement 记录的 code 不入字典
+
+
+# ─────────────────────────────────────────────────────────────
+# v3 年度同类排名（11-14-sharpe-board-v3-yearly-peer）
+# ─────────────────────────────────────────────────────────────
+from src.services.sharpe_capture import (  # noqa: E402
+    MIN_YEARLY_TOP_PCT, MIN_YEARLY_YEARS, YEARLY_WINDOW,
+    freeze_yearly_peer_rows, yearly_window,
+)
+
+
+class TestYearlyWindow:
+    def test_2026_window_excludes_current_year(self):
+        assert yearly_window(2026) == ["2023", "2024", "2025"]
+
+    def test_window_rolls_with_year(self):
+        assert yearly_window(2027) == ["2024", "2025", "2026"]
+        assert yearly_window(2024) == ["2021", "2022", "2023"]
+
+    def test_window_ascending_order(self):
+        w = yearly_window(2026)
+        assert w == sorted(w), "窗口应升序，展示与断言都依赖顺序"
+
+    def test_defaults_match_profile_constants(self):
+        assert YEARLY_WINDOW == 3
+        assert MIN_YEARLY_TOP_PCT == 25.0
+        assert MIN_YEARLY_YEARS == 2
+
+
+class TestFreezeYearlyPeerRows:
+    """年度排名是历史固定值：不做 as_of 陈旧判断（与 v2 滚动口径的关键差异）。"""
+
+    def _add(self, db, code, year, raw, as_of=_date(2026, 9, 9)):
+        db.add(FundAchievementRank(
+            code=code, period_kind="年度业绩", period=year,
+            ret=1.0, max_dd=-5.0, peer_rank=raw, as_of_date=as_of,
+        ))
+
+    def test_all_three_years_top25_qualified(self, db_session):
+        for y in ("2023", "2024", "2025"):
+            self._add(db_session, "810001", y, "1/100")   # 1% 分位
+        db_session.commit()
+        out = freeze_yearly_peer_rows(db_session, ["810001"], ref_year=2026)
+        it = out["810001"]
+        assert it["qualified_years"] == 3
+        assert it["qualified"] is True
+        assert it["window"] == ["2023", "2024", "2025"]
+        assert it["yearly_top_pct"] == 25.0
+
+    def test_two_of_three_years_qualified(self, db_session):
+        self._add(db_session, "810002", "2023", "1/100")     # 1% 达标
+        self._add(db_session, "810002", "2024", "2/100")     # 2% 达标
+        self._add(db_session, "810002", "2025", "80/100")    # 80% 不达标
+        db_session.commit()
+        it = freeze_yearly_peer_rows(db_session, ["810002"], ref_year=2026)["810002"]
+        assert it["qualified_years"] == 2
+        assert it["qualified"] is True
+
+    def test_only_one_year_qualified(self, db_session):
+        self._add(db_session, "810003", "2023", "1/100")
+        self._add(db_session, "810003", "2024", "90/100")
+        self._add(db_session, "810003", "2025", "95/100")
+        db_session.commit()
+        it = freeze_yearly_peer_rows(db_session, ["810003"], ref_year=2026)["810003"]
+        assert it["qualified_years"] == 1
+        assert it["qualified"] is False
+
+    def test_missing_year_counts_as_not_qualified(self, db_session):
+        """缺年不影响已有年份的判定，但缺失年不能算作达标。"""
+        self._add(db_session, "810004", "2023", "1/100")
+        self._add(db_session, "810004", "2025", "1/100")
+        db_session.commit()
+        it = freeze_yearly_peer_rows(db_session, ["810004"], ref_year=2026)["810004"]
+        assert it["years"]["2024"] is None
+        assert it["qualified_years"] == 2
+        assert it["qualified"] is True
+
+    def test_boundary_exactly_25_pct_qualified(self, db_session):
+        """分位恰好 25.0% 算达标（含等号）。"""
+        for y in ("2023", "2024"):
+            self._add(db_session, "810005", y, "25/100")   # 25.0%
+        db_session.commit()
+        it = freeze_yearly_peer_rows(db_session, ["810005"], ref_year=2026)["810005"]
+        assert it["years"]["2023"] == 25.0
+        assert it["qualified_years"] == 2
+
+    def test_just_over_boundary_not_qualified(self, db_session):
+        for y in ("2023", "2024"):
+            self._add(db_session, "810006", y, "2501/10000")  # 25.01%
+        db_session.commit()
+        it = freeze_yearly_peer_rows(db_session, ["810006"], ref_year=2026)["810006"]
+        assert it["years"]["2023"] > 25.0
+        assert it["qualified_years"] == 0
+
+    def test_invalid_rank_becomes_none(self, db_session):
+        """全部年份格式异常 → 等同无数据，不入字典（发布侧计 gate_missing）。"""
+        self._add(db_session, "810007", "2023", "abc")
+        self._add(db_session, "810007", "2024", "0/100")
+        self._add(db_session, "810007", "2025", "101/100")
+        db_session.commit()
+        out = freeze_yearly_peer_rows(db_session, ["810007"], ref_year=2026)
+        assert out == {}
+
+    def test_partial_invalid_keeps_valid_years(self, db_session):
+        """部分年份异常时，无效年记 None，有效年仍参与判定。"""
+        self._add(db_session, "810013", "2023", "abc")     # 无效
+        self._add(db_session, "810013", "2024", "1/100")    # 达标
+        self._add(db_session, "810013", "2025", "2/100")    # 达标
+        db_session.commit()
+        it = freeze_yearly_peer_rows(db_session, ["810013"], ref_year=2026)["810013"]
+        assert it["years"]["2023"] is None
+        assert it["years"]["2024"] == 1.0
+        assert it["qualified_years"] == 2
+        assert it["qualified"] is True
+
+    def test_no_data_at_all_excluded_from_dict(self, db_session):
+        """窗口内全无有效排名 → 不入字典（无证据，发布侧计诊断）。"""
+        out = freeze_yearly_peer_rows(db_session, ["810008"], ref_year=2026)
+        assert out == {}
+
+    def test_stale_as_of_still_used(self, db_session):
+        """关键差异：年度排名不看 as_of 陈旧度，两年前写入照样有效。"""
+        for y in ("2023", "2024"):
+            self._add(db_session, "810009", y, "1/100", as_of=_date(2024, 1, 1))
+        db_session.commit()
+        it = freeze_yearly_peer_rows(db_session, ["810009"], ref_year=2026)["810009"]
+        assert it["qualified"] is True
+
+    def test_year_outside_window_ignored(self, db_session):
+        self._add(db_session, "810010", "2022", "1/100")   # 窗口外
+        self._add(db_session, "810010", "2023", "1/100")
+        self._add(db_session, "810010", "2024", "1/100")
+        db_session.commit()
+        it = freeze_yearly_peer_rows(db_session, ["810010"], ref_year=2026)["810010"]
+        assert "2022" not in it["years"]
+        assert it["qualified_years"] == 2
+
+    def test_window_rolls_with_ref_year(self, db_session):
+        """ref_year=2027 → 窗口 2024/2025/2026，2023 年数据不再参与。"""
+        for y in ("2023", "2024", "2025"):
+            self._add(db_session, "810011", y, "1/100")
+        db_session.commit()
+        it = freeze_yearly_peer_rows(db_session, ["810011"], ref_year=2027)["810011"]
+        assert it["window"] == ["2024", "2025", "2026"]
+        assert it["years"]["2026"] is None
+        assert it["qualified_years"] == 2          # 2024/2025 达标，2026 缺
+        assert it["qualified"] is True
+
+    def test_batch_chunks_over_500(self, db_session):
+        codes = [f"{830000 + i:06d}" for i in range(520)]
+        for y in ("2023", "2024"):
+            self._add(db_session, codes[-1], y, "1/100")
+        db_session.commit()
+        out = freeze_yearly_peer_rows(db_session, codes, ref_year=2026)
+        assert codes[-1] in out
+        assert len(out) == 1
+
+    def test_custom_threshold_and_min_years(self, db_session):
+        for y in ("2023", "2024"):
+            self._add(db_session, "810012", y, "15/100")   # 15%
+        db_session.commit()
+        # 阈值 10% → 都不达标
+        strict = freeze_yearly_peer_rows(
+            db_session, ["810012"], ref_year=2026, top_pct=10.0, min_years=1)
+        assert strict["810012"]["qualified"] is False
+        # 阈值 20% + 只要 1 年 → 达标
+        loose = freeze_yearly_peer_rows(
+            db_session, ["810012"], ref_year=2026, top_pct=20.0, min_years=1)
+        assert loose["810012"]["qualified"] is True
+        assert loose["810012"]["yearly_top_pct"] == 20.0
+        assert loose["810012"]["min_years"] == 1

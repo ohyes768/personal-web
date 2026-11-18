@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from src.db import Store
+from src.docker_reader import project_from_source_key
 from src.errors import bad_request, conflict
 
 SCHEMA_VERSION = 1
@@ -58,7 +59,15 @@ def _now() -> str:
 
 def export_payload(store: Store) -> dict[str, Any]:
     with store.read() as conn:
-        services = [dict(row) for row in conn.execute("SELECT * FROM services").fetchall()]
+        # 显式列名：services 表的列会随「分类退役」减少，用 SELECT * 会把
+        # 已退役的字段又带进备份（旧备份的 category 键恢复时会被忽略）。
+        services = [
+            dict(row)
+            for row in conn.execute(
+                "SELECT id, name, description, tags, notes, revision,"
+                " created_at, updated_at FROM services"
+            ).fetchall()
+        ]
         components = [
             dict(row)
             for row in conn.execute("SELECT * FROM service_components").fetchall()
@@ -265,13 +274,12 @@ def restore(
         conn.execute("UPDATE release_sync SET baseline_done = 0, etag = NULL")
         for item in payload.get("services") or []:
             conn.execute(
-                "INSERT INTO services(id, name, description, category, tags, notes,"
-                " revision, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO services(id, name, description, tags, notes,"
+                " revision, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
                 (
                     item["id"],
                     item["name"],
                     item.get("description", ""),
-                    item.get("category", ""),
                     item.get("tags", "[]"),
                     item.get("notes", ""),
                     int(item.get("revision", 1)),

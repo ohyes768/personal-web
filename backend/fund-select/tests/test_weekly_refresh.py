@@ -16,14 +16,29 @@ def test_four_staggered_weekly_jobs(monkeypatch, tmp_path):
     manager = SchedulerManager(state_dir=tmp_path)
     monkeypatch.setattr(manager.scheduler, 'start', Mock())
     manager.start(None)
-    jobs = manager.scheduler.get_jobs()
+    jobs = [job for job in manager.scheduler.get_jobs() if job.id in IDS]
     assert [job.id for job in jobs] == IDS
     now = datetime(2026, 10, 29, 12, tzinfo=ZoneInfo('Asia/Shanghai'))
     for hour, job in zip(range(7, 11), jobs):
         assert job.trigger.get_next_fire_time(None, now).isoformat() == f'2026-10-31T{hour:02}:05:00+08:00'
         assert job.max_instances == 1 and job.coalesce is True
         assert job.misfire_grace_time == 3600
-    assert [j['tab'] for j in manager.list_jobs()] == TABS
+    assert [j['tab'] for j in manager.list_jobs() if j['target'] == 'refresh_tab'] == TABS
+
+
+def test_monthly_managers_job_registered(monkeypatch, tmp_path):
+    """第 5 条：经理月度刷新，每月第一个周六 11:05（1-7 日 ∩ 周六）"""
+    from src.scheduler import managers_refresh as mgr_job
+    manager = SchedulerManager(state_dir=tmp_path)
+    monkeypatch.setattr(manager.scheduler, 'start', Mock())
+    manager.start(None)
+    job = manager.scheduler.get_job('monthly_managers_refresh')
+    assert job is not None and job.max_instances == 1 and job.coalesce is True
+    now = datetime(2026, 11, 16, 14, tzinfo=ZoneInfo('Asia/Shanghai'))
+    # 2026-11 的第一个周六是 11-07（已过），下一个触发日是 12-05
+    assert job.trigger.get_next_fire_time(None, now).isoformat() == '2026-12-05T11:05:00+08:00'
+    spec = next(j for j in manager.list_jobs() if j['id'] == 'monthly_managers_refresh')
+    assert spec['target'] == 'refresh_managers' and spec['tab'] == 'managers'
 
 
 @pytest.mark.parametrize('tab,job_id', list(zip(TABS, IDS)))
@@ -141,7 +156,7 @@ def test_stock_tabs_capture_and_publish(monkeypatch, tmp_path, tab, source):
     assert published['source'] == source
     assert published['capture'] is cap
     assert published['trigger'] == 'manual'
-    assert published['profile_version'] == 'v1'
+    assert published['profile_version'] == 'v3'  # 11-14 任务：默认规则版本切 v3
     assert published['started_at'].tzinfo is not None  # 周键需要 aware
     assert published['started_at'] <= published['finished_at']
     assert result['snapshot_status'] == 'complete'

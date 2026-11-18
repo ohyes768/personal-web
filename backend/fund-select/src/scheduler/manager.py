@@ -39,7 +39,7 @@ class SchedulerManager:
         for spec in config['jobs']:
             enabled = settings.get(spec['id'], settings.get(LEGACY_JOB_ID, spec.get('enabled', True)))
             spec = {**spec, 'enabled': enabled}
-            if spec['target'] != 'refresh_tab':
+            if spec['target'] not in ('refresh_tab', 'refresh_managers'):
                 raise ValueError(f"未知定时任务 target: {spec['target']}")
             self.jobs_meta[spec['id']] = spec
             self.scheduler.add_job(
@@ -83,10 +83,16 @@ class SchedulerManager:
                 with self._snapshot_lock:
                     initial = deepcopy(self._current_runs[job_id])
                 self._update_snapshot(job_id, {**initial, 'status': 'running', 'start': _now()})
+                if self.jobs_meta[job_id]['target'] == 'refresh_managers':
+                    from src.scheduler.managers_refresh import refresh_managers_sync
+                    runner, kwargs = refresh_managers_sync, {}
+                else:
+                    runner, kwargs = refresh_tab_sync, {'tab': self.jobs_meta[job_id]['tab']}
                 result = await asyncio.to_thread(
-                    refresh_tab_sync, tab=self.jobs_meta[job_id]['tab'], job_id=job_id,
+                    runner, job_id=job_id,
                     history_path=self.history_path, trigger=initial['trigger'], run_id=initial['run_id'],
                     on_progress=lambda record: self._update_snapshot(job_id, record),
+                    **kwargs,
                 )
                 self._last_records[job_id] = result
         except Exception as exc:

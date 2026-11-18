@@ -48,9 +48,9 @@ export function RankInline({ rank }: { rank: RankPercentile | null }) {
     <>
       <span
         aria-hidden="true"
-        className={`inline-block w-1.5 h-1.5 rounded-full ${rankDotColor(rank.pct)}`}
+        className={`inline-block w-1.5 h-1.5 shrink-0 rounded-full ${rankDotColor(rank.pct)}`}
       />
-      <span>{rank.pct.toFixed(1)}%</span>
+      <span className="shrink-0">{rank.pct.toFixed(1)}%</span>
     </>
   );
 }

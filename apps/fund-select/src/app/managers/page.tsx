@@ -3,6 +3,8 @@
  *
  * 以经理为主体的列表：从业年限 / 加权年化 / 回撤 / 规模筛选 + 排序 + 分页。
  * 点击行展开历任基金（含已离任，按需拉取 /managers/{id}）。
+ * 展开行的基金代码徽章走 ?search_code= （列表只出这一只，与 header 代码搜索
+ * 同语义；原来的 ?code= 直达开抽屉会让列表仍显示全量，已改，见 11-15 收尾）。
  *
  * 视觉契约（任务 11-11-fund-manager-tab-refresh）：与另外 5 个 tab 统一——
  *   FundsHeader（返回首页 / 标题 / 导航 / 总数 / 刷新 / 齿轮）
@@ -20,7 +22,9 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { FilterPanelShell, DimensionControl, type Dimension } from '@/components/FilterSidebar';
 import { FundsHeader } from '@/components/FundsHeader';
 import { Pagination } from '@/components/Pagination';
+import { SharpeTrendDialog } from '@/components/sharpe-trend/SharpeTrendDialog';
 import { SortableHeader } from '@/components/SortableHeader';
+import { RankInline } from '@/lib/rankColor';
 import {
   MANAGER_DEFAULT_FILTERS,
   managerApi,
@@ -34,6 +38,18 @@ import {
 const fmtPct = (v: number | null, digits = 1) =>
   v != null ? `${v.toFixed(digits)}%` : '-';
 const fmtNum = (v: number | null, digits = 1) => (v != null ? v.toFixed(digits) : '-');
+
+/** 收益率：带正负号（与股票 tab FundTable 的 fmtRet 同格式） */
+const fmtRet = (v: number | null | undefined): string => {
+  if (v == null) return '-';
+  return `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`;
+};
+
+/** 收益率配色：涨绿跌灰（与股票 tab FundTable 的 retColor 同规则） */
+const retColor = (v: number | null | undefined): string => {
+  if (v == null) return 'text-ink-soft';
+  return v >= 0 ? 'text-up' : 'text-down';
+};
 
 /** 经理筛选维度：键与后端 query 参数同名，DropdownControl 直接按 key 取值 */
 const MANAGER_DIMENSIONS: Dimension[] = [
@@ -82,6 +98,8 @@ function ManagersPageInner() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ManagerDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  // 夏普走势弹框：点历任基金行的夏普数值就地弹出，与股基列表同款
+  const [trendCode, setTrendCode] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
 
@@ -245,7 +263,7 @@ function ManagersPageInner() {
               <tbody>
                 {loading && !data && (
                   <tr>
-                    <td colSpan={11} className="p-8">
+                    <td colSpan={12} className="p-8">
                       <div className="space-y-2 animate-pulse" aria-label="加载中">
                         {Array.from({ length: 6 }).map((_, i) => (
                           <div key={i} className="h-8 bg-paper-tint rounded" />
@@ -256,7 +274,7 @@ function ManagersPageInner() {
                 )}
                 {!loading && data && data.items.length === 0 && (
                   <tr>
-                    <td colSpan={11} className="p-12 text-center text-ink-muted">
+                    <td colSpan={12} className="p-12 text-center text-ink-muted">
                       暂无数据，请调整筛选条件
                     </td>
                   </tr>
@@ -269,6 +287,7 @@ function ManagersPageInner() {
                     detail={expandedId === m.manager_id ? detail : null}
                     detailLoading={expandedId === m.manager_id && detailLoading}
                     onToggle={() => toggleExpand(m.manager_id)}
+                    onTrendOpen={setTrendCode}
                   />
                 ))}
               </tbody>
@@ -319,6 +338,9 @@ function ManagersPageInner() {
           </div>
         </>
       )}
+
+      {/* 夏普走势弹框（点历任基金行的夏普数值弹出；与股基列表/独立页同款） */}
+      <SharpeTrendDialog code={trendCode} onClose={() => setTrendCode(null)} />
     </main>
   );
 }
@@ -327,8 +349,8 @@ function ManagersPageInner() {
 const AFFILIATION_TABS: Record<NonNullable<TenureAffiliation['tab']>, { label: string; href: string }> = {
   'bond': { label: '债基名单', href: '/bond' },
   'stock': { label: '股基名单', href: '/stock' },
-  'discovery-bond': { label: '债基·市场', href: '/discovery-bond' },
-  'discovery-stock': { label: '股基·市场', href: '/discovery-stock' },
+  'discovery-bond': { label: '债基·市场', href: '/bond' },
+  'discovery-stock': { label: '股基·市场', href: '/stock' },
 };
 
 function AffiliationBadges({ aff, code, name }: {
@@ -341,7 +363,7 @@ function AffiliationBadges({ aff, code, name }: {
     <span className="inline-flex items-center gap-1">
       {tabInfo ? (
         <Link
-          href={`${tabInfo.href}?code=${code}`}
+          href={`${tabInfo.href}?search_code=${code}`}
           className="inline-flex items-center rounded bg-info-tint px-1.5 py-[1px] font-mono text-[11px] text-info transition-colors hover:bg-info hover:text-white"
           title={`到${tabInfo.label}查看${name ?? code}的详情`}
         >
@@ -362,12 +384,14 @@ function AffiliationBadges({ aff, code, name }: {
   );
 }
 
-function ManagerRow({ manager: m, expanded, detail, detailLoading, onToggle }: {
+function ManagerRow({ manager: m, expanded, detail, detailLoading, onToggle, onTrendOpen }: {
   manager: ManagerListItem;
   expanded: boolean;
   detail: ManagerDetail | null;
   detailLoading: boolean;
   onToggle: () => void;
+  /** 点历任基金行的夏普数值 → 页面级弹「夏普走势」 */
+  onTrendOpen: (code: string) => void;
 }) {
   const td = 'px-1.5 py-1.5';
   // 展开详情的 tenure tab：默认在任。切换经理时组件复用，但 hidden 状态无副作用
@@ -426,7 +450,7 @@ function ManagerRow({ manager: m, expanded, detail, detailLoading, onToggle }: {
       </tr>
       {expanded && (
         <tr className="bg-paper-tint">
-          <td colSpan={11} className="px-3 py-3">
+          <td colSpan={12} className="px-3 py-3">
             {detailLoading ? (
               <span className="text-xs text-ink-muted inline-flex items-center gap-1">
                 <ArrowPathIcon className="w-3 h-3 animate-spin" /> 加载历任基金…
@@ -465,42 +489,116 @@ function ManagerRow({ manager: m, expanded, detail, detailLoading, onToggle }: {
                       : '已离任基金 · 计入「年化·含离任」口径'}
                   </span>
                 </div>
+                {/* 历任基金表：table-fixed + 显式列宽，与外层列表表同宽铺满
+                    （外层 td 已是 colSpan=12 全宽）。不设列宽时内容会撑出容器
+                    出现横向滚动条。 */}
                 {shownTenures.length === 0 ? (
                   <span className="text-xs text-ink-muted">
                     {tenureTab === 'current' ? '无在管基金' : '无已离任基金'}
                   </span>
                 ) : (
-                <table className="w-full text-xs">
+                <table className="w-full table-fixed text-xs">
                   <thead>
                     <tr className="text-left text-ink-muted border-b border-rule">
-                      <th className="py-1 pr-2 font-medium">代码</th>
-                      <th className="py-1 pr-2 font-medium">名称</th>
-                      <th className="py-1 pr-2 font-medium">类型</th>
-                      <th className="py-1 pr-2 text-right font-medium">规模(亿)</th>
-                      <th className="py-1 pr-2 font-medium">任职期间</th>
-                      <th className="py-1 pr-2 text-right font-medium">天数</th>
-                      <th className="py-1 pr-2 text-right font-medium">任职回报</th>
-                      <th className="py-1 text-right font-medium">年化</th>
+                      <th className="w-[8rem] py-1 pr-2 font-medium">代码</th>
+                      <th className="w-[7rem] py-1 pr-2 font-medium">名称</th>
+                      <th className="w-[5.5rem] py-1 pr-2 font-medium">类型</th>
+                      <th className="w-[3.5rem] py-1 pr-2 text-right font-medium">规模(亿)</th>
+                      <th className="w-[9.5rem] py-1 pr-2 font-medium">任职期间</th>
+                      <th className="w-[3rem] py-1 pr-2 text-right font-medium">天数</th>
+                      <th className="w-[4rem] py-1 pr-2 text-right font-medium">任职回报</th>
+                      <th className="w-[3.5rem] py-1 pr-2 text-right font-medium">年化</th>
+                      <th className="w-[3.5rem] py-1 pr-2 text-right font-medium">
+                        <span
+                          className="hover-tip hover-tip--wrap hover-tip--right"
+                          data-tip="当前夏普：近 3 年窗口、与股基列表夏普列同口径；基金自身口径，不是按经理任职窗口切片。点数值可弹「夏普走势」"
+                        >
+                          夏普
+                        </span>
+                      </th>
+                      <th className="w-[7rem] py-1 pr-2 text-right font-medium">
+                        <span
+                          className="hover-tip hover-tip--wrap hover-tip--right"
+                          data-tip="基金自身口径的近 1 年收益（含同类排名）。与「任职回报」不同：后者按该经理的任职窗口算——经理离任后基金可能已换人"
+                        >
+                          近1年
+                        </span>
+                      </th>
+                      <th className="w-[7rem] py-1 pr-2 text-right font-medium">
+                        <span
+                          className="hover-tip hover-tip--wrap hover-tip--right"
+                          data-tip="基金自身口径的近 3 年收益（含同类排名）。与「任职回报」不同：后者按该经理的任职窗口算——经理离任后基金可能已换人"
+                        >
+                          近3年
+                        </span>
+                      </th>
+                      <th className="w-[7rem] py-1 text-right font-medium">
+                        <span
+                          className="hover-tip hover-tip--wrap hover-tip--right"
+                          data-tip="基金自身口径的近 5 年收益（含同类排名）。与「任职回报」不同：后者按该经理的任职窗口算——经理离任后基金可能已换人"
+                        >
+                          近5年
+                        </span>
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
                     {shownTenures.map(t => (
                       <tr key={`${t.fund_code}-${t.start_date}`} className="border-b border-rule/50 last:border-b-0">
-                        <td className="py-1 pr-2 whitespace-nowrap">
+                        <td className="py-1 pr-2 whitespace-nowrap overflow-hidden">
                           <AffiliationBadges aff={t.affiliation} code={t.fund_code} name={t.fund_name} />
                         </td>
                         <td className="py-1 pr-2">
-                          <span className="truncate">{t.fund_name}</span>
+                          {/* table-fixed 下不换行：名称过长时截断（inline span 的
+                              truncate 不生效，须用块级） */}
+                          <div className="truncate" title={t.fund_name ?? undefined}>{t.fund_name}</div>
                         </td>
-                        <td className="py-1 pr-2 text-ink-muted">{t.fund_type ?? '-'}</td>
+                        <td className="py-1 pr-2 text-ink-muted truncate">{t.fund_type ?? '-'}</td>
                         <td className="py-1 pr-2 tnum text-right">{fmtNum(t.size_yi, 1)}</td>
                         <td className="py-1 pr-2 text-ink-muted whitespace-nowrap">{t.start_date}~{t.end_date ?? '至今'}</td>
                         <td className="py-1 pr-2 tnum text-right">{t.tenure_days ?? '-'}</td>
                         <td className={`py-1 pr-2 tnum text-right ${(t.tenure_return ?? 0) >= 0 ? 'text-up' : 'text-down'}`}>
                           {fmtPct(t.tenure_return)}
                         </td>
-                        <td className={`py-1 tnum text-right ${(t.annual_return ?? 0) >= 0 ? 'text-up' : 'text-down'}`}>
+                        <td className={`py-1 pr-2 tnum text-right ${(t.annual_return ?? 0) >= 0 ? 'text-up' : 'text-down'}`}>
                           {fmtPct(t.annual_return)}
+                        </td>
+                        <td className="py-1 pr-2 tnum text-right whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={e => { e.stopPropagation(); onTrendOpen(t.fund_code); }}
+                            className="text-info hover:underline decoration-info/60 underline-offset-2"
+                            title="查看夏普走势（弹框）"
+                          >
+                            {t.sharpe != null ? fmtNum(t.sharpe, 2) : '-'}
+                          </button>
+                        </td>
+                        <td className="py-1 pr-2 text-right">
+                          <div className={`tnum whitespace-nowrap ${retColor(t.ret_1y)}`}>{fmtRet(t.ret_1y)}</div>
+                          <div className="flex items-center justify-end gap-1 text-[10px] text-ink-soft shrink-0">
+                            <RankInline rank={t.rank_1y} />
+                            {t.rank_1y?.rank != null && t.rank_1y?.total != null && (
+                              <span>{t.rank_1y.rank}/{t.rank_1y.total}</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-1 pr-2 text-right">
+                          <div className={`tnum whitespace-nowrap ${retColor(t.ret_3y)}`}>{fmtRet(t.ret_3y)}</div>
+                          <div className="flex items-center justify-end gap-1 text-[10px] text-ink-soft shrink-0">
+                            <RankInline rank={t.rank_3y} />
+                            {t.rank_3y?.rank != null && t.rank_3y?.total != null && (
+                              <span>{t.rank_3y.rank}/{t.rank_3y.total}</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-1 text-right">
+                          <div className={`tnum whitespace-nowrap ${retColor(t.ret_5y)}`}>{fmtRet(t.ret_5y)}</div>
+                          <div className="flex items-center justify-end gap-1 text-[10px] text-ink-soft shrink-0">
+                            <RankInline rank={t.rank_5y} />
+                            {t.rank_5y?.rank != null && t.rank_5y?.total != null && (
+                              <span>{t.rank_5y.rank}/{t.rank_5y.total}</span>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}

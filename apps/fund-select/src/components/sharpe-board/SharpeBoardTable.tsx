@@ -8,8 +8,16 @@
  */
 'use client';
 
+import Link from 'next/link';
+
 import type { SharpeBoardItem } from '@/lib/sharpe-board';
-import { formatWeekDay } from '@/lib/sharpe-board';
+import {
+  consecutiveWeeksTip,
+  formatListedWeeks,
+  formatWeekDay,
+  listedWeeksTip,
+} from '@/lib/sharpe-board';
+import { sharpeTrendHref } from '@/lib/sharpe-trend';
 
 interface SharpeBoardTableProps {
   items: SharpeBoardItem[];
@@ -28,6 +36,38 @@ const NAME_MAX = 12;
 function formatRet(v: number | null): string {
   if (v === null) return '-';
   return `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`;
+}
+
+/** 近12周达标：n/分母（不足12周按实际）；null → - */
+function formatNear12w(q: number | null, total: number | null): string {
+  if (q === null || total === null) return '-';
+  return `${q}/${total}`;
+}
+
+/** 同类分位：前 X%（保留 1 位小数）；null → - */
+function formatPeerPct(v: number | null): string {
+  if (v === null) return '-';
+  return `前 ${v.toFixed(1)}%`;
+}
+
+/** v3 年度口径：达标年数 / 窗口年数，如 `2/3 年`；null → - */
+function formatPeerYears(
+  qualified: number | null, window: string[] | null,
+): string {
+  if (qualified === null || window === null || window.length === 0) return '-';
+  return `${qualified}/${window.length} 年`;
+}
+
+/** 年度明细 tooltip 文本：2023 前8.2% · 2024 前12.0% · 2025 无数据 */
+function peerYearsTip(
+  years: Record<string, number | null> | null,
+  window: string[] | null,
+): string | undefined {
+  if (!years || !window) return undefined;
+  return window.map(y => {
+    const v = years[y];
+    return v === null || v === undefined ? `${y} 无数据` : `${y} 前${v.toFixed(1)}%`;
+  }).join(' · ');
 }
 
 /** 涨红跌绿（与站内 up/down 语义一致），null 不着色 */
@@ -55,15 +95,27 @@ export function SharpeBoardTable({ items, loading, focusCode, onFocusToggle, onO
 
   return (
     <div className="w-full min-w-0 overflow-x-auto">
-      <table className="w-full min-w-[560px] table-fixed text-xs">
+      <table className="w-full min-w-[760px] table-fixed text-xs">
         <thead className="border-b border-rule-strong">
           <tr>
             <th className={`${th} w-[4.5rem]`}>代码</th>
             <th className={`${th} w-[8rem]`}>名称</th>
             <th className={`${th} text-right`}>近1年收益</th>
             <th className={`${th} text-right`}>近3年收益</th>
-            <th className={`${th} text-right`}>累计在榜周数</th>
-            <th className={`${th} text-right`}>最近连续周数</th>
+            <th
+              className={`${th} text-right`}
+              title="在榜周数 / 可评周数（该基金有有效样本的周数）；数据缺口周不计入在榜、不打断连续"
+            >
+              近52周在榜
+            </th>
+            <th
+              className={`${th} text-right`}
+              title="最近一段连续在榜周数；数据缺口周跳过不中断，真实缺席（可评却未上榜）才中断"
+            >
+              最近连续周数
+            </th>
+            <th className={`${th} text-right`}>近12周达标</th>
+            <th className={`${th} text-right`}>同类分位</th>
             <th className={`${th} text-right`}>最近上榜夏普</th>
             <th className={`${th} text-right`}>最近上榜周</th>
             <th className={`${th} text-center`}>最新周榜</th>
@@ -82,16 +134,26 @@ export function SharpeBoardTable({ items, loading, focusCode, onFocusToggle, onO
                 onClick={() => onFocusToggle(item.code)}
               >
                 <td className={`${td} font-mono whitespace-nowrap`}>
+                  {/* 代码 → 夏普走势页（完整滚动曲线）；详情抽屉仍由名称点击打开 */}
+                  <Link
+                    href={sharpeTrendHref(item.code)}
+                    className="text-info underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-info"
+                    aria-label={`查看 ${item.name} 夏普走势`}
+                    title="查看夏普走势"
+                    onClick={e => e.stopPropagation()}
+                  >
+                    {item.code}
+                  </Link>
                   <button
                     type="button"
-                    className="text-info underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-info"
+                    className="block text-[10px] text-ink-soft hover:text-info underline-offset-2 hover:underline"
                     aria-label={`查看 ${item.name} 详情`}
                     onClick={e => {
                       e.stopPropagation();
                       onOpenDetail(item.code, item.name);
                     }}
                   >
-                    {item.code}
+                    详情
                   </button>
                 </td>
                 <td className={`${td} text-ink-strong`}>
@@ -117,8 +179,50 @@ export function SharpeBoardTable({ items, loading, focusCode, onFocusToggle, onO
                 <td className={`${td} text-right tnum whitespace-nowrap ${retClass(item.ret_3y)}`}>
                   {formatRet(item.ret_3y)}
                 </td>
-                <td className={`${td} text-right tnum font-semibold text-ink-strong`}>{item.listed_weeks}</td>
-                <td className={`${td} text-right tnum text-ink-muted`}>{item.consecutive_weeks}</td>
+                <td className={`${td} text-right tnum font-semibold text-ink-strong whitespace-nowrap`}>
+                  {/* 在榜/可评：分母 = 该基金有有效样本的周数（数据缺口周不计入） */}
+                  <span
+                    className="hover-tip hover-tip--wrap"
+                    data-tip={listedWeeksTip(item.listed_weeks, item.evaluable_weeks, item.gap_weeks)}
+                  >
+                    {formatListedWeeks(item.listed_weeks, item.evaluable_weeks)}
+                  </span>
+                </td>
+                <td className={`${td} text-right tnum text-ink-muted whitespace-nowrap`}>
+                  <span
+                    className="hover-tip hover-tip--wrap"
+                    data-tip={consecutiveWeeksTip(item.consecutive_weeks, item.gap_weeks)}
+                  >
+                    {item.consecutive_weeks}
+                  </span>
+                </td>
+                <td
+                  className={`${td} text-right tnum whitespace-nowrap ${
+                    item.near_12w_qualified !== null && item.near_12w_total !== null
+                    && item.near_12w_qualified < item.near_12w_total / 2
+                      ? 'text-down' : 'text-ink-strong'
+                  }`}
+                  title="近 12 周中夏普 ≥0.8 的周数"
+                >
+                  {formatNear12w(item.near_12w_qualified, item.near_12w_total)}
+                </td>
+                <td className={`${td} text-right tnum whitespace-nowrap text-ink-strong`}>
+                  {item.peer_qualified_years !== null ? (
+                    <span
+                      className="hover-tip"
+                      data-tip={peerYearsTip(item.peer_years, item.peer_window)}
+                    >
+                      {formatPeerYears(item.peer_qualified_years, item.peer_window)}
+                    </span>
+                  ) : (
+                    <span
+                      className={item.peer_as_of ? 'hover-tip' : undefined}
+                      data-tip={item.peer_as_of ? `同类排名数据日期 ${item.peer_as_of}` : undefined}
+                    >
+                      {formatPeerPct(item.peer_pct)}
+                    </span>
+                  )}
+                </td>
                 <td className={`${td} text-right tnum whitespace-nowrap`}>
                   {item.latest_sharpe !== null ? item.latest_sharpe.toFixed(2) : '-'}
                 </td>

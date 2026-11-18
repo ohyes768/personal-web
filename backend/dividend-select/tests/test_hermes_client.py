@@ -70,6 +70,28 @@ class TestSubmit:
         assert captured["headers"]["Authorization"] == "Bearer secret"
         assert captured["headers"]["Idempotency-Key"] == "quality-600900-20261023"
 
+    def test_submit_with_instructions_sends_field(self, monkeypatch):
+        captured = {}
+
+        def fake_post(url, json=None, headers=None, timeout=None):
+            captured.update(json=json)
+            return FakeResponse(payload={"run_id": "run-1"})
+
+        monkeypatch.setattr(hermes_client.requests, "post", fake_post)
+        submit_run(CFG, "p", "k", instructions="预算纪律")
+        assert captured["json"] == {"input": "p", "instructions": "预算纪律"}
+
+    def test_submit_without_instructions_omits_field(self, monkeypatch):
+        captured = {}
+
+        def fake_post(url, json=None, headers=None, timeout=None):
+            captured.update(json=json)
+            return FakeResponse(payload={"run_id": "run-1"})
+
+        monkeypatch.setattr(hermes_client.requests, "post", fake_post)
+        submit_run(CFG, "p", "k")
+        assert captured["json"] == {"input": "p"}
+
     def test_submit_non_2xx_raises(self, monkeypatch):
         monkeypatch.setattr(hermes_client.requests, "post",
                             lambda *a, **k: FakeResponse(status_code=500, text="boom"))
@@ -88,6 +110,15 @@ class TestSubmit:
         monkeypatch.setattr(hermes_client.requests, "post", boom)
         with pytest.raises(HermesApiError, match="提交请求异常"):
             submit_run(CFG, "p", "k")
+
+
+@pytest.fixture
+def cfg_short():
+    """超时极短的配置，用于验证超时触发 stop。"""
+    return HermesConfig(
+        base_url="http://nas:8642", api_key="secret", profile="ohyes768",
+        poll_interval=0, timeout=1, max_concurrent=1,
+    )
 
 
 class TestPoll:
@@ -115,6 +146,20 @@ class TestPoll:
                             lambda *a, **k: FakeResponse(payload={"status": "running"}))
         with pytest.raises(HermesTimeout):
             poll_run(CFG, "run-1")
+
+    def test_poll_timeout_stops_remote_run(self, monkeypatch, cfg_short):
+        stopped = []
+        monkeypatch.setattr(hermes_client.requests, "get",
+                            lambda *a, **k: FakeResponse(payload={"status": "running"}))
+
+        def fake_stop_post(url, headers=None, timeout=None):
+            stopped.append(url)
+            return FakeResponse(payload={"status": "stopping"})
+
+        monkeypatch.setattr(hermes_client.requests, "post", fake_stop_post)
+        with pytest.raises(HermesTimeout, match="已请求停止"):
+            poll_run(cfg_short, "run-1")
+        assert stopped and stopped[0].endswith("/v1/runs/run-1/stop")
 
     def test_poll_network_error_raises_api_error(self, monkeypatch):
         def boom(*a, **k):

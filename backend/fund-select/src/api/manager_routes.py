@@ -132,7 +132,7 @@ async def manager_screen(
     min_solo_ratio: Optional[float] = Query(None, ge=0, le=100, description="独管比例 ≥ %"),
     max_fund_count: Optional[int] = Query(None, ge=1, le=200, description="在管基金数 ≤ N"),
     keyword: Optional[str] = Query(None, max_length=50, description="姓名/公司模糊匹配"),
-    sort: str = Query("weighted_annual", description="排序字段"),
+    sort: str = Query("current_weighted_annual", description="排序字段"),
     order: str = Query("desc", pattern="^(asc|desc)$"),
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=200),

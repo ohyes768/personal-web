@@ -54,6 +54,7 @@ from src.models import (
     DiscoveryImportRequest,
     EndpointInput,
     EndpointRecord,
+    PrimaryEndpointInput,
     LoginRequest,
     PortNoteInput,
     PortNoteRecord,
@@ -167,9 +168,7 @@ def summary(
     projector: Annotated[StatusProjector, Depends(get_status_projector)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> SummaryResponse:
-    payload = projector.summary()
-    payload["own_projects"] = list(settings.own_project_list)
-    return SummaryResponse(**payload)
+    return SummaryResponse(**projector.summary())
 
 
 # ---------------------------------------------------------------------------
@@ -183,13 +182,12 @@ def list_services(
     registry: Annotated[Registry, Depends(get_registry)],
     projector: Annotated[StatusProjector, Depends(get_status_projector)],
     query: str = Query(default="", max_length=200),
-    category: str = Query(default="", max_length=64),
     tag: str = Query(default="", max_length=64),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=100),
 ) -> dict[str, Any]:
     items, total = registry.list_services(
-        query=query, category=category, tag=tag, page=page, page_size=page_size
+        query=query, tag=tag, page=page, page_size=page_size
     )
     projects = registry.projects_by_service()
     payload = []
@@ -261,6 +259,17 @@ def delete_service(
 
 
 # ---- 组件绑定 ---------------------------------------------------------------
+
+
+@router.put("/services/{service_id}/primary-endpoint", response_model=EndpointRecord)
+def upsert_primary_endpoint(
+    service_id: str,
+    payload: PrimaryEndpointInput,
+    _: WriteDep,
+    registry: Annotated[Registry, Depends(get_registry)],
+) -> EndpointRecord:
+    """登记/更新主入口：只收 URL，类型与是否查证书由后端按 URL 判定。"""
+    return registry.upsert_primary_endpoint(service_id, payload.url)
 
 
 @router.post("/services/{service_id}/components/{source_key}/required")
@@ -436,6 +445,7 @@ def discovery_import(
     _: WriteDep,
     discovery: Annotated[DiscoveryService, Depends(get_discovery)],
     store: Annotated[Store, Depends(get_store)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> dict[str, Any]:
     result = discovery.import_components(payload)
     result["registry_revision"] = store.registry_revision

@@ -43,7 +43,7 @@ def test_deployed_manifest_is_read_fresh(tmp_path, monkeypatch):
 
 def test_version_changes_separate_runs_and_mismatch_does_not_overwrite(tmp_path, monkeypatch):
     keys, prompts = [], []
-    def submit(cfg, prompt, key):
+    def submit(cfg, prompt, key, instructions=""):
         keys.append(key)
         prompts.append(prompt)
         return 'run'
@@ -67,7 +67,7 @@ def test_unknown_current_version_explicit_reanalysis_avoids_old_cached_run(tmp_p
     monkeypatch.delenv('HERMES_QUALITY_SKILL_VERSION', raising=False)
     monkeypatch.delenv('HERMES_QUALITY_SKILL_PATH', raising=False)
     keys = []
-    def submit(cfg, prompt, key):
+    def submit(cfg, prompt, key, instructions=""):
         keys.append(key)
         return 'run'
     for _ in range(2):

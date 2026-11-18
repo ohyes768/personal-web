@@ -80,13 +80,13 @@ class TestRefreshMarketUniverseStage0:
         ))
         db_session.commit()
 
-        df = _df_with_ft([("000001", "改名", "债券型-长期纯债", "bond", "债券型-长期纯债")])
+        df = _df_with_ft([("000001", "改名", "债券型-长债", "bond", "债券型-长债")])
         refresh_market_universe(db_session, df, mgr_by_code={})
 
         f = db_session.get(Fund, "000001")
         assert f.fund_type == "中长期纯债"        # 保留
         assert f.name == "改名"                   # name 仍覆盖
-        assert f.market_subtype == "债券型-长期纯债"
+        assert f.market_subtype == "债券型-长债"
         # mgr_* 字段原为 None/空（老 L2 没填），传入 mgr_by_code={} 时保持 None
         assert f.mgr_name is None
         assert f.mgr_days is None
@@ -147,7 +147,7 @@ class TestRefreshMarketUniverseStage0:
         ))
         db_session.commit()
 
-        df = _df_with_ft([("000001", "改名", "债券型-长期纯债", "bond", "债券型-长期纯债")])
+        df = _df_with_ft([("000001", "改名", "债券型-长债", "bond", "债券型-长债")])
         mgr_by_code = self._mgr_by_code([("000001", "陈染", "华夏基金", 2000)])
         refresh_market_universe(db_session, df, mgr_by_code=mgr_by_code)
 
@@ -233,7 +233,7 @@ class TestRefreshMarketUniverse:
         ))
         db_session.commit()
 
-        df = _df([("000001", "新名", "债券型-长期纯债", "bond")])
+        df = _df([("000001", "新名", "债券型-长债", "bond")])
         result = refresh_market_universe(db_session, df, task_id=None)
 
         assert result["updated"] == 1
@@ -241,7 +241,7 @@ class TestRefreshMarketUniverse:
 
         f = db_session.get(Fund, "000001")
         assert f.name == "新名"                    # 覆盖
-        assert f.market_subtype == "债券型-长期纯债"  # 新增
+        assert f.market_subtype == "债券型-长债"  # 新增
         assert f.market_type == "bond"             # 新增
         assert f.fund_type == "中长期纯债"          # 关键：保留
         assert f.is_active is True                 # 保留
@@ -250,10 +250,10 @@ class TestRefreshMarketUniverse:
 
     def test_update_existing_does_not_flip_inactive_to_active(self, db_session):
         """is_active=False 的老基金不应被 market refresh 自动激活"""
-        db_session.add(Fund(code="000001", name="清盘", fund_type="债券型-长期纯债", is_active=False))
+        db_session.add(Fund(code="000001", name="清盘", fund_type="债券型-长债", is_active=False))
         db_session.commit()
 
-        df = _df([("000001", "清盘改名", "债券型-长期纯债", "bond")])
+        df = _df([("000001", "清盘改名", "债券型-长债", "bond")])
         refresh_market_universe(db_session, df, task_id=None)
 
         f = db_session.get(Fund, "000001")
@@ -264,7 +264,7 @@ class TestRefreshMarketUniverse:
         db_session.commit()
 
         df = _df([
-            ("000001", "老基金改名", "债券型-长期纯债", "bond"),
+            ("000001", "老基金改名", "债券型-长债", "bond"),
             ("000002", "新基金", "股票型", "stock"),
         ])
         result = refresh_market_universe(db_session, df, task_id=None)

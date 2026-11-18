@@ -189,7 +189,6 @@ class ServiceCreate(BaseModel):
 
     name: Name
     description: str = Field(default="", max_length=2000)
-    category: str = Field(default="", max_length=64)
     tags: list[str] = Field(default_factory=list, max_length=20)
     notes: str = Field(default="", max_length=4000)
 
@@ -208,16 +207,20 @@ class ServiceCreate(BaseModel):
 
 
 def clean_tags(value: list[str]) -> list[str]:
-    seen: list[str] = []
+    """标签清洗：去空白、丢空串、限长 32、去重并按字典序排序。
+
+    排序与 skill-manager 一致：筛选栏把标签按字典序排成一行，
+    顺序稳定才不会因为保存动作而跳动。
+    """
+    seen: set[str] = set()
     for tag in value:
         cleaned = tag.strip()
         if not cleaned:
             continue
         if len(cleaned) > 32:
             raise ValueError("tag too long (max 32)")
-        if cleaned not in seen:
-            seen.append(cleaned)
-    return seen
+        seen.add(cleaned)
+    return sorted(seen)
 
 
 class ServicePatch(BaseModel):
@@ -227,7 +230,6 @@ class ServicePatch(BaseModel):
 
     name: Name | None = None
     description: str | None = Field(default=None, max_length=2000)
-    category: str | None = Field(default=None, max_length=64)
     tags: list[str] | None = Field(default=None, max_length=20)
     notes: str | None = Field(default=None, max_length=4000)
     revision: int
@@ -279,6 +281,31 @@ class EndpointRecord(EndpointInput):
     id: str
     service_id: str
     revision: int
+
+
+class PrimaryEndpointInput(BaseModel):
+    """行内改主入口：只收 URL，类型与是否查证书由后端按 URL 判定。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    url: str = Field(min_length=1, max_length=2048)
+
+
+class PrimaryEndpointView(BaseModel):
+    """列表页要显示的主入口信息（含证书状态）。"""
+
+    id: str
+    url: str
+    label: str = ""
+    kind: EndpointKind = EndpointKind.EXTERNAL
+    tls_check: bool = True
+    # 证书状态：valid / expiring / expired / invalid / unknown
+    tls_state: str = "unknown"
+    tls_days_remaining: int | None = None
+    tls_not_after: str | None = None
+    tls_invalid_reason: str | None = None
+    # 服务器端口：主入口 URL 上的端口（省略时取 scheme 默认 443/80）
+    server_port: int | None = None
 
 
 class PortNoteInput(BaseModel):
@@ -338,7 +365,6 @@ class ServiceDetail(BaseModel):
     id: str
     name: str
     description: str
-    category: str
     tags: list[str]
     notes: str
     revision: int
@@ -355,13 +381,14 @@ class ServiceListItem(BaseModel):
     id: str
     name: str
     description: str
-    category: str
     tags: list[str]
     revision: int
     updated_at: str
     primary_url: str | None = None
+    # 主入口（含证书状态）；没有登记入口时为 None
+    primary_endpoint: PrimaryEndpointView | None = None
     component_count: int = 0
-    # 该服务包含的 compose 项目（自己开发的 vs 其他，用来分 tab）
+    # 该服务包含的 compose 项目（来源信息，不再决定分组）
     projects: list[str] = Field(default_factory=list)
     status: ServiceStatus = Field(default_factory=ServiceStatus)
 
@@ -407,7 +434,6 @@ class DiscoveryImportRequest(BaseModel):
     service_id: str | None = None
     name: Name | None = None
     description: str = Field(default="", max_length=2000)
-    category: str = Field(default="", max_length=64)
     tags: list[str] = Field(default_factory=list, max_length=20)
 
 
@@ -527,15 +553,21 @@ class RefreshJobView(BaseModel):
 class SummaryResponse(BaseModel):
     services: int = 0
     components: int = 0
+    # 容器侧观测计数：发现 vs 已关联 vs 未入账
+    docker_components: int = 0
+    docker_running: int = 0
+    docker_missing: int = 0
+    unregistered_components: int = 0
+    ignored_components: int = 0
     docker_available: bool = False
     docker_error: str | None = None
     docker_last_success_at: str | None = None
     counts: dict[str, dict[str, int]] = Field(default_factory=dict)
+    # 全库标签词表：筛选栏的候选来源（不随搜索结果缩小）
+    all_tags: list[str] = Field(default_factory=list)
     unread_releases: int = 0
     registry_revision: int = 0
     checker_heartbeat: str | None = None
-    # 「我自己开发的」compose 项目名（前端据此分 tab）
-    own_projects: list[str] = Field(default_factory=list)
 
 
 class BackupPreviewResponse(BaseModel):

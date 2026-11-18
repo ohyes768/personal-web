@@ -1,8 +1,7 @@
 "use client";
 
-/** 通用小部件：状态徽章、复制按钮、返回入口。 */
+/** 通用小部件：状态徽章、提示条、加载指示。 */
 
-import { useState } from "react";
 import type { Tone } from "@/lib/status";
 
 export function StateBadge({ tone, title }: { tone: Tone; title?: string }) {
@@ -13,45 +12,7 @@ export function StateBadge({ tone, title }: { tone: Tone; title?: string }) {
   );
 }
 
-export function CopyButton({
-  value,
-  label = "复制",
-  onCopied,
-}: {
-  value: string;
-  label?: string;
-  onCopied?: (message: string) => void;
-}) {
-  const [copied, setCopied] = useState(false);
-
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-      onCopied?.("已复制");
-      window.setTimeout(() => setCopied(false), 1500);
-    } catch {
-      onCopied?.("复制失败：浏览器拒绝访问剪贴板");
-    }
-  }
-
-  return (
-    <button type="button" className="btn btn-mini" onClick={copy}>
-      {copied ? "已复制" : label}
-    </button>
-  );
-}
-
-export function Toast({ message }: { message: string | null }) {
-  if (!message) return null;
-  return (
-    <div className="copy-toast" role="status">
-      {message}
-    </div>
-  );
-}
-
-/** 只在 http/https 时渲染可点链接：用户录入的 URL 一律限协议。 */
+/** 只在 http/https 时渲染成可点链接，其余退化成纯文本。 */
 export function SafeLink({
   href,
   children,
@@ -66,4 +27,18 @@ export function SafeLink({
       {children}
     </a>
   );
+}
+
+export function Toast({ message }: { message: string | null }) {
+  if (!message) return null;
+  return (
+    <div className="copy-toast" role="status">
+      {message}
+    </div>
+  );
+}
+
+/** 加载指示：按钮内联的旋转环。语义交给按钮本身（aria-busy + 文案），这里只画形状。 */
+export function Spinner() {
+  return <span className="spinner" aria-hidden="true" />;
 }

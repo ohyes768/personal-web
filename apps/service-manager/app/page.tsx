@@ -1,24 +1,30 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, ApiError, type ServiceListItem, type SummaryResponse } from "@/lib/api";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  abnormalTones,
-  describeCheck,
+  api,
+  ApiError,
+  type ServiceListItem,
+  type SummaryResponse,
+} from "@/lib/api";
+import { describeJob, waitForJob } from "@/lib/jobs";
+import { matchesTags } from "@/lib/tagFilter";
+import {
   formatRelative,
   healthTooltip,
   HEALTH,
-  invalidReasonOf,
-  isOwnService,
-  RELEASE_STATE,
   RUNTIME,
-  tlsTooltip,
+  tlsEndpointTooltip,
+  tlsInvalidReason,
   tlsTone,
-  URL_STATE,
 } from "@/lib/status";
 import SessionGate from "@/components/SessionGate";
-import { SafeLink, StateBadge, Toast } from "@/components/Widgets";
+import { SafeLink, Spinner, StateBadge, Toast } from "@/components/Widgets";
+import { TagBadge } from "@/components/TagBadge";
+import { ServiceInfoEditor } from "@/components/ServiceInfoEditor";
+import { TagEditor } from "@/components/TagEditor";
+import { TagFilterBar } from "@/components/TagFilterBar";
 
 export default function HomePage() {
   return (
@@ -33,22 +39,28 @@ function ServiceList() {
   const [total, setTotal] = useState(0);
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [query, setQuery] = useState("");
-  const [category, setCategory] = useState("");
-  const [onlyAbnormal, setOnlyAbnormal] = useState(false);
-  const [group, setGroup] = useState<"own" | "other">("own");
+  // 标签筛选（多选 AND）与标签编辑弹窗
+  const [tagFilter, setTagFilter] = useState<string[]>([]);
+  const [editingTags, setEditingTags] = useState<ServiceListItem | null>(null);
+  const [savingTags, setSavingTags] = useState(false);
+  // 编辑弹窗：名称 + 用途（+ 尚未登记时的主入口 URL）
+  const [editingInfo, setEditingInfo] = useState<ServiceListItem | null>(null);
+  const [savingInfo, setSavingInfo] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [newCategory, setNewCategory] = useState("");
+  // 刷新任务在后台跑，按钮各自转圈；两类任务互不阻塞。
+  const [pending, setPending] = useState<{ docker: boolean }>({ docker: false });
+  const aborters = useRef<Set<AbortController>>(new Set());
+  // 同一类任务的防重入（state 更新要等一次渲染，用 ref 才能挡住连点）
+  const inFlight = useRef<Set<"docker">>(new Set());
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const [list, totals] = await Promise.all([
-        api.listServices({ query, category, page: 1, page_size: 100 }),
+        api.listServices({ query, page: 1, page_size: 100 }),
         api.summary(),
       ]);
       setItems(list.items);
@@ -59,67 +71,178 @@ function ServiceList() {
     } finally {
       setLoading(false);
     }
-  }, [query, category]);
+  }, [query]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const categories = useMemo(
-    () => Array.from(new Set(items.map((item) => item.category).filter(Boolean))).sort(),
-    [items],
-  );
+  // 离开页面时停掉还在轮询的刷新任务，别让后台继续空转
+  useEffect(() => {
+    const controllers = aborters.current;
+    return () => {
+      controllers.forEach((controller) => controller.abort());
+      controllers.clear();
+    };
+  }, []);
 
-  const visible = useMemo(
-    () =>
-      onlyAbnormal
-        ? items.filter((item) => abnormalTones(item.status).length > 0)
-        : items,
-    [items, onlyAbnormal],
-  );
+  // 从详情页点标签跳回来时带上 ?tag=xxx：初次进入按这个标签筛。
+  // 用 window.location 读而不是 useSearchParams——后者在静态页要挂 Suspense 边界。
+  useEffect(() => {
+    const tag = new URLSearchParams(window.location.search).get("tag");
+    if (tag) setTagFilter([tag]);
+  }, []);
 
-  // 分组：自己开发的（personal-web compose 项目）一个 tab，其余另一个。
-  // summary 还没回来时先不分组，避免首屏闪一下空的「我自己的」。
-  const ownProjects = useMemo(() => summary?.own_projects ?? [], [summary]);
-  const grouped = ownProjects.length > 0;
-  const groups = useMemo(() => {
-    const own = grouped
-      ? visible.filter((item) => isOwnService(item, ownProjects)).length
-      : visible.length;
-    return { own, other: grouped ? visible.length - own : 0 };
-  }, [visible, ownProjects, grouped]);
+  // 候选标签：后端给的全库词表（不随搜索/分组缩小，筛选栏才选得到别的标签）
+  const allTags = useMemo(() => summary?.all_tags ?? [], [summary]);
+
+  // 筛选链：搜索（后端）→ 标签（前端，多选 AND）。列表平铺，不分组。
   const tabItems = useMemo(
-    () =>
-      grouped
-        ? visible.filter((item) =>
-            group === "own" ? isOwnService(item, ownProjects) : !isOwnService(item, ownProjects),
-          )
-        : visible,
-    [visible, group, ownProjects, grouped],
+    () => items.filter((item) => matchesTags(item.tags, tagFilter)),
+    [items, tagFilter],
   );
 
-  async function create(event: React.FormEvent) {
-    event.preventDefault();
-    if (!newName.trim()) return;
+  function toggleTagFilter(tag: string) {
+    setTagFilter((prev) =>
+      prev.includes(tag) ? prev.filter((item) => item !== tag) : [...prev, tag],
+    );
+  }
+
+  async function saveTags(tags: string[]) {
+    if (!editingTags) return;
+    setSavingTags(true);
     try {
-      await api.createService({ name: newName.trim(), category: newCategory.trim() });
-      setNewName("");
-      setNewCategory("");
-      setCreating(false);
-      setToast("已新增服务");
-      await load();
+      const updated = await api.patchService(editingTags.id, {
+        tags,
+        revision: editingTags.revision,
+      });
+      // 就地更新：revision 必须跟着后端返回的走，否则下一次 PATCH 会 409
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === updated.id
+            ? { ...item, tags: updated.tags, revision: updated.revision }
+            : item,
+        ),
+      );
+      // 词表也要跟上：新建的标签立刻能出现在筛选栏里
+      setSummary((prev) =>
+        prev
+          ? {
+              ...prev,
+              all_tags: Array.from(new Set([...prev.all_tags, ...updated.tags])).sort(),
+            }
+          : prev,
+      );
+      setEditingTags(null);
+      setToast("标签已保存");
     } catch (caught) {
-      setToast(caught instanceof ApiError ? caught.message : "新增失败");
+      setToast(caught instanceof ApiError ? caught.message : "保存标签失败");
+    } finally {
+      setSavingTags(false);
     }
   }
 
-  async function refresh(kind: "docker" | "all") {
+  function startEditInfo(item: ServiceListItem) {
+    setEditingInfo(item);
+  }
+
+  function cancelEditInfo() {
+    setEditingInfo(null);
+  }
+
+  async function saveInfo(values: { name: string; description: string; url: string | null }) {
+    if (!editingInfo) return;
+    setSavingInfo(true);
+    try {
+      const updated = await api.patchService(editingInfo.id, {
+        name: values.name,
+        description: values.description,
+        revision: editingInfo.revision,
+      });
+      // 就地更新：revision 用后端返回值覆盖，否则下一次 PATCH 会 409
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === updated.id
+            ? {
+                ...item,
+                name: updated.name,
+                description: updated.description,
+                revision: updated.revision,
+              }
+            : item,
+        ),
+      );
+      // 还没登记过主入口的话，这次顺手登记一个（填了就纳入 URL / 证书检查）
+      if (values.url) {
+        await api.upsertPrimaryEndpoint(editingInfo.id, values.url);
+      }
+      cancelEditInfo();
+      setToast(values.url ? "已保存，主入口已登记" : "已保存");
+      await load();
+      if (values.url) {
+        // 触发一次该服务的证书检查，别让用户干等下一轮定时
+        try {
+          await api.refresh("tls", editingInfo.id);
+        } catch {
+          // 检查提交失败不影响保存结果
+        }
+      }
+    } catch (caught) {
+      setToast(caught instanceof ApiError ? caught.message : "保存失败");
+    } finally {
+      setSavingInfo(false);
+    }
+  }
+
+  async function removeService(item: ServiceListItem) {
+    if (
+      !window.confirm(
+        `从台账移除「${item.name}」？只删除本应用的记录与关联，运行中的容器不受影响。`,
+      )
+    ) {
+      return;
+    }
+    try {
+      await api.deleteService(item.id);
+      setToast("已移除");
+      await load();
+    } catch (caught) {
+      setToast(caught instanceof ApiError ? caught.message : "移除失败");
+    }
+  }
+
+  async function refresh(kind: "docker") {
+    if (inFlight.current.has(kind)) return;
+    const label = "容器扫描";
+    inFlight.current.add(kind);
+    setPending((prev) => ({ ...prev, [kind]: true }));
+    const controller = new AbortController();
+    aborters.current.add(controller);
     try {
       const job = await api.refresh(kind);
-      setToast(job.deduplicated ? "已有同类型任务在跑，复用现有任务" : `已提交${kind === "docker" ? "容器扫描" : "全量检查"}任务`);
-      window.setTimeout(() => void load(), 3000);
+      if (controller.signal.aborted) return;
+      setToast(
+        job.deduplicated
+          ? "已有同类型任务在跑，复用现有任务"
+          : `已提交${label}任务`,
+      );
+      // 任务在后台跑，轮询到终态再刷新列表——固定等 3 秒会漏掉慢任务的结果。
+      const result = await waitForJob(job.id, { signal: controller.signal });
+      if (result.aborted) return;
+      if (result.timedOut) {
+        setToast(`${label}还没跑完，仍在后台执行，稍后再看`);
+      } else if (result.job) {
+        setToast(describeJob(label, result.job));
+      }
+      await load();
     } catch (caught) {
-      setToast(caught instanceof ApiError ? caught.message : "刷新失败");
+      if (!controller.signal.aborted) {
+        setToast(caught instanceof ApiError ? caught.message : `${label}失败`);
+      }
+    } finally {
+      aborters.current.delete(controller);
+      inFlight.current.delete(kind);
+      setPending((prev) => ({ ...prev, [kind]: false }));
     }
   }
 
@@ -127,7 +250,7 @@ function ServiceList() {
     <>
       <h1>服务</h1>
       <p className="lead">
-        台账里的服务、它们对应的容器、入口与证书。状态分维度显示，不用一个绿灯抹平。
+        台账里的服务、它们对应的容器，以及运行与健康两个状态。名称、用途、标签都在这一页就地改。
       </p>
 
       {summary ? (
@@ -136,19 +259,36 @@ function ServiceList() {
             <div className="num">{summary.services}</div>
             <div className="lbl">业务服务</div>
           </div>
-          <div className="kpi">
+          <div
+            className="kpi"
+            title={`上次扫描观测到的容器总数：运行 ${summary.docker_running} · 已消失 ${summary.docker_missing}`}
+          >
+            <div className="num">{summary.docker_components}</div>
+            <div className="lbl">发现容器</div>
+          </div>
+          <div
+            className="kpi"
+            title={`已关联到业务服务的容器：${summary.components} / ${summary.docker_components}`}
+          >
             <div className="num">{summary.components}</div>
             <div className="lbl">已关联组件</div>
           </div>
-          <div className="kpi">
-            <div className="num" style={{ color: summary.docker_available ? "var(--ok)" : "var(--warn)" }}>
-              {summary.docker_available ? "可用" : "不可用"}
+          <div
+            className="kpi"
+            title={`发现但没关联到任何业务服务的容器：${summary.unregistered_components} 个，其中 ${summary.ignored_components} 个已标记忽略，实际待处理 ${summary.unregistered_components - summary.ignored_components} 个`}
+          >
+            <div
+              className="num"
+              style={{
+                color:
+                  summary.unregistered_components - summary.ignored_components > 0
+                    ? "var(--warn)"
+                    : undefined,
+              }}
+            >
+              {summary.unregistered_components}
             </div>
-            <div className="lbl">Docker 读取</div>
-          </div>
-          <div className="kpi">
-            <div className="num">{summary.unread_releases}</div>
-            <div className="lbl">未读发布</div>
+            <div className="lbl">未入账</div>
           </div>
           <div className="kpi">
             <div className="num small" style={{ fontSize: 13 }}>
@@ -165,25 +305,6 @@ function ServiceList() {
         </div>
       ) : null}
 
-      <div className="tabs" role="tablist">
-        <button
-          role="tab"
-          aria-selected={group === "own"}
-          className={group === "own" ? "active" : ""}
-          onClick={() => setGroup("own")}
-        >
-          {ownProjects.join("、") || "我自己的"}（{groups.own}）
-        </button>
-        <button
-          role="tab"
-          aria-selected={group === "other"}
-          className={group === "other" ? "active" : ""}
-          onClick={() => setGroup("other")}
-        >
-          其他（{groups.other}）
-        </button>
-      </div>
-
       <div className="card tight">
         <div className="btn-row">
           <input
@@ -194,64 +315,30 @@ function ServiceList() {
             aria-label="搜索服务"
             style={{ flex: "1 1 320px" }}
           />
-          <select
-            value={category}
-            onChange={(event) => setCategory(event.target.value)}
-            aria-label="按分类筛选"
+          <button
+            className="btn"
+            type="button"
+            disabled={pending.docker}
+            aria-busy={pending.docker}
+            title="重新扫描 Docker 容器，刷新「发现容器 / 已关联组件 / 未入账」与各服务的运行、健康状态"
+            onClick={() => void refresh("docker")}
           >
-            <option value="">全部分类</option>
-            {categories.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </select>
-          <label className="small" style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-            <input
-              type="checkbox"
-              checked={onlyAbnormal}
-              onChange={(event) => setOnlyAbnormal(event.target.checked)}
-            />
-            只看异常
-          </label>
-          <button className="btn" type="button" onClick={() => void refresh("docker")}>
-            扫描容器
-          </button>
-          <button className="btn" type="button" onClick={() => void refresh("all")}>
-            全量检查
-          </button>
-          <button className="btn primary" type="button" onClick={() => setCreating((value) => !value)}>
-            新增服务
+            {pending.docker ? (
+              <>
+                <Spinner />
+                扫描中…
+              </>
+            ) : (
+              "扫描容器"
+            )}
           </button>
         </div>
 
-        {creating ? (
-          <form onSubmit={create} style={{ marginTop: 12 }}>
-            <div className="form-grid">
-              <div className="field">
-                <label htmlFor="new-name">名称（必填）</label>
-                <input
-                  id="new-name"
-                  value={newName}
-                  onChange={(event) => setNewName(event.target.value)}
-                  required
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="new-category">分类</label>
-                <input
-                  id="new-category"
-                  value={newCategory}
-                  onChange={(event) => setNewCategory(event.target.value)}
-                  placeholder="金融 / 媒体 / 基础设施"
-                />
-              </div>
-            </div>
-            <button className="btn primary" type="submit">
-              保存
-            </button>
-          </form>
-        ) : null}
+        <p className="small muted" style={{ marginTop: 8 }}>
+          扫描容器：重新读取 Docker 容器状态与健康检查（后台每 60 秒自动扫一次）。
+        </p>
+
+        <TagFilterBar allTags={allTags} selected={tagFilter} onChange={setTagFilter} />
       </div>
 
       {error ? <p className="notice bad">{error}</p> : null}
@@ -262,12 +349,17 @@ function ServiceList() {
         <div className="card">
           <p>
             {items.length === 0
-              ? "台账还是空的。可以先「新增服务」，或到「发现导入」从运行中的容器建立。"
-              : grouped
-                ? `这个分组里没有服务（${group === "own" ? ownProjects.join("、") : "其他"}）。`
+              ? "台账还是空的。到「发现导入」从运行中的容器建立台账条目。"
+              : tagFilter.length > 0
+                ? `没有同时具备这些标签的服务（${tagFilter.join("、")}）。`
                 : "没有匹配的服务。"}
           </p>
           <div className="btn-row">
+            {tagFilter.length > 0 ? (
+              <button className="btn" type="button" onClick={() => setTagFilter([])}>
+                清除标签筛选
+              </button>
+            ) : null}
             <Link className="btn" href="/discovery">
               去发现导入
             </Link>
@@ -280,37 +372,58 @@ function ServiceList() {
               <tr>
                 <th>服务</th>
                 <th>主入口</th>
+                <th title="这条服务在服务器上监听的端口（取自主入口 URL；省略端口时按 https→443、http→80）">服务器端口</th>
                 <th>运行</th>
                 <th>健康</th>
-                <th>URL</th>
                 <th title="HTTPS 证书：有没有人信它、什么时候到期">证书</th>
-                <th>发布</th>
                 <th>操作</th>
               </tr>
             </thead>
             <tbody>
               {tabItems.map((item) => (
-                <tr key={item.id}>
+                <tr key={item.id} data-service-id={item.id}>
                   <td>
-                    <Link href={`/service/${item.id}`}>{item.name}</Link>
-                    {item.category ? <div className="small muted">{item.category}</div> : null}
-                    {item.tags.length ? (
-                      <div className="small muted">{item.tags.join(" · ")}</div>
+                    <span className="service-name">{item.name}</span>
+                    {item.description ? (
+                      <div className="small truncate" title={item.description}>
+                        {item.description}
+                      </div>
                     ) : null}
+                    <div className="tag-row" style={{ marginTop: 2 }}>
+                      {item.tags.map((tag) => (
+                        <TagBadge
+                          key={tag}
+                          tag={tag}
+                          active={tagFilter.includes(tag)}
+                          onClick={() => toggleTagFilter(tag)}
+                        />
+                      ))}
+                      <button
+                        type="button"
+                        className="tag-add"
+                        onClick={() => setEditingTags(item)}
+                        aria-label={`编辑 ${item.name} 的标签`}
+                        title="编辑标签"
+                      >
+                        ＋标签
+                      </button>
+                    </div>
                   </td>
                   <td>
-                    {item.primary_url ? (
-                      <SafeLink href={item.primary_url} className="mono wrap-anywhere">
-                        {item.primary_url}
+                    {item.primary_endpoint ? (
+                      <SafeLink
+                        href={item.primary_endpoint.url}
+                        className="mono wrap-anywhere"
+                        title="已登记的主入口不在台账里改"
+                      >
+                        {item.primary_endpoint.url}
                       </SafeLink>
                     ) : (
-                      <span
-                        className="muted small"
-                        title="网关、反向代理或内部调用类服务本就不需要对外入口，此项不适用、无需补录；若该服务确实需要 Web 访问，可在详情页登记入口"
-                      >
-                        无对外入口
-                      </span>
+                      <span className="muted small">无对外入口</span>
                     )}
+                  </td>
+                  <td className="mono">
+                    {item.primary_endpoint?.server_port ?? "—"}
                   </td>
                   <td>
                     <StateBadge tone={RUNTIME[item.status.runtime]} />
@@ -323,33 +436,49 @@ function ServiceList() {
                     />
                   </td>
                   <td>
-                    <StateBadge tone={URL_STATE[item.status.url]} title={describeCheck(item.status.url_check)} />
-                  </td>
-                  <td>
-                    <StateBadge
-                      tone={tlsTone(
-                        item.status.tls,
-                        invalidReasonOf(item.status.tls_check),
-                      )}
-                      title={tlsTooltip(item.status.tls_check)}
-                    />
-                  </td>
-                  <td>
-                    <StateBadge tone={RELEASE_STATE[item.status.release]} />
-                    {item.status.unread_releases > 0 ? (
-                      <div className="small muted">{item.status.unread_releases} 条未读</div>
-                    ) : null}
+                    {item.primary_endpoint?.tls_check ? (
+                      <>
+                        <StateBadge
+                          tone={tlsTone(
+                            (item.primary_endpoint.tls_state ?? "unknown") as never,
+                            item.primary_endpoint.tls_invalid_reason,
+                          )}
+                          title={tlsEndpointTooltip(item.primary_endpoint)}
+                        />
+                        {item.primary_endpoint.tls_days_remaining !== null &&
+                        item.primary_endpoint.tls_days_remaining >= 0 ? (
+                          <div className="small muted">
+                            {item.primary_endpoint.tls_days_remaining} 天
+                          </div>
+                        ) : null}
+                        {item.primary_endpoint.tls_invalid_reason ? (
+                          <div className="small muted">
+                            {tlsInvalidReason(item.primary_endpoint.tls_invalid_reason)}
+                          </div>
+                        ) : null}
+                      </>
+                    ) : (
+                      <span className="muted small">-</span>
+                    )}
                   </td>
                   <td>
                     <div className="row-actions">
-                      <Link className="btn btn-mini" href={`/service/${item.id}`}>
-                        详情
-                      </Link>
-                      {item.primary_url ? (
-                        <SafeLink className="btn btn-mini" href={item.primary_url}>
-                          打开
-                        </SafeLink>
-                      ) : null}
+                      <button
+                        className="btn btn-mini"
+                        type="button"
+                        onClick={() => startEditInfo(item)}
+                        aria-label={`编辑「${item.name}」的名称与用途`}
+                      >
+                        编辑
+                      </button>
+                      <button
+                        className="btn btn-mini danger"
+                        type="button"
+                        onClick={() => void removeService(item)}
+                        aria-label={`从台账移除「${item.name}」`}
+                      >
+                        移除
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -359,8 +488,30 @@ function ServiceList() {
         </div>
       )}
       <p className="small muted">
-        共 {total} 个服务，当前分组 {tabItems.length} 个
+        共 {total} 个服务，当前显示 {tabItems.length} 个
+        {tagFilter.length > 0 ? `（标签筛选：${tagFilter.join("、")}）` : ""}
       </p>
+      {editingInfo ? (
+        <ServiceInfoEditor
+          title={editingInfo.name}
+          name={editingInfo.name}
+          description={editingInfo.description}
+          endpointUrl={editingInfo.primary_endpoint?.url ?? null}
+          busy={savingInfo}
+          onSave={(values) => void saveInfo(values)}
+          onClose={cancelEditInfo}
+        />
+      ) : null}
+      {editingTags ? (
+        <TagEditor
+          title={editingTags.name}
+          tags={editingTags.tags}
+          allTags={allTags}
+          busy={savingTags}
+          onSave={(tags) => void saveTags(tags)}
+          onClose={() => setEditingTags(null)}
+        />
+      ) : null}
       <Toast message={toast} />
     </>
   );

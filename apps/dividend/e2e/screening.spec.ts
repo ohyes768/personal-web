@@ -6,7 +6,8 @@ const stock = {
   roe: 12, roe_year: 2025, roe_avg_3y: 11,
   roe_history: [{ year: 2023, value: 10 }, { year: 2024, value: 11 }, { year: 2025, value: 12 }],
   annual_net_profit_ex_non_recurring: 120000000, annual_profit_year: 2025,
-  net_profit_ex_non_recurring_yoy: 2, latest_quarter_label: '2026Q2', latest_quarter_yoy_pct: -1,
+  net_profit_ex_non_recurring_yoy: 2, net_profit_cagr_3y: 8.5,
+  latest_quarter_label: '2026Q2', latest_quarter_yoy_pct: -1,
   previous_quarter_label: '2026Q1', previous_quarter_yoy_pct: 2,
 };
 
@@ -160,6 +161,42 @@ async function setup(page: Page, initiallyFavorite = false, analysisDuration?: n
   });
 }
 
+test('failed rating row offers the failed run session download', async ({ page }) => {
+  await setup(page, false, undefined, {
+    perCode: { '000001': perCodeItem('failed', { run_id: 'run-fail-1' }) },
+  });
+  // 会话记录端点（后端按 run_id 去 Hermes 拉 markdown）
+  await page.route('**/api/dividend/quality/runs/run-fail-1/session', route => route.fulfill({
+    status: 200,
+    contentType: 'text/markdown; charset=utf-8',
+    body: '# Hermes run 会话记录：run-fail-1\n\n## 消息记录（0 条）\n',
+  }));
+  await page.goto('/?tab=screening');
+  const row = page.getByRole('row', { name: /测试公司/ });
+  await expect(row.getByText('失败', { exact: true })).toBeVisible();
+  const button = row.getByRole('button', { name: '下载会话记录' });
+  await expect(button).toBeVisible();
+  const downloadPromise = page.waitForEvent('download');
+  await button.click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe('hermes-run-fail-1-session.md');
+});
+
+test('screening list shows the value behind every threshold condition', async ({ page }) => {
+  await setup(page);
+  await page.goto('/?tab=screening');
+  // 筛选条件的实际值都在列表里能对照：股息率 / 近三年平均ROE / 最近年度ROE / 3年CAGR
+  await expect(page.getByRole('columnheader', { name: '三年股息率' })).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: '近三年平均ROE' })).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: '最近年度ROE' })).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: '3年CAGR' })).toBeVisible();
+  const row = page.getByRole('row', { name: /测试公司/ });
+  await expect(row.getByRole('cell', { name: '4.00%', exact: true })).toBeVisible();
+  await expect(row.getByRole('cell', { name: '11.00%', exact: true })).toBeVisible();
+  await expect(row.getByRole('cell', { name: '12.00%', exact: true })).toBeVisible();
+  await expect(row.getByRole('cell', { name: '8.50%', exact: true })).toBeVisible();
+});
+
 test('screening remains accessible with no stocks in old filter, allows retrying failed favorite', async ({ page }) => {
   await setup(page);
   await page.goto('/?tab=screening');
@@ -208,6 +245,32 @@ test('conditions persist, query uses configured ROE and reset restores defaults'
   await expect(average).toHaveValue('12');
   await page.getByRole('button', { name: '恢复默认' }).click();
   await expect(average).toHaveValue('10');
+});
+
+test('cagr threshold defaults to 0, is sent with the query and persists', async ({ page }) => {
+  await setup(page);
+  await page.goto('/?tab=screening');
+  const cagr = page.getByRole('spinbutton', { name: '扣非净利润3年复合增长率 ≥' });
+  await expect(cagr).toHaveValue('0');
+  const request = page.waitForRequest(req => req.url().endsWith('/stocks/screen') && req.method() === 'POST' && req.postDataJSON().min_cagr_3y === 8);
+  await cagr.fill('8');
+  await page.getByRole('button', { name: '查询候选' }).click();
+  expect((await request).postDataJSON().min_cagr_3y).toBe(8);
+  await page.reload();
+  await expect(cagr).toHaveValue('8');
+  // 恢复默认回到 0
+  await page.getByRole('button', { name: '恢复默认' }).click();
+  await expect(cagr).toHaveValue('0');
+});
+
+test('legacy saved conditions fall back to the default cagr threshold', async ({ page }) => {
+  await setup(page);
+  await page.addInitScript(() => localStorage.setItem('dividend-screening-conditions-v1', JSON.stringify({ min_yield: 4.5, min_roe: 13, min_roe_avg_3y: 12, exchange: '沪市主板' })));
+  const request = page.waitForRequest(req => req.url().endsWith('/stocks/screen') && req.method() === 'POST');
+  await page.goto('/?tab=screening');
+  // 老存储没有 CAGR 条件 → 用默认值，且不清空用户已设的其它条件
+  expect((await request).postDataJSON()).toMatchObject({ min_yield: 4.5, min_roe: 13, min_roe_avg_3y: 12, min_cagr_3y: 0 });
+  await expect(page.getByRole('spinbutton', { name: '扣非净利润3年复合增长率 ≥' })).toHaveValue('0');
 });
 
 test('legacy watchlist link displays favorites outside current dividend filter', async ({ page }) => {

@@ -48,9 +48,11 @@ interface RowDetailDrawerProps {
   onClose: () => void;
   /** URL 直达（?code=）时只传 code：头部先显示代码，详情加载后回填名称 */
   stub?: string | null;
+  /** 夏普卡片就地弹「夏普走势」弹框（不传则保持整页跳转） */
+  onTrendOpen?: (code: string) => void;
 }
 
-export function RowDetailDrawer({ fund, onClose, stub }: RowDetailDrawerProps) {
+export function RowDetailDrawer({ fund, onClose, stub, onTrendOpen }: RowDetailDrawerProps) {
   // stub 模式 = fund 为 null 但有 code：复用同一抽屉壳，头部 code 先行
   const effective = fund ?? (stub ? { code: stub, name: '', fund_type: '' } as FundListItem : null);
   const [detail, setDetail] = useState<FundDetail | null>(null);
@@ -152,7 +154,7 @@ export function RowDetailDrawer({ fund, onClose, stub }: RowDetailDrawerProps) {
           {detail && (
             <>
               {/* Hero：综合评级 + 4 个 KPI + 基础信息行 */}
-              <DetailHero fund={detail} />
+              <DetailHero fund={detail} onTrendOpen={onTrendOpen} />
 
               {/* 表 1：4 周期排名 */}
               <DetailSection

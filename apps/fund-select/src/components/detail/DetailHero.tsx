@@ -15,6 +15,8 @@ import {
 
 interface DetailHeroProps {
   fund: FundDetail;
+  /** 夏普卡片就地弹「夏普走势」弹框（传了则不走整页跳转） */
+  onTrendOpen?: (code: string) => void;
 }
 
 /** 一句话总评：基于最强维度生成短句 */
@@ -52,7 +54,7 @@ const numFmt = (v: number | null | undefined, suffix = ''): string => {
   return `${v.toFixed(2)}${suffix}`;
 };
 
-export function DetailHero({ fund }: DetailHeroProps) {
+export function DetailHero({ fund, onTrendOpen }: DetailHeroProps) {
   const { score, segment } = compositeScore(fund);
   const headline = buildHeadline(fund, score);
 
@@ -97,8 +99,12 @@ export function DetailHero({ fund }: DetailHeroProps) {
         {headline}
       </p>
 
-      {/* 6 个风险指标卡片（3 列 × 2 行） */}
-      <RiskMetricsGrid fund={fund} />
+      {/* 6 个风险指标卡片（3 列 × 2 行）；夏普卡片可点开走势（弹框优先，否则整页跳转） */}
+      <RiskMetricsGrid
+        fund={fund}
+        trendHref={`/sharpe-trend?code=${fund.code}`}
+        onTrendOpen={onTrendOpen ? () => onTrendOpen(fund.code) : undefined}
+      />
 
       {/* 4 个 KPI 大数字卡片 */}
       <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-px bg-rule">

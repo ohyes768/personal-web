@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 74
-- **Last Active**: 2026-11-13
+- **Total Sessions**: 83
+- **Last Active**: 2026-11-15
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1117 | Active |
+| `journal-2.md` | ~1347 | Active |
 | `journal-1.md` | ~2042 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,15 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 83 | 2026-11-15 | 夏普榜单在榜占比筛选 + 精简时间范围 | `b056c798` | `master` |
+| 82 | 2026-11-15 | 夏普榜单数据缺口周口径修正 | `84ab060e`, `07316cc2` | `master` |
+| 81 | 2026-11-14 | 基金代码快速搜索（header 搜索框 + URL 跳转） | `ee73a068` | `master` |
+| 80 | 2026-11-14 | service-manager 恢复主入口与证书监控 | `bb57d32e` | `master` |
+| 79 | 2026-11-14 | 夏普榜单 v3：年度同类排名 + 历史回溯 | `b39f6871` | `master` |
+| 78 | 2026-11-14 | service-manager 瘦身：砍掉详情页与未用能力 | `ac242fc2` | `master` |
+| 77 | 2026-11-13 | service-manager 标签体系：可维护可筛选 + 分类字段退役 | `da3152e6`, `7c58f13a`, `c4c1afa2` | `master` |
+| 76 | 2026-11-13 | 夏普榜单 v2 三道门 + 52 周窗口 | `1e599f6d` | `master` |
+| 75 | 2026-11-13 | 夏普走势页：现算滚动夏普与稳定性 KPI | `fa7c165` | `master` |
 | 74 | 2026-11-13 | 归档三个 Trellis 任务：hermes 共享信号量 / 基金经理评价 / NAS 服务管理台 | - | `master` |
 | 73 | 2026-11-12 | Navidrome 归档与 6443 端口归位 | - | `master` |
 | 72 | 2026-11-12 | NAS 清理与死链修复：n8n 下线 / 一次性容器泄漏 / 2443 vhost | `e8c47f7` | `master` |

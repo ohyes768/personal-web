@@ -15,6 +15,12 @@ export interface ModalProps {
   children: React.ReactNode;
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
   className?: string;
+  /**
+   * 底部固定操作区：渲染在正文滚动区之外。
+   * 长报告（正文自身可滚动）用它把操作按钮钉在弹框底部——
+   * 正文不要再套一层 overflow 容器，否则会出现两条竖向滚动条。
+   */
+  footer?: React.ReactNode;
 }
 
 const sizeClasses = {
@@ -25,7 +31,7 @@ const sizeClasses = {
   xl: 'max-w-6xl',  // 1152px - 特大
 };
 
-export function Modal({ isOpen, onClose, title, children, size = 'md', className = '' }: ModalProps) {
+export function Modal({ isOpen, onClose, title, children, size = 'md', className = '', footer }: ModalProps) {
   const handleEsc = useCallback((e: KeyboardEvent) => {
     if (e.key === 'Escape') {
       onClose();
@@ -79,10 +85,17 @@ export function Modal({ isOpen, onClose, title, children, size = 'md', className
           </button>
         </div>
 
-        {/* 内容区 */}
+        {/* 内容区：唯一竖向滚动区 */}
         <div className="flex-1 overflow-y-auto p-6">
           {children}
         </div>
+
+        {/* 底部固定操作区：不随正文滚动 */}
+        {footer && (
+          <div className="flex-none border-t border-gray-700 px-6 py-3">
+            {footer}
+          </div>
+        )}
       </div>
     </div>,
     document.body

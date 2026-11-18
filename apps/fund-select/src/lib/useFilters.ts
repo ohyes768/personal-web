@@ -8,6 +8,9 @@
  *   - exclude_qdii=1 与 numeric / cleared 正交：仅此参数仍套用默认四维
  *   - market_type=债券型,定开债券 → 缩窄到这些类型；空 = 走 tab 默认 universe
  *   - page=N（≠1）、limit=K（≠50）写入 URL；默认值省略（避免噪音）
+ *   - search_code=002910 → 代码搜索态：列表锁定这一只（11-16）
+ *     与筛选参数**并存**：进入/退出搜索都不动任何筛选维度
+ *     与 `code=`（直达并自动开抽屉）正交，两个参数各管一件事
  *
  * useFilters(initial) 接受 override：股票 tab 传 STOCK_DEFAULT_FILTERS；
  * discovery tab 传 DISCOVERY_*_DEFAULT_FILTERS；债基 tab 不传，走 DEFAULT_FILTERS。
@@ -19,19 +22,37 @@
  *   ?exclude_qdii=1                      → 默认四维 + 排除 QDII
  *   ?market_type=债券型                  → market_types=['债券型']
  *   ?page=2&limit=25                     → 第 2 页 / 每页 25
+ *   ?search_code=002910                  → 代码搜索（默认四维照旧，只影响展示）
  */
 'use client';
 
 import { useCallback, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
-import { DEFAULT_FILTERS, LIMIT_OPTIONS, type FundFilters } from './types';
+import { parseSearchCode, searchCodeToParam } from './search-code';
+import { DEFAULT_FILTERS, LIMIT_OPTIONS, type FundFilters, type SourceSegment } from './types';
 
 export type NumericFilterKey = 'min_age' | 'min_size_yi' | 'max_dd_3y' | 'min_mgr_exp' | 'min_sharpe';
-export type FilterKey = NumericFilterKey | 'sort' | 'order' | 'exclude_qdii' | 'market_types';
+export type FilterKey = NumericFilterKey | 'sort' | 'order' | 'exclude_qdii' | 'market_types' | 'source';
 
 const NUMERIC_KEYS: NumericFilterKey[] = ['min_age', 'min_size_yi', 'max_dd_3y', 'min_mgr_exp', 'min_sharpe'];
 const DEFAULT_LIMIT = 50;
+
+const SOURCE_VALUES = ['all', 'curated', 'market'] as const;
+
+/** 解析 ?source=：命中合法值用之，否则回退到该 tab 的默认分段
+ *  （债基默认 curated、股基默认 market —— 由 DEFAULT_FILTERS / STOCK_DEFAULT_FILTERS 决定）。
+ *
+ *  ⚠ `all` 的归一化：两个 tab 现在都只提供「市场 | 三分法」两态，**「全部」已下线**。
+ *  老链接（?source=all）落到没有「全部」的那个 tab 上时，必须归一到该 tab 的默认分段，
+ *  否则分段控件一个都不选中（用户看到"没选中的来源"，请求却按 all 发出去）。
+ *  归一后行集不变：股基 all ≡ market、债基 all ≡ curated（默认筛选下逐行相同）。 */
+function parseSource(search: URLSearchParams, fallback: SourceSegment = 'all'): SourceSegment {
+  const raw = search.get('source');
+  if (!raw || !SOURCE_VALUES.includes(raw as SourceSegment)) return fallback;
+  if (raw === 'all' && fallback !== 'all') return fallback;
+  return raw as SourceSegment;
+}
 
 function parseExcludeQdii(search: URLSearchParams): boolean {
   return search.get('exclude_qdii') === '1';
@@ -68,12 +89,15 @@ export function parseFiltersFromSearch(
   search: URLSearchParams,
   fallback: FundFilters = DEFAULT_FILTERS,
 ): FundFilters {
+  // 代码搜索态：与筛选参数并存（搜索不清筛选，退出搜索后原筛选原样回来）
+  const search_code = parseSearchCode(search.get('search_code'));
   const exclude_qdii = parseExcludeQdii(search);
   const market_types = parseMarketTypes(search);
+  const source = parseSource(search, fallback.source ?? 'all');
   const page = parsePage(search);
   const limit = parseLimit(search);
   if (search.get('cleared') === '1') {
-    // 用户主动"清空"：全部维度不限；exclude_qdii / market_types 仍按 URL 正交解析
+    // 用户主动"清空"：全部维度不限；exclude_qdii / market_types / source 仍按 URL 正交解析
     return {
       min_age: null,
       min_size_yi: null,
@@ -82,6 +106,8 @@ export function parseFiltersFromSearch(
       min_sharpe: null,
       exclude_qdii,
       market_types,
+      search_code,
+      source,
       sort: (search.get('sort') as string) || fallback.sort,
       order: (search.get('order') as 'asc' | 'desc') || fallback.order,
       page,
@@ -96,6 +122,8 @@ export function parseFiltersFromSearch(
       ...fallback,
       exclude_qdii,
       market_types: market_types ?? fallback.market_types,
+      search_code,
+      source,
       page,
       limit,
     };
@@ -110,6 +138,8 @@ export function parseFiltersFromSearch(
     min_sharpe: null,
     exclude_qdii,
     market_types,
+    search_code,
+    source,
     sort: fallback.sort,
     order: fallback.order,
     page,
@@ -148,6 +178,11 @@ export function filtersToSearch(filters: FundFilters): URLSearchParams {
   if (filters.market_types && filters.market_types.length > 0) {
     params.set('market_type', filters.market_types.join(','));
   }
+  // 来源分段（11-15-source-segmented）：all = 默认不写 URL（避免噪音）
+  if (filters.source && filters.source !== 'all') params.set('source', filters.source);
+  // 代码搜索态（11-16）：与筛选参数并存，仅在有效时写入
+  const searchCode = searchCodeToParam(filters.search_code);
+  if (searchCode) params.set('search_code', searchCode);
   if (filters.sort !== DEFAULT_FILTERS.sort) params.set('sort', filters.sort);
   if (filters.order !== DEFAULT_FILTERS.order) params.set('order', filters.order);
   // 分页：默认 page=1 / limit=50 不写 URL；其余写
@@ -182,9 +217,14 @@ export function useFilters(initial?: Partial<FundFilters>) {
   /** 更新一个维度并同步 URL（push，可回退）。
    * numeric / exclude_qdii / market_types 改动时强制 page=1（命中集变了，原 page 没意义）。
    * sort / order 改动不影响 page（用户在排序字段之间翻页是合理操作）。
+   *
+   * 11-16：任何**筛选类**改动都退出代码搜索态（命中集语义变了，锁单只已无意义）。
+   * 搜索态本身由 setSearchCode 单独管理，不走这里（否则会被这条规则清掉自己）。
    */
   const setFilter = useCallback((key: FilterKey, value: number | string | boolean | string[] | null) => {
     const next: FundFilters = { ...filters };
+    const dropsSearch = key !== 'sort' && key !== 'order';
+    if (dropsSearch) next.search_code = null;
     if (key === 'sort') {
       next.sort = value as string;
     } else if (key === 'order') {
@@ -195,10 +235,31 @@ export function useFilters(initial?: Partial<FundFilters>) {
     } else if (key === 'market_types') {
       next.market_types = Array.isArray(value) && value.length > 0 ? (value as string[]) : null;
       next.page = 1;
+    } else if (key === 'source') {
+      next.source = (value as SourceSegment);
+      next.page = 1;
+      // 换分段时清掉「基金类型」：该筛选只在「市场」态暴露，留着会在
+      // 「三分法」态里静默收窄名单（UI 上又看不到这个条件）
+      next.market_types = null;
     } else {
       next[key] = value === null || value === '' ? null : Number(value);
       next.page = 1;
     }
+    pushQuery(router, filtersToSearch(next));
+  }, [filters, router]);
+
+  /**
+   * 进入/退出代码搜索态（11-16）。**不动任何筛选维度**：
+   * 搜索只决定「列表显示哪些」，退出后原筛选原样回来。
+   *
+   * 进入时 page 重置为 1（结果只有 1 条）；退出时也置 1（搜索期间翻的页无意义）。
+   */
+  const setSearchCode = useCallback((code: string | null) => {
+    const next: FundFilters = {
+      ...filters,
+      search_code: parseSearchCode(code),
+      page: 1,
+    };
     pushQuery(router, filtersToSearch(next));
   }, [filters, router]);
 
@@ -208,13 +269,13 @@ export function useFilters(initial?: Partial<FundFilters>) {
     pushQuery(router, filtersToSearch(next));
   }, [filters, router]);
 
-  /** 改每页条数：强制 page=1（位置变了，原 page 失去意义） */
+  /** 改每页条数：强制 page=1（位置变了，原 page 失去意义），并退出代码搜索态 */
   const setLimit = useCallback((limit: number) => {
-    const next: FundFilters = { ...filters, limit, page: 1 };
+    const next: FundFilters = { ...filters, limit, page: 1, search_code: null };
     pushQuery(router, filtersToSearch(next));
   }, [filters, router]);
 
-  /** 排序切换：同字段翻转方向，异字段重置为 desc；保持 page 不变 */
+  /** 排序切换：同字段翻转方向，异字段重置为 desc；保持 page 不变（不退出搜索态） */
   const toggleSort = useCallback((field: string) => {
     if (filters.sort === field) {
       setFilter('order', filters.order === 'desc' ? 'asc' : 'desc');
@@ -224,7 +285,8 @@ export function useFilters(initial?: Partial<FundFilters>) {
     }
   }, [filters, setFilter, router]);
 
-  /** 清空全部筛选（保留 sort/order，关掉排除 QDII，重置 market_types；page 重置为 1） */
+  /** 清空全部筛选（保留 sort/order，关掉排除 QDII，重置 market_types；page 重置为 1）
+   *  同时退出代码搜索态：用户点「清空」就是要回到完整列表。 */
   const clearAll = useCallback(() => {
     const next: FundFilters = {
       ...filters,
@@ -235,17 +297,19 @@ export function useFilters(initial?: Partial<FundFilters>) {
       min_sharpe: null,
       exclude_qdii: false,
       market_types: null,
+      search_code: null,
       page: 1,
     };
     pushQuery(router, filtersToSearch(next));
   }, [filters, router]);
 
-  /** 已激活的筛选维度数（chip 用） */
+  /** 已激活的筛选维度数（chip 用）。代码搜索态不算一个「筛选维度」：
+   *  它有自己的 chip，混进筛选计数会让「筛选(3)」与实际维度对不上。 */
   const activeCount = NUMERIC_KEYS.filter(
     k => filters[k] !== null
   ).length
     + (filters.exclude_qdii ? 1 : 0)
     + (filters.market_types && filters.market_types.length > 0 ? 1 : 0);
 
-  return { filters, setFilter, toggleSort, clearAll, setPage, setLimit, activeCount };
+  return { filters, setFilter, setSearchCode, toggleSort, clearAll, setPage, setLimit, activeCount };
 }

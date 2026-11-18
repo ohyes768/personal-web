@@ -86,6 +86,24 @@ class TestAnalyze:
         assert response.json()['current_skill_version'] == '4.3.0'
         assert response.json()['scores']['000001']['skill_version'] == '4.3.0'
 
+    def test_failed_analysis_exposes_run_id_for_session_download(self, client, monkeypatch):
+        test_client, manager = client
+        monkeypatch.setenv("HERMES_BASE_URL", "http://nas:8642")
+        monkeypatch.setenv("HERMES_API_KEY", "secret")
+        monkeypatch.setattr(routes, "submit_run", lambda cfg, prompt, key: "run-fail-1")
+
+        def fail_poll(cfg, run_id):
+            raise HermesRunFailed("run xx 终态 failed")
+
+        monkeypatch.setattr(routes, "poll_run", fail_poll)
+        accepted = test_client.post("/quality/analyze", json={"codes": ["000001"]})
+        assert accepted.status_code == 202
+        assert wait_job(manager, accepted.json()["job_id"])["status"] == "failed"
+        # 失败也要带 run_id：界面据此下载失败那次的会话记录
+        per_code = test_client.get("/quality").json()["per_code"]
+        assert per_code["000001"]["state"] == "failed"
+        assert per_code["000001"]["run_id"] == "run-fail-1"
+
     def test_unconfigured_returns_503(self, client, monkeypatch):
         test_client, _ = client
         monkeypatch.delenv("HERMES_BASE_URL", raising=False)

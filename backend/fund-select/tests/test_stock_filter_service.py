@@ -30,7 +30,7 @@ def _seed_stock(db):
         _mk_stock("600004", fund_type="QDII-股票"),
         _mk_stock("600005", fund_type="混合型-偏股"),
         # 库内但默认不在股票宇宙
-        _mk_stock("600006", fund_type="债券型-长期纯债"),
+        _mk_stock("600006", fund_type="债券型-长债"),
         _mk_stock("600007", fund_type="股票型-标准指数", is_active=False),
         _mk_stock("600008", fund_type="QDII-债券"),
     ])

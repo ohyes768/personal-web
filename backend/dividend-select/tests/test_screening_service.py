@@ -1,6 +1,8 @@
+import pathlib
+
 import pytest
 from src.api.models import DividendStock, ScreeningRequest
-from src.services.screening_service import evaluate_stock
+from src.services.screening_service import evaluate_stock, build_checks
 
 
 def stock(**updates):
@@ -9,6 +11,7 @@ def stock(**updates):
                   roe=10, roe_avg_3y=10, roe_year=2025,
                   roe_history=[dict(year=y, value=10) for y in [2023, 2024, 2025]],
                   net_profit_ex_non_recurring_yoy=0, annual_net_profit_ex_non_recurring=100, annual_profit_year=2025,
+                  net_profit_cagr_3y=8,
                   latest_quarter_label="2026Q1", previous_quarter_label="2025Q4",
                   latest_quarter_yoy_pct=0, previous_quarter_yoy_pct=0)
     fields.update(updates)
@@ -52,12 +55,44 @@ def test_screen_route_loads_full_collected_pool(monkeypatch):
     body = response.json()
     assert body['counts'] == {'eligible': 1, 'excluded': 1, 'insufficient_data': 0}
     assert body['conditions']['max_quarter_profit_decline_pct'] == 30
+    assert body['conditions']['min_cagr_3y'] == 0
     assert body['items'][0]['stock']['annual_profit_year'] == 2025
     assert body['items'][0]['stock']['annual_net_profit_ex_non_recurring'] == 100
     assert body['total'] == 2
     assert body['financial_last_updated'] == '2026-10-10T01:00:00+08:00'
     assert calls[0] == dict(min_yield=0, max_yield=None, exchange=None, industry=None, index=None, sort_by='avg_yield_3y', sort_order='desc')
     assert TestClient(app).post('/stocks/screen', json={'min_roe': -1}).status_code == 422
+
+
+def test_cagr_threshold_excludes_shrinking_profit():
+    # 默认阈值 0：三年利润缩水即排除
+    result = evaluate_stock(stock(net_profit_cagr_3y=-4), ScreeningRequest())
+    assert result.status == "excluded"
+    assert any("3年复合增长率" in reason for reason in result.reasons)
+
+
+def test_cagr_threshold_is_inclusive():
+    assert evaluate_stock(stock(net_profit_cagr_3y=0), ScreeningRequest()).status == "eligible"
+    assert evaluate_stock(stock(net_profit_cagr_3y=-0.01), ScreeningRequest()).status == "excluded"
+
+
+def test_cagr_threshold_is_configurable():
+    request = ScreeningRequest(min_cagr_3y=10)
+    assert evaluate_stock(stock(net_profit_cagr_3y=8), request).status == "excluded"
+    assert evaluate_stock(stock(net_profit_cagr_3y=12), request).status == "eligible"
+    # 负阈值：放宽到"允许三年小幅缩水"
+    assert evaluate_stock(stock(net_profit_cagr_3y=-1), ScreeningRequest(min_cagr_3y=-5)).status == "eligible"
+
+
+def test_uncomputable_cagr_warns_but_does_not_exclude():
+    result = evaluate_stock(stock(net_profit_cagr_3y=None), ScreeningRequest())
+    assert result.status == "eligible"
+    assert any("3年复合增长率不可计算" in warning for warning in result.warnings)
+
+
+def test_default_cagr_threshold():
+    # 默认 0 = 三年利润不缩水（更严的档位由用户在表单里调）
+    assert ScreeningRequest().min_cagr_3y == 0
 
 
 def test_display_yield_does_not_filter():
@@ -138,3 +173,173 @@ def test_severe_quarter_wins_nonfinite_peer(quarter, missing):
     result = evaluate_stock(stock(**{f"{quarter}_quarter_yoy_pct": -30, f"{peer}_quarter_yoy_pct": missing}), ScreeningRequest())
     assert result.status == "excluded"
     assert any("相邻季度" in reason for reason in result.reasons)
+
+
+# ===== 逐条判定（阅读页「筛选条件复核」） =====
+
+
+def check_by_key(checks, key):
+    return next(check for check in checks if check.key == key)
+
+
+def test_checks_cover_every_screening_condition():
+    checks = build_checks(stock(), ScreeningRequest())
+    keys = [check.key for check in checks]
+    assert keys == [
+        "yield_3y", "dividend_2023", "dividend_2024", "dividend_2025",
+        "roe", "roe_avg_3y", "roe_history", "annual_profit", "annual_profit_year",
+        "annual_yoy", "cagr_3y", "quarter_decline", "quarter_pair",
+    ]
+    assert all(check.result == "pass" for check in checks)
+    assert check_by_key(checks, "yield_3y").value_text == "3.50%"
+    assert check_by_key(checks, "yield_3y").threshold_text == "≥ 3.5%"
+
+
+def test_checks_mark_threshold_breach_and_missing():
+    checks = build_checks(stock(avg_yield_3y=2.0, roe=None), ScreeningRequest())
+    assert check_by_key(checks, "yield_3y").result == "fail"
+    assert check_by_key(checks, "yield_3y").value_text == "2.00%"
+    assert check_by_key(checks, "roe").result == "missing"
+    assert check_by_key(checks, "roe").value_text == "待补"
+
+
+def test_checks_mark_uncomputable_cagr_as_warning_not_failure():
+    checks = build_checks(stock(net_profit_cagr_3y=None), ScreeningRequest())
+    cagr = check_by_key(checks, "cagr_3y")
+    assert cagr.result == "warn"
+    assert cagr.value_text == "不可计算"
+    assert cagr.reason == ""
+
+
+def test_checks_mark_single_negative_quarter_as_warning():
+    checks = build_checks(stock(latest_quarter_yoy_pct=-10), ScreeningRequest())
+    assert check_by_key(checks, "quarter_pair").result == "warn"
+    assert check_by_key(checks, "quarter_decline").result == "pass"
+
+
+def test_checks_keep_reason_order_consistent_with_evaluate_stock():
+    samples = [
+        stock(),
+        stock(avg_yield_3y=1.0, roe=5, roe_avg_3y=2, dividend_2024=0),
+        stock(net_profit_ex_non_recurring_yoy=-1, roe_avg_3y=None),
+        stock(roe_history=[], roe_year=None, annual_profit_year=None),
+        stock(latest_quarter_yoy_pct=-30, previous_quarter_yoy_pct=None),
+        stock(previous_quarter_label="2025Q3", previous_quarter_yoy_pct=-50),
+        stock(net_profit_cagr_3y=-4, latest_quarter_yoy_pct=-10, previous_quarter_yoy_pct=-5),
+    ]
+    for sample in samples:
+        checks = build_checks(sample, ScreeningRequest())
+        item = evaluate_stock(sample, ScreeningRequest())
+        failures = [check.reason for check in checks if check.result == "fail" and check.reason]
+        missing = [check.reason for check in checks if check.result == "missing" and check.reason]
+        warnings = [check.warning for check in checks if check.warning]
+        assert item.reasons == failures + missing
+        assert item.warnings == warnings
+
+
+class _StubReader:
+    """单股复核接口只需要「数据文件是否存在」与 CSV 路径"""
+    csv_path = pathlib.Path("/tmp/does-not-exist.csv")
+
+    def check_csv_exists(self):
+        return False
+
+
+def test_stock_screening_endpoint_returns_checks(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from src.api import routes
+    monkeypatch.setattr(routes, "data_reader", _StubReader())
+    monkeypatch.setattr(routes, "_build_single_stock_model", lambda code: stock(code=code, name="东阿阿胶"))
+    monkeypatch.setattr(routes, "find_latest_aux_file", lambda *args: None)
+    app = FastAPI()
+    app.include_router(routes.router)
+    client = TestClient(app)
+    body = client.get("/stocks/000423/screening").json()
+    assert body["code"] == "000423"
+    assert body["name"] == "东阿阿胶"
+    assert body["status"] == "eligible"
+    assert body["conditions"]["min_yield"] == 3.5
+    assert body["conditions"]["min_cagr_3y"] == 0
+    assert [check["key"] for check in body["checks"]][0] == "yield_3y"
+    assert all(check["result"] == "pass" for check in body["checks"])
+
+
+def test_stock_screening_endpoint_uses_requested_thresholds(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from src.api import routes
+    monkeypatch.setattr(routes, "data_reader", _StubReader())
+    monkeypatch.setattr(routes, "_build_single_stock_model", lambda code: stock(code=code, avg_yield_3y=4.0))
+    monkeypatch.setattr(routes, "find_latest_aux_file", lambda *args: None)
+    app = FastAPI()
+    app.include_router(routes.router)
+    client = TestClient(app)
+    body = client.get("/stocks/000423/screening", params={"min_yield": 5}).json()
+    assert body["status"] == "excluded"
+    assert any(check["result"] == "fail" and check["key"] == "yield_3y" for check in body["checks"])
+
+
+@pytest.mark.parametrize("params", [{"min_yield": -1}, {"min_roe": 101}, {"max_quarter_profit_decline_pct": 0},
+                                    {"max_quarter_profit_decline_pct": 101}, {"min_cagr_3y": -101}])
+def test_stock_screening_endpoint_validates_thresholds(params):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from src.api import routes
+    app = FastAPI()
+    app.include_router(routes.router)
+    assert TestClient(app).get("/stocks/000423/screening", params=params).status_code == 422
+
+
+def test_stock_screening_endpoint_unknown_code(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from src.api import routes
+    monkeypatch.setattr(routes, "data_reader", _StubReader())
+    monkeypatch.setattr(routes, "_build_single_stock_model", lambda code: None)
+    app = FastAPI()
+    app.include_router(routes.router)
+    assert TestClient(app).get("/stocks/999999/screening").status_code == 404
+
+
+def test_screening_statuses_endpoint_returns_all_codes(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from src.api import routes
+    from src.api.models import StockListResponse
+    monkeypatch.setattr(routes, "data_reader", _StubReader())
+
+    async def load(**kwargs):
+        return StockListResponse(total=3, items=[
+            stock(code="000001"),
+            stock(code="000002", avg_yield_3y=1.0),
+            stock(code="000003", latest_quarter_yoy_pct=None),
+        ])
+    monkeypatch.setattr(routes, "get_stocks", load)
+    app = FastAPI()
+    app.include_router(routes.router)
+    body = TestClient(app).get("/stocks/screen/statuses").json()
+    assert body["total"] == 3
+    assert body["conditions"]["min_yield"] == 3.5
+    statuses = {item["code"]: item["status"] for item in body["items"]}
+    assert statuses == {"000001": "eligible", "000002": "excluded", "000003": "insufficient_data"}
+    # 只回最小字段，不带股票明细
+    assert set(body["items"][0].keys()) == {"code", "status"}
+
+
+def test_screening_statuses_endpoint_applies_thresholds(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from src.api import routes
+    from src.api.models import StockListResponse
+    monkeypatch.setattr(routes, "data_reader", _StubReader())
+
+    async def load(**kwargs):
+        return StockListResponse(total=1, items=[stock(code="000004", avg_yield_3y=4.0)])
+    monkeypatch.setattr(routes, "get_stocks", load)
+    app = FastAPI()
+    app.include_router(routes.router)
+    client = TestClient(app)
+    assert client.get("/stocks/screen/statuses", params={"min_yield": 5}).json()["items"][0]["status"] == "excluded"
+    assert client.get("/stocks/screen/statuses", params={"min_yield": 3}).json()["items"][0]["status"] == "eligible"
+    assert client.get("/stocks/screen/statuses", params={"min_yield": -1}).status_code == 422

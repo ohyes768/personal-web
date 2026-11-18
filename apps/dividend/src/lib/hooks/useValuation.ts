@@ -29,6 +29,8 @@ export interface UseValuationResult {
   configured: boolean;
   /** 当前已部署 skill 版本（用于提示需重评） */
   currentSkillVersion: string | null;
+  /** 首屏还在拉取（尚未拿到任何报告） */
+  loading: boolean;
   /** 当前估值任务（用于展示进度） */
   job: ValuationJob | null;
   /** 任务结果/错误提示 */
@@ -50,6 +52,7 @@ export function useValuation(): UseValuationResult {
   const [perCode, setPerCode] = useState<ValuationPerCodeMap>({});
   const [configured, setConfigured] = useState(true);
   const [currentSkillVersion, setCurrentSkillVersion] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [job, setJob] = useState<ValuationJob | null>(null);
   const [message, setMessage] = useState('');
   const [pollError, setPollError] = useState('');
@@ -67,6 +70,9 @@ export function useValuation(): UseValuationResult {
       // 逐股实时状态以 job 轮询为准；这里仅在尚无状态时做首屏快照
       setPerCode(prev => (Object.keys(prev).length > 0 ? prev : response.per_code ?? {}));
     } catch { /* 拉取失败保持现状；行内按钮提交时会得到明确报错 */ }
+    finally {
+      if (mounted.current) setLoading(false);
+    }
   }, []);
 
   const stopPolling = useCallback(() => {
@@ -185,7 +191,7 @@ export function useValuation(): UseValuationResult {
   }, [handleTerminal, startPolling]);
 
   return {
-    reports, perCode, configured, currentSkillVersion, job, message, pollError,
+    reports, perCode, configured, currentSkillVersion, loading, job, message, pollError,
     analyze, refresh, cancelQueueItem, moveQueueItem,
   };
 }

@@ -63,7 +63,7 @@ class TestSnapshotFundFetchHoldings:
     def test_default_still_fetches_bond_holdings(self):
         """默认 True（债基路径）行为不变：仍拉季报并产出 holdings"""
         snap, mocks = _run_snapshot(
-            fund_type="债券型-长期纯债", bond_tables=["t"],
+            fund_type="债券型-长债", bond_tables=["t"],
             analyze_ret={"rate_bond_pct": 30.0, "credit_bond_pct": 50.0},
         )
         mocks["fetch_bond_hold"].assert_called_once_with(CODE, YEAR)

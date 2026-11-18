@@ -103,33 +103,75 @@ A local skill checkout is never proof of deployment.
   the stored report; failures, non-ready results and stale applies never touch
   favorites alerts. Applying writes enabled=true and the four prices with
   pe/pb — the AlertService monitor then treats it like any hand-configured
-  alert. Pause/resume flips `enabled` only and is available regardless of how
-  the levels arrived.
+  alert. `enabled` itself is only toggled from 挡位设置 (AlertSettingsModal);
+  the tracking row no longer carries a pause/resume action (2026-11-13: nobody
+  used it, and it crowded out the apply action).
+- The tracking row splits read and write (2026-11-13): a pending_apply row
+  shows two actions — 「查看报告」 opens the report modal (read path, its footer
+  keeps 对比并应用) and 「应用」 opens a compact confirm card that lists the new
+  four prices against the currently effective ones and applies without opening
+  the long report. Applying always writes enabled=true, so a paused stock
+  becomes monitored again after an apply.
+- **Session download covers both outcomes** (2026-11-14): every row with a
+  Hermes run id offers 下载会话记录. The id resolves as `per_code.run_id` first
+  (the latest run, including a failed one) and falls back to `report.run_id`
+  (the run behind the successful report; absent on old reports). Successes are
+  downloadable so a user can audit how a 挡位 was derived, failures so they can
+  debug why no price came out. `GET /valuation/runs/{run_id}/session` accepts
+  any run id, terminal or not.
+- The confirm card also states where the current price lands after the apply
+  (2026-11-13): 旧挡位在 X 区 → 新挡位在 Y 区, plus whether the next price
+  refresh will push a DingTalk alert. Zone and hit rules come from
+  `resolveValuationZone` (`apps/dividend/src/lib/valuation.ts`) and must stay
+  identical to the backend `AlertService._find_hit_level`: sell side first
+  (减仓/全卖, severity 2 wins), then buy side (重仓/加仓); 持有区 hits nothing.
+  A re-evaluation can move the price across a threshold (e.g. 持有区 → 减仓区),
+  so applying silently would fire an alert the user never saw coming.
 - FavoritesTrackingTab row states derive from alerts + report + per_code:
   monitoring / paused (effective levels exist), pending_apply (ready report
   newer than `alerts.updated_at`; overlaps monitoring/paused), evaluating,
   failed, not_ready, unevaluated. Filters: 全部收藏 / 待评估 (never-applied and
-  no pending report) / 待应用 (pendingApply) / 监控中 / 已暂停. Bar semantics:
+  no pending report) / 待应用 (pendingApply) — 监控中 / 已暂停 have no filter
+  chip. **The status column is 评估状态 only** (2026-11-14): it renders
+  `deriveValuationEvalState` — 评估完成 / 待应用 / 评估中 / 评估失败 / 未出价格 /
+  待评估, driven by `data-eval-state`. Monitoring is a delivery switch, not an
+  evaluation result, so 监控中/已暂停 no longer appear in this column (the
+  `enabled` checkbox in 挡位设置 remains the only place to read it; the row
+  state machine still computes monitoring/paused for filters and actions).
+  A failed latest run wins over an older successful report, so a stale report
+  can never make the row read 评估完成. Bar semantics:
   effective bar (≥2 levels) solid; candidate bar dashed with the
   「评估结果 · 未启用监控」badge for a first ready report; single-level configs
   render text instead of a bar; nothing renders without prices. Out-of-range
   current prices show 低于重仓线/高于全卖线 with edge arrows; missing realtime
   and close show 现价缺失.
-  Price bar layout (2026-11-11 revised twice after user review: 248px read as too
-  narrow → 400px; then the 5-layer version read as too tall → distilled to 3
-  layers, row height 130px → 86px). Layers: row1 four level prices + current
-  price label (staggered when close), row2 five-band track + four clickable
-  dots (click shows the dividend yield at that price) + current-price marker,
-  row3 zone names that fit. Information that was duplicated elsewhere moved out
-  of the bar instead of being deleted: per-level PE/PB and distance-to-each-level
-  percentages live in the bar's hover title and in the report modal's price
-  cards; the nearest-level distance appears once in the 现价 column; the zone
-  legend highlights the current band instead of repeating the zone name in a
-  second line. Candidates read as muted prices/track plus a 未启用 tag rather
-  than a nested dashed card. Labels never collide: price rows stagger
-  independently, threshold positions map to [8, 92], and zone names are laid
-  out against an occupied-width cursor so a name that would overlap is dropped
-  (or yields the slot to the out-of-range / 未启用 notice).
+  Price bar layout (history: 248px read as too narrow → 400px; a 5-layer version
+  read as too tall → 3 layers; 2026-11-13 → 2 layers, row height 46px). The bar
+  now answers only "where does the current price sit between my four lines":
+  row1 four level prices + current price label (staggered when close), row2
+  five-band track + four clickable dots (click shows the dividend yield at that
+  price) + current-price marker. **The bar no longer draws zone names.** A zone
+  legend is a global constant, and redrawing it per row was both redundant and
+  lossy: the old `LABEL_W`/`cursor` clipping dropped a name whenever a band was
+  narrow or two names collided, so the same colour band showed a different
+  legend on different rows. Band colours and the row's zone column share one
+  source, `VALUATION_ZONE_COLOR`.
+- The tracking table has a dedicated **区间 column** (after 挡位（元）, `colSpan`
+  7). Each row states the conclusion once: the zone the current price sits in,
+  plus how far the price must move to reach the next line that changes the
+  alert action — `resolveZoneSteps` in `apps/dividend/src/lib/valuation.ts`.
+  Steps per zone: 重仓区 → 重仓线 up; 加仓区 → 重仓线 down; 持有区 → 减仓线 up
+  **and** 加仓线 down (two lines); 减仓区 → 全卖线 up; 全卖区 → 全卖线 down.
+  Percentages are measured against the current price (not against the target
+  line), and the arrow carries the direction, so no sign convention has to be
+  remembered. Out-of-range prices need no extra wording: a price above 全卖 still
+  reads 全卖区 + ↓全卖, below 重仓 still 重仓区 + ↑重仓. Cells with fewer than four
+  levels or no current price render — rather than inventing a zone.
+- Candidates read as muted prices/track; the 未启用 notice lives in the bar's
+  hover title instead of a third text row (it used to occupy the dropped row).
+  Labels never collide: price rows stagger, threshold positions map to [8, 92].
+  Per-level PE/PB and all four distance percentages stay in the hover title and
+  the report modal's price cards.
 
 ## 4. Validation & Error Matrix
 | Condition | Result |
@@ -171,6 +213,11 @@ A local skill checkout is never proof of deployment.
   failed evaluation never touches alerts, queue cancel/move routes
   (200/409/422) with cancelled accounting.
 - `e2e/favorites-tracking.spec.ts`: filter counts and overlap semantics,
-  effective/candidate/single-level/hidden bar states, apply flow with identity,
-  stale 409 dialog, non-ready gaps, pause/resume, out-of-range/missing price,
-  narrow-viewport overflow.
+  effective/candidate/single-level/hidden bar states, apply flow with identity
+  (row 「应用」 → confirm card → apply, report modal read path kept separate),
+  stale 409 shown inside the confirm card, non-ready gaps, paused badge without
+  a row pause action, out-of-range/missing price, narrow-viewport overflow.
+- `apps/dividend/src/lib/valuation.test.ts` (`node --experimental-strip-types
+  --test src/lib/valuation.test.ts`): zone + hit resolution — 持有区 no hit,
+  each other zone hits its own level, sell before buy, severity ordering,
+  fewer than four levels or missing price → no zone.

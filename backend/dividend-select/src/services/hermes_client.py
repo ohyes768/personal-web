@@ -82,12 +82,24 @@ def _auth_headers(cfg: HermesConfig, idempotency_key: str = "") -> dict[str, str
     return headers
 
 
-def submit_run(cfg: HermesConfig, prompt: str, idempotency_key: str) -> str:
-    """提交 run，返回 run_id。网络异常/非 2xx/响应缺 run_id 抛 HermesApiError。"""
+def submit_run(
+    cfg: HermesConfig,
+    prompt: str,
+    idempotency_key: str,
+    instructions: str = "",
+) -> str:
+    """提交 run，返回 run_id。网络异常/非 2xx/响应缺 run_id 抛 HermesApiError。
+
+    instructions 非空时作为 ephemeral system prompt 随 run 提交：本次 run 的每次
+    API 调用都会拼到系统提示末尾，不被上下文压缩稀释，也不落对话记录。
+    """
+    body: dict = {"input": prompt}
+    if instructions.strip():
+        body["instructions"] = instructions.strip()
     try:
         resp = requests.post(
             _runs_url(cfg),
-            json={"input": prompt},
+            json=body,
             headers=_auth_headers(cfg, idempotency_key),
             timeout=HTTP_TIMEOUT,
         )
@@ -206,5 +218,12 @@ def poll_run(cfg: HermesConfig, run_id: str) -> str:
         if status in TERMINAL_FAILED_STATUSES:
             raise HermesRunFailed(f"run {run_id} 终态 {status}")
         if time.monotonic() >= deadline:
-            raise HermesTimeout(f"run {run_id} 超过 {cfg.timeout}s 未完成（最后状态 {status or 'unknown'}）")
+            # 超时必须同时停掉服务端 run：否则执行器继续烧 token，
+            # 形成无人认领的孤儿运行（调用方已放弃，run 还在跑）。
+            if cfg.timeout > 0:
+                try:
+                    stop_run(cfg, run_id)
+                except HermesError:
+                    pass  # stop 失败不掩盖超时本身；run 由网关 inactivity 兜底
+            raise HermesTimeout(f"run {run_id} 超过 {cfg.timeout}s 未完成（最后状态 {status or 'unknown'}），已请求停止")
         time.sleep(cfg.poll_interval)

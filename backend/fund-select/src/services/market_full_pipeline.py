@@ -61,7 +61,9 @@ from src.services.market_rank_refresh import refresh as refresh_market_rank_db
 from src.services.market_risk_refresh import refresh as refresh_market_risk_db
 from src.services.market_size_refresh import refresh as refresh_market_size_db
 from src.services.market_universe_refresh import refresh as refresh_market_universe_db
-from src.services.sharpe_capture import SharpeRunCapture, freeze_base_rows, freeze_dd_rows
+from src.services.sharpe_capture import (
+    SharpeRunCapture, freeze_base_rows, freeze_dd_rows, freeze_yearly_peer_rows,
+)
 from src.utils.logger import setup_logger
 logger = setup_logger("fund-select.market_full")
 
@@ -259,6 +261,7 @@ def refresh_market_full_sync(
     preset_task_id: Optional[str] = None,
     pipeline_profile: str = "stock",
     capture: SharpeRunCapture | None = None,
+    use_cache: bool = True,
 ) -> dict:
     """市场 tab 全量数据 refresh（profile-driven 流水线 + 分阶段重算 codes）。
 
@@ -339,10 +342,20 @@ def refresh_market_full_sync(
 
         # L0 全市场名单（ak.fund_name_em）—— 前置步骤，让 universe 表是最新的
         # 之前需要单独点"刷新"按钮跑这个；现在合并到全量刷新里
+        #
+        # ⚠ 必须同时回填经理字段（11-14 全量刷新修复）：
+        # 预筛 1（min_mgr_exp）读 funds.mgr_experience_years_max，SQL 里
+        # `NULL >= 5` 不成立 → 不回填则该字段全 NULL，整个 universe 被砍成 0
+        # （实测 16239 → 1236，一次淘汰 15003 只）。fetch_manager_by_fund_code
+        # 从 576747b8 重构起就没有调用方了，这里补回来。
         def _stage_l0(d):
             from src.data.market_universe_fetcher import fetch_market_universe
+            from src.data.manager_fetcher import fetch_manager_by_fund_code
             df = fetch_market_universe()
-            return refresh_market_universe_db(d, df, task_id=f"{task_id}_L0")
+            mgr_by_code = fetch_manager_by_fund_code(use_cache=use_cache)
+            return refresh_market_universe_db(
+                d, df, task_id=f"{task_id}_L0", mgr_by_code=mgr_by_code,
+            )
 
         stage_results["L0_universe"] = _run_stage(db, task_id, "L0_universe",
                                                    len(codes) or 1, _stage_l0)
@@ -483,6 +496,12 @@ def refresh_market_full_sync(
                                   failed=stage_results["L5_achievement"].get("result", {}).get("failed", 0))
         else:
             logger.info("[market_full] task=%s profile=bond 跳过 L5 achievement 阶段", task_id)
+
+        # 同类排名冻结：必须在 L5 之后（L5 会 delete+bulk insert 重写
+        # fund_achievement_rank，早一行就会冻到上一轮过期数据）。design §11。
+        # v3 起用年度口径（历史固定值，可回溯）。
+        if capture is not None and not skip_achievement_actual:
+            capture.peer_rows = freeze_yearly_peer_rows(db, codes)
 
         # 阶段错误汇入 capture（stock 基准/风险错误在 market_risk_refresh 内汇入；
         # 其余阶段失败在此汇入）。有输入采集错误则本轮不得发布完整榜（design 第 4 条）

@@ -1,5 +1,5 @@
 /**
- * 全量刷新弹窗：预筛选表单 + 5 阶段进度
+ * 市场刷新弹窗（原「全量刷新」）：预筛选表单 + 5 阶段进度
  *
  * 预筛选维度（min_ret_3y / min_size_yi / min_mgr_exp）在弹窗内填，
  * 传给后端 /full/refresh 端点 → 后端 SQL 预过滤 universe（三段预筛）。
@@ -25,12 +25,16 @@ interface FullRefreshDialogProps {
   onComplete: (preFilters: FullRefreshFilters) => void;
   /** 默认预筛选值（来自上次 refresh） */
   initial?: FullRefreshFilters;
+  /** 按钮禁用（三分法刷新进行中时互斥） */
+  disabled?: boolean;
+  /** 忙碌状态上报（refreshing 时 true），供 header 互斥三分法刷新 */
+  onBusyChange?: (busy: boolean) => void;
 }
 
 const POLL_INTERVAL_MS = 2000;
 
 export function FullRefreshDialog({
-  open, onClose, startFullRefresh, pollFullRefreshStatus, onComplete, initial,
+  open, onClose, startFullRefresh, pollFullRefreshStatus, onComplete, initial, disabled = false, onBusyChange,
 }: FullRefreshDialogProps) {
   // 三段预筛参数：经理从业 / 近 3 年涨 / 规模
   const [minMgrExp, setMinMgrExp] = useState<number | null>(initial?.min_mgr_exp ?? DEFAULT_FULL_REFRESH_FILTERS.min_mgr_exp);
@@ -60,6 +64,12 @@ export function FullRefreshDialog({
       setRefreshing(false);
     }
   }, [open, stopPolling]);
+
+  // 忙碌状态上报给 header：市场刷新进行中时禁用「三分法刷新」入口
+  // （注意：关闭弹窗会停止前端轮询并视为空闲，后端任务仍在跑；重开弹窗不可续接，属于已知限制）
+  useEffect(() => {
+    onBusyChange?.(open && refreshing);
+  }, [open, refreshing, onBusyChange]);
 
   const pollOnce = useCallback(async (taskId: string) => {
     if (stoppedRef.current) return;
@@ -106,7 +116,7 @@ export function FullRefreshDialog({
       <div className="fixed inset-0 z-40 bg-black/40" onClick={onClose} aria-hidden="true" />
       <div className="fixed right-3 top-16 z-50 w-80 bg-paper-card border border-rule rounded-lg shadow-lg p-4">
         <div className="flex items-center justify-between mb-3">
-          <span className="text-sm font-semibold text-ink-strong">全量刷新</span>
+          <span className="text-sm font-semibold text-ink-strong">市场刷新</span>
           <button
             onClick={onClose}
             className="p-1 text-ink-muted hover:text-ink-strong"
@@ -129,13 +139,16 @@ export function FullRefreshDialog({
               <NumberField label="近 3 年涨 ≥" value={minRet3y} onChange={setMinRet3y} placeholder="不限" unit="%" disabled={refreshing} />
               <NumberField label="规模 ≥" value={minSizeYi} onChange={setMinSizeYi} placeholder="不限" unit="亿" disabled={refreshing} />
             </div>
+            {disabled && (
+              <p className="text-xs text-down mb-2">三分法刷新进行中，完成后再来</p>
+            )}
             {error && <p className="text-xs text-down mb-2">{error}</p>}
             <button
               onClick={startRefresh}
-              disabled={refreshing}
+              disabled={refreshing || disabled}
               className="w-full px-3 py-2 text-sm text-white bg-accent hover:bg-accent-hover disabled:opacity-50 rounded transition-colors"
             >
-              {refreshing ? '启动中…' : '开始全量刷新'}
+              {refreshing ? '启动中…' : disabled ? '三分法刷新中…' : '开始市场刷新'}
             </button>
           </>
         )}

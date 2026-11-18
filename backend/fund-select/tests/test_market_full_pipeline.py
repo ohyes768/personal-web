@@ -209,7 +209,7 @@ class TestLoadMarketUniverse:
 class TestRefreshMarketFullSyncSignature:
 
     def test_accepts_three_user_params_plus_task_id(self):
-        """新签名：universe_filter + 3 用户参数 + preset_task_id + pipeline_profile + capture"""
+        """新签名：universe_filter + 3 用户参数 + preset_task_id + pipeline_profile + capture + use_cache"""
         import inspect
         sig = inspect.signature(refresh_market_full_sync)
         params = list(sig.parameters.keys())
@@ -221,7 +221,8 @@ class TestRefreshMarketFullSyncSignature:
             "preset_task_id",
             "pipeline_profile",
             "capture",
-        ], f"签名变更：新增 capture（夏普榜单本轮采集捕获）；当前参数: {params}"
+            "use_cache",   # 11-14：L0 回填经理表时是否用本地缓存
+        ], f"签名变更：新增 capture（夏普榜单本轮采集捕获）/ use_cache；当前参数: {params}"
 
     def test_no_longer_accepts_min_ret_1y_or_max_nav_stale_days(self):
         """旧参数被移除：min_ret_1y / max_nav_stale_days"""
@@ -243,10 +244,17 @@ class TestRefreshMarketFullSync:
                 "market_type": "stock",
             }]),
         )
+        # 经理表：L0 回填 mgr_* 用（11-14 修复：不回填则预筛 1 把 universe 砍成 0）
+        monkeypatch.setattr(
+            "src.data.manager_fetcher.fetch_manager_by_fund_code",
+            lambda use_cache=True: {"000001": [{"name": "张三", "company": "某司", "days": 3650}]},
+        )
         monkeypatch.setattr(
             "src.services.market_full_pipeline.refresh_market_universe_db",
-            lambda db, df, task_id=None: {"task_id": task_id, "total": len(df),
-                                                 "inserted": len(df), "updated": 0, "failed": 0, "errors": []},
+            lambda db, df, task_id=None, mgr_by_code=None: {
+                "task_id": task_id, "total": len(df),
+                "inserted": len(df), "updated": 0, "failed": 0, "errors": [],
+            },
         )
         monkeypatch.setattr(
             "src.services.market_full_pipeline.fetch_market_rank_bulk",
@@ -555,7 +563,7 @@ class TestPipelineProfile:
         from datetime import date
         db_session.add_all([
             _mk_fund("000001", "债券型-中短债", size_yi=10, is_active=True),
-            _mk_fund("000002", "债券型-长期纯债", size_yi=10, is_active=True),
+            _mk_fund("000002", "债券型-长债", size_yi=10, is_active=True),
             _mk_fund("000003", "股票型", size_yi=10, is_active=True),
         ])
         # 给 000001/000002/000003 写入 nav_date + ret_3y（让 L1 后预筛 2 不把它们都砍掉）
@@ -598,7 +606,7 @@ class TestPipelineProfile:
 
         with patch("src.services.market_full_pipeline.SessionLocal", return_value=db_session):
             result = refresh_market_full_sync(
-                universe_filter=["债券型-中短债", "债券型-长期纯债"],
+                universe_filter=["债券型-中短债", "债券型-长债"],
                 pipeline_profile="bond",
                 preset_task_id="test-bond-profile",
             )
@@ -661,7 +669,7 @@ class TestPipelineProfile:
         # 跑 bond profile
         with patch("src.services.market_full_pipeline.SessionLocal", return_value=db_session):
             result_bond = refresh_market_full_sync(
-                universe_filter=["债券型-中短债", "债券型-长期纯债"],
+                universe_filter=["债券型-中短债", "债券型-长债"],
                 pipeline_profile="bond",
                 preset_task_id="test-total-bond",
             )
@@ -690,7 +698,7 @@ class TestL6FeesHoldings:
         from datetime import date
         db_session.add_all([
             _mk_fund("000001", "债券型-中短债", size_yi=10, is_active=True),
-            _mk_fund("000002", "债券型-长期纯债", size_yi=10, is_active=True),
+            _mk_fund("000002", "债券型-长债", size_yi=10, is_active=True),
             _mk_fund("000003", "债券型-利率债", size_yi=10, is_active=True),
             _mk_fund("000004", "股票型", size_yi=10, is_active=True),  # 非债基，应被过滤
         ])
@@ -730,7 +738,7 @@ class TestL6FeesHoldings:
 
         with patch("src.services.market_full_pipeline.SessionLocal", return_value=db_session):
             result = refresh_market_full_sync(
-                universe_filter=["债券型-中短债", "债券型-长期纯债", "债券型-利率债"],
+                universe_filter=["债券型-中短债", "债券型-长债", "债券型-利率债"],
                 pipeline_profile="bond",
                 preset_task_id="test-l6-count",
             )
@@ -762,7 +770,7 @@ class TestL6FeesHoldings:
 
         with patch("src.services.market_full_pipeline.SessionLocal", return_value=db_session):
             refresh_market_full_sync(
-                universe_filter=["债券型-中短债", "债券型-长期纯债", "债券型-利率债", "股票型"],
+                universe_filter=["债券型-中短债", "债券型-长债", "债券型-利率债", "股票型"],
                 pipeline_profile="bond",
                 preset_task_id="test-l6-filter",
             )
@@ -792,7 +800,7 @@ class TestL6FeesHoldings:
 
         with patch("src.services.market_full_pipeline.SessionLocal", return_value=db_session):
             result = refresh_market_full_sync(
-                universe_filter=["债券型-中短债", "债券型-长期纯债", "债券型-利率债"],
+                universe_filter=["债券型-中短债", "债券型-长债", "债券型-利率债"],
                 pipeline_profile="bond",
                 preset_task_id="test-l6-fail",
             )
@@ -827,7 +835,7 @@ class TestL6FeesHoldings:
 
         with patch("src.services.market_full_pipeline.SessionLocal", return_value=db_session):
             refresh_market_full_sync(
-                universe_filter=["债券型-中短债", "债券型-长期纯债", "债券型-利率债"],
+                universe_filter=["债券型-中短债", "债券型-长债", "债券型-利率债"],
                 pipeline_profile="bond",
                 preset_task_id="test-l6-persist",
             )

@@ -42,6 +42,8 @@ def build_app(settings: Settings) -> FastAPI:
     """构造应用（测试可传自己的 Settings，无需环境变量）。"""
     store = Store.from_settings(settings)
     registry = Registry(store)
+    # 分类退役：先把分类值并进标签，再删掉 category 列（同一事务，失败回滚）
+    registry.migrate_category_to_tags()
     reader = (
         DockerClient(settings.docker_host, timeout=settings.docker_timeout)
         if settings.docker_host

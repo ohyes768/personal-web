@@ -1115,3 +1115,233 @@ Navidrome 服务早已不存在（无容器、无镜像、`~/navidrome/` 目录�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 75: 夏普走势页：现算滚动夏普与稳定性 KPI
+<!-- trellis-session: v=2 fp=92c1b78c6fed8e40 -->
+
+**Date**: 2026-11-13
+**Task**: 夏普走势页：现算滚动夏普与稳定性 KPI
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+新增导航第七 Tab /sharpe-trend?code=xxx。后端现算周频滚动 3 年夏普（纯净值口径，不 join 基准避免历史窗口被 2023-11 起基准数据截断；实测 000628 在 2024-09-30 窗口 join 版 2.42/n=219 vs 纯净值 0.68/n=729），0.8 达标线 + 6 项 KPI + TTL 1h 净值缓存 + rf_basis 透明化。前端复用 SharpeChart，三处入口（股基列表代码/抽屉夏普卡/榜单行代码），债基不暴露。测试 630 passed（+33）、前端 lib 35 passed、tsc 通过、浏览器端到端验证三入口与区间切换。contracts §17 + frontend 契约 + Trellis 任务归档。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fa7c165` | feat(fund-select): 夏普走势页——单基金现算滚动夏普与稳定性 KPI |
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 76: 夏普榜单 v2 三道门 + 52 周窗口
+<!-- trellis-session: v=2 fp=131d1663527af471 -->
+
+**Date**: 2026-11-13
+**Task**: 夏普榜单 v2 三道门 + 52 周窗口
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+v2 入选规则（IR≥0.5/样本≥700/同类前20%）+ 52 周窗口统计；修复 BASE_ROW_FIELDS 缺 mgr_experience_years_max；新增 peer 冻结、gate_missing 诊断、v1 存档迁移脚本；前后端部署到 NAS 验证通过。后端 668 passed / 前端 37 passed / tsc+build 通过。契约 §18、前端契约 §7。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1e599f6d` | docs(trellis): 夏普榜单 v2 任务规划与契约 §18 |
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 77: service-manager 标签体系：可维护可筛选 + 分类字段退役
+<!-- trellis-session: v=2 fp=224220608695b442 -->
+
+**Date**: 2026-11-13
+**Task**: service-manager 标签体系：可维护可筛选 + 分类字段退役
+**Package**: apps/service-manager
+**Branch**: `master`
+
+### Summary
+
+照搬 skill-manager 的标签交互：行内药丸 + 编辑弹窗（勾选/新建）+ 药丸多选 AND 筛选；候选词表改由后端 summary.all_tags 提供。category 字段退役：迁移先转标签后删列（同一事务、幂等），24 条服务的分类值并入标签，界面与 API 的分类入口全部下线。新增 e2e 三条用例并加 afterEach 清理。验证：后端 pytest 208 passed，前端 tsc/eslint 0 问题，e2e 23 passed / 1 skipped，前后端容器已重建上线。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `da3152e6` | feat(service-manager): 标签体系——可维护可筛选，分类字段退役 |
+| `7c58f13a` | docs(trellis): 标签体系任务落地——PRD/实施清单按实现回填 |
+| `c4c1afa2` | chore(task): archive 11-13-service-manager-tags |
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 78: service-manager 瘦身：砍掉详情页与未用能力
+<!-- trellis-session: v=2 fp=9248712545c28ceb -->
+
+**Date**: 2026-11-14
+**Task**: service-manager 瘦身：砍掉详情页与未用能力
+**Package**: apps/service-manager
+**Branch**: `master`
+
+### Summary
+
+按人工表实际占用统计砍掉从未用过的能力：详情页、入口维护/主入口列/URL·证书·发布徽章、巡检按钮、组件明细、域名证书视图、单服务检查。列表页接住名称与用途的行内编辑 + 移除台账条目。后端一律不动（接口/表/20 条入口数据/检查子系统/备份格式全留），spec 新增 §2.10 写明「下线的是界面，不是检查」。同时收尾了另一个会话遗留未提交的「退役归属」改动（fce23da9）与 e2e 全局兜底清理（ab10d368）。验证：后端 pytest 194 passed，前端 tsc/eslint 0 问题，e2e 23 passed / 1 skipped。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ac242fc2` | refactor(service-manager): 砍掉详情页与从未用过的能力，列表页一处做完 |
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 79: 夏普榜单 v3：年度同类排名 + 历史回溯
+<!-- trellis-session: v=2 fp=051ec1a0ced636c2 -->
+
+**Date**: 2026-11-14
+**Task**: 夏普榜单 v3：年度同类排名 + 历史回溯
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+同类排名从滚动分位改为「最近3个完整年度中至少2年前25%」；因年度排名是历史固定值，回溯补满 88 周×2来源历史，曲线从1点变51点。修复基准缓存起始日 bug（必须从首周前推3年）。契约 §19 §8。后端 710 passed / 前端 38 passed。生产：49只命中、52周、曲线中位37点。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b39f6871` | test(fund-select): v3 年度排名门槛测试（37 个新用例） |
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 80: service-manager 恢复主入口与证书监控
+<!-- trellis-session: v=2 fp=946f38bc2c6db1b2 -->
+
+**Date**: 2026-11-14
+**Task**: service-manager 恢复主入口与证书监控
+**Package**: apps/service-manager
+**Branch**: `master`
+
+### Summary
+
+上一轮砍证书列的依据是「人工表用量为 0」，但后端检查一直在跑、14 个证书全部 valid，只是界面不显示。这一轮捡回监控：列表页恢复「主入口」（行内可编辑 URL）与「证书」（徽章 + 到期天数）两列；后端新增 PUT /services/{id}/primary-endpoint（只收 url，类型与是否查证书按 URL 判定，规则只写一处），列表项带 primary_endpoint。URL/发布维度、域名证书总览页、人工端口、发布动态、组件明细仍下线。验证：后端 pytest 200 passed，前端 tsc/eslint 0 问题，e2e 27 passed / 1 skipped。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bb57d32e` | feat(service-manager): 恢复主入口与证书监控 |
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 81: 基金代码快速搜索（header 搜索框 + URL 跳转）
+<!-- trellis-session: v=2 fp=5ca37804961ed310 -->
+
+**Date**: 2026-11-14
+**Task**: 基金代码快速搜索（header 搜索框 + URL 跳转）
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+四个基金 tab header 右上角加代码搜索框：输入6位代码回车，后端 lookup 判定所属 tab（yaml名单优先、other按subtype细分避开2653只债券型陷阱），自动跳转并开抽屉。新增 GET /api/funds/lookup/{code}，注册在 /{code} 之前；found=false 返200、格式非法422、path用相对路径。后端733 passed(+23)/前端50(+12)/tsc+build通过，生产实测五类场景全对。契约§20。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ee73a068` | feat(fund-select): 基金代码快速搜索（header 搜索框 + URL 跳转） |
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 82: 夏普榜单数据缺口周口径修正
+<!-- trellis-session: v=2 fp=65d98f3f48a18308 -->
+
+**Date**: 2026-11-15
+**Task**: 夏普榜单数据缺口周口径修正
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+连续周数不再被无榜/样本未更新的缺口周打断；在榜列改为 在榜/可评 分数；图表与页面标注缺口周。契约 §21 + §9。
+
+### Main Changes
+
+- 后端: _week_stale_codes/_is_gap 判定缺口周，逐基金 gap_weeks/evaluable_weeks，诊断新增 gap_weeks
+- DTO 三处同步: models.py / sharpe-board.ts / ProfileCard；sharpe-chart.ts 纯函数新增 gapWeeks 入参与 markLine 竖线
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `84ab060e` | feat(fund-select): 夏普榜单数据缺口周口径——连续周数不再被无榜周打断 |
+| `07316cc2` | docs(trellis): 夏普榜单数据缺口周任务规划与契约 §21 |
+
+### Testing
+
+- [OK] 后端 pytest 795 passed；前端 lib 35 passed；tsc + pnpm build 通过
+- [OK] 生产复核: 缺口周 2026-02-16 识别正确，页面「数据缺口周 1 个」徽章 + 34/51 在榜/可评
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 83: 夏普榜单在榜占比筛选 + 精简时间范围
+<!-- trellis-session: v=2 fp=e4b9bc6a595a173c -->
+
+**Date**: 2026-11-15
+**Task**: 夏普榜单在榜占比筛选 + 精简时间范围
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+「至少上榜 N 周」改为「在榜占比 ≥ N%」（min_listed_pct，默认 60%，可编辑）；时间范围去掉与「近一年(52周)」重复的「近 1 年」。契约 §23 + §10。
+
+### Main Changes
+
+- 后端: min_weeks 下线 → min_listed_pct（0~100，默认 60，含等于），保留在榜 0 周硬门槛
+- 前端: 筛选条改可编辑百分比输入 + 分母口径 title，URL 参数 min_listed_pct，RANGE_OPTIONS 去掉 1y 只留 3 项
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b056c798` | feat(fund-select): 「至少上榜」改在榜占比筛选（默认60%）+ 去掉重复的近1年范围 |
+
+### Testing
+
+- [OK] 后端 pytest 795 passed；前端 lib 35 passed；tsc + pnpm build 通过
+- [OK] 生产验收 source=all: 0%→53 / 30%→44 / 60%→32 / 100%→8 / 越界 422；003598、012124 在列，210002 不在列
+
+### Status
+
+[OK] **Completed**

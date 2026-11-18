@@ -15,6 +15,8 @@ export interface FundListItem {
   fund_type: string;
   /** akshare 精确子类（fund_type 全空，用这个做类型列展示；与后端 models.FundListItem.market_subtype 同步） */
   market_subtype: string;
+  /** 来源分段标记：code ∈ 雪球三分法 yaml 名单（11-15-source-segmented） */
+  in_curated?: boolean;
   size_yi: number | null;
   age_years: number | null;
   dd_3y: number | null;
@@ -49,6 +51,8 @@ export interface FundListItem {
 export interface ScreenResponse {
   total: number;
   items: FundListItem[];
+  /** 来源分段回显（/screen 与 /stock/screen 带此字段；discovery 路由没有） */
+  source?: SourceSegment;
 }
 
 export interface FundFees {
@@ -113,6 +117,10 @@ export interface FundFilters {
   exclude_qdii: boolean;
   /** akshare 基金类型（粗分类），null = 走 tab 默认 universe */
   market_types: string[] | null;
+  /** 来源分段（11-15-source-segmented）：默认 all；仅债基/股基合并页消费 */
+  source?: SourceSegment;
+  /** 代码搜索态（11-16）：6 位代码 = 列表锁定这一只；null/缺失 = 正常筛选 */
+  search_code?: string | null;
   sort: string;
   order: 'asc' | 'desc';
   /** 分页（仅前端 state，写入 URL）；page=1 / limit=50 默认值不进 URL */
@@ -120,10 +128,24 @@ export interface FundFilters {
   limit: number;
 }
 
+/**
+ * 来源分段（11-15-source-segmented）：
+ * - market = akshare 市场子类圈定（该 tab 的「全集」口径）
+ * - curated = 雪球三分法 yaml 名单
+ * - all = 三分法名单 ∪ 市场子类（**后端仍支持**，前端不再暴露这个分段）
+ *
+ * 两个 tab 都只提供「市场 | 三分法」两态；默认值按「换分段前后首屏行集不变」
+ * 那一态选（股基 all ≡ market → market；债基 all ≡ curated → curated）。
+ */
+export type SourceSegment = 'all' | 'curated' | 'market';
+
 /** 每页条数选项（与后端 limit 取值范围 1-200 对齐） */
 export const LIMIT_OPTIONS = [25, 50, 100] as const;
 
 export const DEFAULT_FILTERS: FundFilters = {
+  // 债基默认落在「三分法」：改分段前后的默认筛选下，all 与 curated **逐行同集**
+  // （13 行），market 只有 11 行 → 默认跟 all 同集，首屏一行不变
+  source: 'curated',
   min_age: 3,
   min_size_yi: 5,
   max_dd_3y: 5,
@@ -137,8 +159,11 @@ export const DEFAULT_FILTERS: FundFilters = {
   limit: 50,
 };
 
-/** 股票基金 tab 默认筛选（决策：3 / 5 / 30 / 5 / 夏普 0.8，按 ret_3y desc） */
+/** 股票基金 tab 默认筛选（决策：3 / 5 / 30 / 5 / 夏普 0.8，按 ret_3y desc）
+ *  source='market'：股基三分法 142 只全部含在市场 universe 内，「市场」即全集
+ *  （旧默认 'all' 与 'market' 逐只同集，切换无可见差别 → 直接砍掉「全部」分段） */
 export const STOCK_DEFAULT_FILTERS: FundFilters = {
+  source: 'market',
   min_age: 3,
   min_size_yi: 5,
   max_dd_3y: 30,
@@ -154,6 +179,8 @@ export const STOCK_DEFAULT_FILTERS: FundFilters = {
 
 /** 债基·市场 tab 默认筛选：默认 universe = 4 个粗类别全选（债基侧无 REITs） */
 export const DISCOVERY_BOND_DEFAULT_FILTERS: FundFilters = {
+  // 老 discovery 路由没有 source 参数，这里只是别往 URL 里塞无意义的值
+  source: 'market',
   min_age: 3,
   min_size_yi: 5,
   max_dd_3y: 5,
@@ -169,6 +196,7 @@ export const DISCOVERY_BOND_DEFAULT_FILTERS: FundFilters = {
 
 /** 股基·市场 tab 默认筛选：默认 universe = 5 个粗类别全选 */
 export const DISCOVERY_STOCK_DEFAULT_FILTERS: FundFilters = {
+  source: 'market',
   min_age: 3,
   min_size_yi: 5,
   max_dd_3y: 30,
@@ -222,7 +250,9 @@ export const COARSE_TO_SUBTYPES_STOCK: Record<string, string[]> = {
 };
 
 export const COARSE_TO_SUBTYPES_BOND: Record<string, string[]> = {
-  '纯债型': ['债券型-中短债', '债券型-混合一级', '债券型-混合二级', '债券型-利率债', '债券型-信用债', '债券型-长期纯债'],
+  // ⚠ subtype 必须是 akshare 基金类型列的原值：长债的 akshare 原值是「债券型-长债」
+  //   （写成「长期纯债」会匹配不到库里 2653 只长债，勾「纯债型」会漏掉它们）
+  '纯债型': ['债券型-中短债', '债券型-混合一级', '债券型-混合二级', '债券型-利率债', '债券型-信用债', '债券型-长债'],
   '混合型': ['债券型-混合债', '混合型-偏债'],  // 混合债基（区别于混合一级/二级；含偏债混合）
   '指数型': ['指数型-固收'],
   'QDII': ['QDII-纯债', 'QDII-混合债'],

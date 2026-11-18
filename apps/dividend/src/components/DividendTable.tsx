@@ -872,10 +872,7 @@ function AlertBellButton({
   }
 
   const currentPrice = technical?.realtime ?? technical?.close ?? null;
-  const triggeredKeys = item.triggered_today || [];
-  const isTriggered = triggeredKeys.length > 0;
   const hasLevels = item.has_levels;
-  const enabled = item.enabled;
 
   // 找到"距离当前价最近的档位"用于 tooltip
   let nearestHint = '';
@@ -895,31 +892,12 @@ function AlertBellButton({
     }
   }
 
-  // 状态映射到颜色 + title
+  // 状态映射到颜色 + title（推送与监控已移除：只剩「配没配挡位」两种）
   // 默认色用 text-ink-soft（暖白主题下 gray-600 / ink-muted 都偏暗，铃铛隐形）
-  let bellClass = 'text-ink-soft hover:text-ink-strong';
-  let title = '设置挡位监控';
-  if (isTriggered) {
-    bellClass = 'text-red-400 hover:text-red-300 animate-pulse';
-    title = `今日触发：${triggeredKeys.map(k => LEVEL_META[k as LevelKey].emoji + LEVEL_META[k as LevelKey].label).join(', ')}`;
-  } else if (enabled && hasLevels) {
-    bellClass = 'text-blue-400 hover:text-blue-300';
-    title = hasLevels ? `已启用监控 · ${nearestHint}` : '已启用，未配置档位';
-  } else if (hasLevels) {
-    bellClass = 'text-amber-400 hover:text-amber-300';
-    title = `已配置 ${item.level_count} 档（未启用）· ${nearestHint}`;
-  } else {
-    title = '点击设置挡位';
-  }
-
-  // 触发 badge：取方向最严重的（卖 > 买）
-  let badge: string | null = null;
-  if (isTriggered) {
-    if (triggeredKeys.includes('full_exit')) badge = '🔴';
-    else if (triggeredKeys.includes('reduce_position')) badge = '🟠';
-    else if (triggeredKeys.includes('heavy_position')) badge = '🟢';
-    else if (triggeredKeys.includes('add_position')) badge = '🟡';
-  }
+  const bellClass = hasLevels ? 'text-blue-400 hover:text-blue-300' : 'text-ink-soft hover:text-ink-strong';
+  const title = hasLevels
+    ? `已配置 ${item.level_count} 档 · ${nearestHint}`
+    : '点击设置挡位';
 
   return (
     <button
@@ -932,14 +910,6 @@ function AlertBellButton({
       className="relative inline-flex items-center justify-center w-7 h-7 rounded transition-colors hover:bg-paper-deep"
     >
       <BellIcon className={`w-4 h-4 ${bellClass}`} />
-      {badge && (
-        <span className="absolute -top-0.5 -right-0.5 text-[9px] leading-none" aria-hidden>
-          {badge}
-        </span>
-      )}
-      {enabled && hasLevels && !isTriggered && (
-        <span className="absolute top-0 right-0.5 w-1.5 h-1.5 rounded-full bg-blue-400" aria-hidden />
-      )}
     </button>
   );
 }

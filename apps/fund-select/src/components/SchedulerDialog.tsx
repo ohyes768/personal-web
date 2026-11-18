@@ -143,7 +143,7 @@ export function SchedulerDialog({ onClose }: { onClose: () => void }) {
     className="max-h-[90dvh] max-w-4xl overflow-hidden rounded-xl border border-rule bg-paper-card p-0 text-ink shadow-xl backdrop:bg-black/40">
     <div className="flex max-h-[90dvh] flex-col">
       <header className="flex shrink-0 items-start justify-between gap-4 border-b border-rule px-4 py-4 sm:px-6">
-        <div><h2 id="scheduler-title" className="text-xl font-semibold text-ink-strong">定时任务</h2><p className="mt-1.5 text-xs leading-5 text-ink-muted">每周六错峰更新 · 北京时间 · 四项独立管理</p></div>
+        <div><h2 id="scheduler-title" className="text-xl font-semibold text-ink-strong">定时任务</h2><p className="mt-1.5 text-xs leading-5 text-ink-muted">每周错峰更新 · 经理月度 · 北京时间 · 独立管理</p></div>
         <div className="flex shrink-0 gap-1">
           <button type="button" className={button} disabled={loading || busy !== null} onClick={() => setRevision(value => value + 1)} aria-label="刷新任务状态"><ArrowPathIcon aria-hidden="true" className="h-4 w-4" /><span className="hidden sm:inline">刷新状态</span></button>
           <button ref={closeButton} type="button" className={`${button} border-transparent px-2`} aria-label="关闭定时任务" onClick={onClose}><XMarkIcon aria-hidden="true" className="h-5 w-5" /></button>

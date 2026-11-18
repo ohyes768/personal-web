@@ -108,7 +108,11 @@ def _seed_three_weeks(db, *, source="stock", version="v1", extra_week2=None):
 
 
 def _get(client, **params):
-    base = {"source": "stock"}
+    # fixture 种子是 v1 数据；API 默认版本已切 v2（11-13 任务），
+    # 这组聚合测试显式查 v1，默认版本行为由 TestApiValidation 单独验证。
+    # min_listed_pct=0 = 不限占比：多数用例关心统计/排序口径，
+    # 占比筛选本身有专门用例（TestListedPctFilter）；生产默认是 60%。
+    base = {"source": "stock", "profile_version": "v1", "min_listed_pct": 0}
     base.update(params)
     return client.get("/api/funds/sharpe-board", params=base).json()
 
@@ -172,12 +176,18 @@ class TestOrderingAndConsecutive:
 
 
 class TestDisplayFilters:
-    """AC3/R5：min_weeks、latest_only"""
+    """AC3/R5：min_listed_pct、latest_only"""
 
-    def test_min_weeks_3_only_b(self, client, three_weeks):
-        body = _get(client, min_weeks=3)
-        assert body["total"] == 1
-        assert [it["code"] for it in body["items"]] == ["000002"]
+    def test_min_listed_pct_keeps_only_high_ratio(self, client, three_weeks):
+        """在榜占比 = 在榜周数 ÷ 可评周数：A=2/3(67%)、B=3/3(100%)。
+
+        下限 100% → 只有 B（每可评周都在榜）；下限 60% → 两只都留。
+        """
+        strict = _get(client, min_listed_pct=100)
+        assert strict["total"] == 1
+        assert [it["code"] for it in strict["items"]] == ["000002"]
+        loose = _get(client, min_listed_pct=60)
+        assert {it["code"] for it in loose["items"]} == {"000001", "000002"}
 
     def test_latest_only_drops_not_on_latest_board(self, client, board_db):
         _seed_three_weeks(board_db, extra_week2={"000003": ("基金D", 0.91)})
@@ -232,46 +242,50 @@ class TestRangeOnlyTrimsChart:
             assert len(s["values"]) == len(all_body["weeks"])
 
     def test_no_points_in_range_all_null_series(self, client, ranged_db):
-        """下限判断使用范围外最新记录：C 最近上榜 0.9（6 月，3m 范围外），
-        下限 0.9 含等于 → C 仍命中，但范围内无点 → 全 null 不造点"""
+        """v2 52 周窗口：C 只在 2026-06-01 上榜（52 周窗口内，3m 范围外）。
+        range=3m 只裁周历、不改统计/命中 → C 仍命中，但 3m 内无点 → 全 null。"""
         body = _get(client, range="3m", min_latest_sharpe=0.9)
-        assert body["total"] == 3  # A 1.05 / B 0.94 / C 0.9 全部 ≥ 下限（全历史判断）
+        assert body["total"] == 3  # A 1.05 / B 0.94 / C 0.9 全部 ≥ 下限
         by_code = {it["code"]: it for it in body["items"]}
         assert by_code["000003"]["latest_sharpe"] == 0.9
-        assert by_code["000003"]["last_listed_week"] == "2026-06-01"  # 范围外最新记录
+        assert by_code["000003"]["last_listed_week"] == "2026-06-01"
         c_series = [s for s in body["series"] if s["code"] == "000003"][0]
-        assert c_series["values"] == [None] * len(body["weeks"])  # 范围内无点不造点
-        assert body["weeks"][0] == "2026-08-03"  # 3m 裁剪：current(11-02) - 91 天
-        assert len(body["weeks"]) == 14
+        assert c_series["values"] == [None] * len(body["weeks"])  # 3m 内无点不造点
+        # 13 个整周（current 11-02 往前 12 周），起点落在周一网格
+        assert body["weeks"][0] == "2026-08-10"
+        assert len(body["weeks"]) == 13
+        assert all(date.fromisoformat(w).weekday() == 0 for w in body["weeks"])
 
     def test_range_trims_old_only_not_recent(self, client, ranged_db):
         """1y 覆盖全部观测周：图与 all 相同（回归：cutoff 不误裁）"""
         body = _get(client, range="1y")
         assert body["weeks"] == _get(client, range="all")["weeks"]
 
-    def test_1y_cutoff_aligns_to_monday_grid(self, client, board_db):
-        """回归：365 = 52周+1 天，raw cutoff（current-365）落在周日。首观测早于
-        cutoff 时不触发 first_obs 钳制，起点必须对齐回周一，否则周历整体脱离
-        周一键、范围内 values 全 null（2026-11-05 浏览器实测 300×105 压力数据实锤）。
-        终点保持当前周（range 只裁起点，AC4）。"""
+    def test_52week_window_aligns_to_monday_grid(self, client, board_db):
+        """v2 回归：52 周窗口起点天然落在周一（364 = 52×7，不再有旧 365 天
+        方案「raw cutoff 落周日 → series 全 null」的错位缺陷）。
+        2024-11-04 的旧观测在 52 周窗口外：不进统计、不进周历、不造点。"""
         _seed_week(board_db, date(2024, 11, 4), {"000004": ("基金D旧", 0.42)})
         _seed_week(board_db, WEEK1, {"000001": ("基金A", 0.95), "000002": ("基金B", 0.90), "000004": ("基金D", 0.50)})
         _seed_week(board_db, WEEK2, {"000002": ("基金B", 0.92), "000004": ("基金D", 0.50)})
         _seed_week(board_db, WEEK3, {"000001": ("基金A", 1.05), "000002": ("基金B", 0.94), "000004": ("基金D", 0.50)})
         body = _get(client, range="1y")
         weeks = [date.fromisoformat(w) for w in body["weeks"]]
-        assert weeks[0] == date(2025, 10, 27)  # raw 2025-11-02（周日）对齐回周一
-        assert weeks[-1] == WEEK3  # 终点仍为当前周，不漂移
+        # current=WEEK3(2026-11-02)，窗口起点 = current - 51 周 = 2025-11-10（周一）
+        assert weeks[0] == date(2025, 11, 10)
+        assert weeks[0].weekday() == 0
+        assert (weeks[-1] - weeks[0]).days == 51 * 7  # 恰 51 个整周
+        assert weeks[-1] == WEEK3  # 终点仍为当前周
         assert all(w.weekday() == 0 for w in weeks)  # 全周一网格
         d_series = [s for s in body["series"] if s["code"] == "000004"][0]
-        assert d_series["values"][-3:] == [0.50, 0.50, 0.50]  # 范围内旧点对位成功
-        assert d_series["values"][0] is None  # 2024-11-04 旧点被裁掉，不造点
-        # 统计不变：all 与 1y 的累计周数一致（旧周仍在全历史）
+        assert d_series["values"][-3:] == [0.50, 0.50, 0.50]  # 窗口内点对位成功
+        assert d_series["values"][0] is None  # 2024-11-04 旧点被窗口裁掉
+        # 1y 与 all 等价（52 周整窗口）；统计只按窗口内累计
         all_body = _get(client, range="all")
-        d_all = [s for s in all_body["series"] if s["code"] == "000004"][0]
+        assert body["weeks"] == all_body["weeks"]
         it_1y = {it["code"]: it for it in body["items"]}["000004"]
         it_all = {it["code"]: it for it in all_body["items"]}["000004"]
-        assert it_1y["listed_weeks"] == it_all["listed_weeks"] == 4
+        assert it_1y["listed_weeks"] == it_all["listed_weeks"] == 3  # 旧周不计
 
 
 class TestStatusSemantics:
@@ -296,15 +310,24 @@ class TestStatusSemantics:
             "000001"] == [0.95, None, None]
 
     def test_gap_week_axis_with_downtime(self, client, board_db):
-        """停机周在周历留空位：WEEK2 无任何周行 → weeks 仍三格 + 诊断列出无榜周"""
+        """停机周在周历留空位：WEEK2 无任何周行 → weeks 仍三格 + 诊断列出无榜周
+
+        v4 口径（11-14-sharpe-board-gap-weeks）：无榜周 = 数据缺口 → 不打断连续，
+        基金A 的连续段跨过 WEEK2（2 周）；真实缺席（可评却未上榜）才中断。
+        """
         _seed_week(board_db, WEEK1, {"000001": ("基金A", 0.95)})
         _seed_week(board_db, WEEK3, {"000001": ("基金A", 1.05)})
         body = _get(client)
         assert body["weeks"] == ["2026-10-19", "2026-10-26", "2026-11-02"]
         assert body["diagnostics"]["no_board_weeks"] == ["2026-10-26"]
+        assert body["diagnostics"]["gap_weeks"] == ["2026-10-26"]
         assert body["series"][0]["values"] == [0.95, None, 1.05]
-        # 缺席/未知中断连续计数：10-26 未知 → 最近连续 1 周
-        assert body["items"][0]["consecutive_weeks"] == 1
+        # 无榜周是数据缺口 → 连续不中断（跨过 WEEK2）
+        assert body["items"][0]["consecutive_weeks"] == 2
+        assert body["items"][0]["listed_weeks"] == 2
+        assert body["items"][0]["gap_weeks"] == ["2026-10-26"]
+        # 可评周数 = 窗口内有有效样本的周数（本 fixture 只有 WEEK1/WEEK3 发过榜）
+        assert body["items"][0]["evaluable_weeks"] == 2
 
     def test_no_history_empty_state(self, client, board_db):
         """首次无数据：零榜 → total=0、weeks 空、stale、无 published"""
@@ -329,16 +352,22 @@ class TestStatusSemantics:
         assert body["stale"] is True
 
     def test_skipped_week_visible_in_diagnostics(self, client, board_db):
-        """skipped_no_new_data 周也无榜（R6：不重复抄旧值冒充在榜）"""
+        """skipped_no_new_data 周也无榜（R6：不重复抄旧值冒充在榜）
+
+        v4 口径：该周是数据缺口（没发榜 + 该基金样本未更新）→ 不打断连续。
+        """
         _seed_week(board_db, WEEK1, {"000001": ("基金A", 0.95)})
         _seed_week(board_db, WEEK2, status="skipped_no_new_data",
                    diagnostics={"stale_codes": ["000001"]})
         _seed_week(board_db, WEEK3, {"000001": ("基金A", 1.05)})
         body = _get(client)
         assert body["diagnostics"]["no_board_weeks"] == ["2026-10-26"]
+        assert body["diagnostics"]["gap_weeks"] == ["2026-10-26"]
         assert body["diagnostics"]["latest_diagnostics"] == {}  # 最新是 WEEK3 complete
         assert body["items"][0]["listed_weeks"] == 2
-        assert body["items"][0]["consecutive_weeks"] == 1
+        assert body["items"][0]["consecutive_weeks"] == 2  # 跨过缺口周
+        assert body["items"][0]["evaluable_weeks"] == 2
+        assert body["items"][0]["gap_weeks"] == ["2026-10-26"]
 
 
 class TestHistoryPreservation:
@@ -367,7 +396,7 @@ class TestHistoryPreservation:
     def test_default_source_is_discovery_stock(self, client, board_db):
         """不带 source 走默认 discovery-stock（design 合同）"""
         _seed_three_weeks(board_db, source="discovery-stock")
-        body = client.get("/api/funds/sharpe-board").json()
+        body = client.get("/api/funds/sharpe-board?profile_version=v1").json()
         assert body["profile"]["source"] == "discovery-stock"
         assert body["total"] == 2
 
@@ -431,9 +460,149 @@ class TestPaginationInvariants:
         })
         _seed_week(board_db, WEEK2, {"000003": ("C", 0.9), "000001": ("A", 0.5)})
         _seed_week(board_db, WEEK3, {"000003": ("C", 0.95), "000002": ("B", 1.2)})
-        body = sbs.aggregate_board(board_db, source="stock")
+        body = sbs.aggregate_board(board_db, source="stock", profile_version="v1",
+                                  min_listed_pct=0)  # 本例只测排序，不限占比
         # C 3 周；其余 1 周，按最近夏普降序 B 1.2 → D 0.9 → A 0.5
         assert [it["code"] for it in body["items"]] == ["000003", "000002", "000004", "000001"]
+
+
+class TestGapWeekSemantics:
+    """数据缺口周口径（11-14-sharpe-board-gap-weeks）
+
+    - gap（无榜 / 该基金样本未更新）→ 不计入在榜、不打断连续
+    - miss（发了榜、样本新鲜、没进榜）→ 真实缺席，中断连续
+    - evaluable_weeks = 可评周数（在榜列的分母）
+    """
+
+    def test_stale_fund_gap_does_not_break_streak(self, client, board_db):
+        """发了榜但该基金样本未更新 → 数据缺口 → 连续跨过该周"""
+        _seed_week(board_db, WEEK1, {"000001": ("基金A", 0.95)})
+        _seed_week(board_db, WEEK2, {"000002": ("基金B", 0.92)},
+                   diagnostics={"stale_codes": ["000001"]})
+        _seed_week(board_db, WEEK3, {"000001": ("基金A", 1.05)})
+        body = _get(client)
+        a = {it["code"]: it for it in body["items"]}["000001"]
+        assert a["listed_weeks"] == 2
+        assert a["consecutive_weeks"] == 2       # 跨过 WEEK2 缺口周
+        assert a["evaluable_weeks"] == 2        # WEEK1/WEEK3 可评（WEEK2 样本未更新）
+        assert a["gap_weeks"] == ["2026-10-26"]
+        # 周级诊断：发了榜但数据不全 → 属 gap，不属 no_board
+        assert body["diagnostics"]["gap_weeks"] == ["2026-10-26"]
+        assert body["diagnostics"]["no_board_weeks"] == []
+
+    def test_real_absence_still_breaks_streak(self, client, board_db):
+        """发了榜、样本新鲜、只是没进榜 → 真实缺席 → 中断连续（旧口径保留）"""
+        _seed_week(board_db, WEEK1, {"000001": ("基金A", 0.95)})
+        _seed_week(board_db, WEEK2, {"000002": ("基金B", 0.92)})
+        _seed_week(board_db, WEEK3, {"000001": ("基金A", 1.05)})
+        body = _get(client)
+        a = {it["code"]: it for it in body["items"]}["000001"]
+        assert a["consecutive_weeks"] == 1
+        assert a["gap_weeks"] == []
+        assert a["evaluable_weeks"] == 3        # 三周都发了榜、都可评
+
+    def test_gap_weeks_exclude_pre_listing_weeks(self, client, board_db):
+        """上榜前的缺口周与该基金无关 → 不进 gap_weeks（可评周数分母仍受其影响）"""
+        _seed_week(board_db, WEEK2, {"000002": ("基金B", 0.92)})
+        _seed_week(board_db, WEEK3, {"000002": ("基金B", 0.94)})
+        body = _get(client)
+        b = {it["code"]: it for it in body["items"]}["000002"]
+        assert b["gap_weeks"] == []
+        assert b["listed_weeks"] == 2
+        assert b["consecutive_weeks"] == 2
+        assert b["evaluable_weeks"] == 2        # 只有 WEEK2/WEEK3 发过榜
+
+    def test_gap_before_real_break_still_listed(self, client, board_db):
+        """缺口周即使落在连续段之外（在真实缺席截断之前）也进 gap_weeks"""
+        prev = date(2026, 10, 12)
+        _seed_week(board_db, prev, {"000001": ("基金A", 0.90)})
+        _seed_week(board_db, WEEK1, {"000002": ("基金B", 0.92)},
+                   diagnostics={"stale_codes": ["000001"]})   # A 样本未更新 → 缺口
+        _seed_week(board_db, WEEK2, {"000002": ("基金B", 0.93)})  # A 可评却没进榜 → 缺席
+        _seed_week(board_db, WEEK3, {"000001": ("基金A", 1.05)})
+        body = _get(client)
+        a = {it["code"]: it for it in body["items"]}["000001"]
+        assert a["gap_weeks"] == ["2026-10-19"]
+        assert a["consecutive_weeks"] == 1     # 被 WEEK2 的真实缺席截断
+        assert a["listed_weeks"] == 2
+        assert a["evaluable_weeks"] == 3      # 10-12 / 10-26 / 11-02 可评
+
+    def test_all_source_gap_needs_all_sources_gap(self, client, board_db):
+        """source=all：只有全部来源都缺口才算缺口周（任一来源可评即为可评）"""
+        # stock 在 WEEK2 整周没发榜；discovery-stock 发了榜且 000001 样本新鲜
+        _seed_week(board_db, WEEK1, {"000001": ("基金A", 0.95)},
+                   source="stock", version="v3")
+        _seed_week(board_db, WEEK1, {"000001": ("基金A", 0.95)},
+                   source="discovery-stock", version="v3")
+        _seed_week(board_db, WEEK2, {"000002": ("基金B", 0.92)},
+                   source="discovery-stock", version="v3")
+        _seed_week(board_db, WEEK3, {"000001": ("基金A", 1.05)},
+                   source="stock", version="v3")
+        _seed_week(board_db, WEEK3, {"000001": ("基金A", 1.05)},
+                   source="discovery-stock", version="v3")
+        body = _get(client, source="all", profile_version="v3")
+        a = {it["code"]: it for it in body["items"]}["000001"]
+        # discovery-stock 那周可评（样本新鲜、只是没进榜）→ 真实缺席 → 中断
+        assert a["consecutive_weeks"] == 1
+        assert a["gap_weeks"] == []
+        assert a["evaluable_weeks"] == 3
+
+    def test_all_source_gap_when_every_source_gap(self, client, board_db):
+        """source=all：stock 没发榜 + discovery-stock 该基金 stale → 缺口周"""
+        _seed_week(board_db, WEEK1, {"000001": ("基金A", 0.95)},
+                   source="stock", version="v3")
+        _seed_week(board_db, WEEK1, {"000001": ("基金A", 0.95)},
+                   source="discovery-stock", version="v3")
+        _seed_week(board_db, WEEK2, {"000002": ("基金B", 0.92)},
+                   source="discovery-stock", version="v3",
+                   diagnostics={"stale_codes": ["000001"]})
+        _seed_week(board_db, WEEK3, {"000001": ("基金A", 1.05)},
+                   source="stock", version="v3")
+        _seed_week(board_db, WEEK3, {"000001": ("基金A", 1.05)},
+                   source="discovery-stock", version="v3")
+        body = _get(client, source="all", profile_version="v3")
+        a = {it["code"]: it for it in body["items"]}["000001"]
+        assert a["consecutive_weeks"] == 2       # 跨过 WEEK2 缺口周
+        assert a["gap_weeks"] == ["2026-10-26"]
+        assert a["evaluable_weeks"] == 2
+
+
+class TestListedPctFilter:
+    """在榜占比筛选（11-14-sharpe-board-listed-pct-filter）
+
+    占比 = 在榜周数 ÷ 可评周数（与表格「在榜/可评」同源），默认下限 60%。
+    """
+
+    def test_api_default_is_60_pct(self, client, three_weeks):
+        """不传参数 → 默认 60%：A=2/3(67%) 留、B=3/3(100%) 留"""
+        body = client.get(
+            "/api/funds/sharpe-board",
+            params={"source": "stock", "profile_version": "v1"},
+        ).json()
+        assert {it["code"] for it in body["items"]} == {"000001", "000002"}
+
+    def test_zero_pct_means_unlimited(self, client, board_db):
+        """min_listed_pct=0 → 不限（等价旧 min_weeks=1：窗口内在过榜的都留）"""
+        _seed_week(board_db, WEEK1, {"000001": ("基金A", 0.95)})
+        body = _get(client, min_listed_pct=0)
+        assert {it["code"] for it in body["items"]} == {"000001"}
+
+    def test_never_listed_fund_never_passes(self, client, board_db):
+        """窗口内从未上榜的基金：占比再低也看不到（硬门槛）"""
+        _seed_week(board_db, WEEK1, {"000001": ("基金A", 0.95)})
+        body = _get(client, min_listed_pct=0)
+        assert all(it["listed_weeks"] >= 1 for it in body["items"])
+
+    def test_ratio_uses_evaluable_denominator(self, client, board_db):
+        """分母是可评周数（不是 52）：数据缺口周不拉低占比"""
+        _seed_week(board_db, WEEK1, {"000001": ("基金A", 0.95)})
+        _seed_week(board_db, WEEK2, status="skipped_no_new_data",
+                   diagnostics={"stale_codes": ["000001"]})
+        _seed_week(board_db, WEEK3, {"000001": ("基金A", 1.05)})
+        body = _get(client, min_listed_pct=100)
+        it = body["items"][0]
+        assert it["listed_weeks"] == 2 and it["evaluable_weeks"] == 2  # 2/2 = 100%
+        assert body["total"] == 1  # 缺口周不拉低占比 → 100% 下仍在
 
 
 class TestApiValidation:
@@ -444,8 +613,8 @@ class TestApiValidation:
         "source=",                # 空
         "min_latest_sharpe=11",   # 越上界
         "min_latest_sharpe=-11",  # 越下界
-        "min_weeks=0",
-        "min_weeks=-1",
+        "min_listed_pct=-1",
+        "min_listed_pct=101",
         "range=2m",               # 白名单外
         "page=0",
         "page=-1",
@@ -457,17 +626,21 @@ class TestApiValidation:
         assert client.get(f"/api/funds/sharpe-board?{qs}").status_code == 422
 
     def test_unknown_version_404(self, client):
-        r = client.get("/api/funds/sharpe-board?profile_version=v2")
+        r = client.get("/api/funds/sharpe-board?profile_version=v9")
         assert r.status_code == 404
 
     def test_default_params_ok(self, client, board_db):
-        """全部默认参数（含默认 source/版本/range/page/limit）→ 200"""
-        _seed_three_weeks(board_db, source="discovery-stock")
+        """全部默认参数 → 200；默认规则版本已切 v3（11-14 任务）"""
+        _seed_three_weeks(board_db, source="discovery-stock", version="v3")
         r = client.get("/api/funds/sharpe-board")
         assert r.status_code == 200
         body = r.json()
-        assert body["profile"]["version"] == "v1"
-        assert body["profile"]["algorithm_version"] == "risk-3y-v1"
+        assert body["profile"]["version"] == "v3"
+        assert body["profile"]["algorithm_version"] == "risk-3y-v3"
+        # 显式 v1 仍可访问（版本隔离，历史不被污染）
+        r1 = client.get("/api/funds/sharpe-board?profile_version=v1")
+        assert r1.status_code == 200
+        assert r1.json()["profile"]["version"] == "v1"
 
     def test_response_fields_all_present(self, client, board_db):
         """design 返回体 9 个顶层字段全部透出（Pydantic 静默砍字段陷阱）"""
@@ -478,8 +651,16 @@ class TestApiValidation:
             assert key in body, f"响应缺 {key} 字段（schema 未声明）"
         item = body["items"][0]
         for key in ("code", "name", "listed_weeks", "consecutive_weeks",
-                    "latest_sharpe", "last_listed_week", "on_latest_board"):
+                    "latest_sharpe", "last_listed_week", "on_latest_board",
+                    # v2 新增（DTO 显式声明，防 Pydantic 静默砍字段）
+                    "near_12w_qualified", "near_12w_total", "peer_pct", "peer_as_of",
+                    # v3 年度口径
+                    "peer_years", "peer_qualified_years", "peer_window",
+                    # v4 数据缺口周口径
+                    "evaluable_weeks", "gap_weeks"):
             assert key in item
+        for key in ("no_board_weeks", "gap_weeks", "latest_diagnostics"):
+            assert key in body["diagnostics"]
         attempt = body["latest_attempt"]
         for key in ("week_start", "status", "trigger", "started_at",
                     "finished_at", "selected_count", "errors"):
@@ -487,7 +668,7 @@ class TestApiValidation:
 
     def test_route_registered_before_detail_route(self, client):
         """/sharpe-board 不被通用 /{code} 吞掉（注册顺序证据：响应是榜单结构）"""
-        body = client.get("/api/funds/sharpe-board").json()
+        body = client.get("/api/funds/sharpe-board?profile_version=v1").json()
         assert "profile" in body  # 若被 /{code} 匹配会返回 404/基金详情结构
 
 
@@ -498,7 +679,7 @@ class TestServiceLevelAggregation:
         _seed_week(board_db, WEEK3, status="failed",
                    diagnostics={"stale_codes": ["000001"]},
                    errors=["x"])
-        body = sbs.aggregate_board(board_db, source="stock")
+        body = sbs.aggregate_board(board_db, source="stock", profile_version="v1")
         assert body["diagnostics"]["no_board_weeks"] == []
         assert body["diagnostics"]["latest_diagnostics"] == {"stale_codes": ["000001"]}
         assert body["latest_attempt"]["errors"] == ["x"]
@@ -506,7 +687,7 @@ class TestServiceLevelAggregation:
     def test_attempt_time_is_shanghai_aware(self, board_db, fixed_now):
         """UTC 存储行 → latest_attempt 时间带 +08:00（展示北京时间契约）"""
         _seed_week(board_db, WEEK3, {"000001": ("A", 0.9)})
-        body = sbs.aggregate_board(board_db, source="stock")
+        body = sbs.aggregate_board(board_db, source="stock", profile_version="v1")
         started = body["latest_attempt"]["started_at"]
         assert isinstance(started, datetime)
         assert started.utcoffset().total_seconds() == 8 * 3600

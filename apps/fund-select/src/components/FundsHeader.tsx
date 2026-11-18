@@ -5,15 +5,16 @@
  *
  * 各 tab 通过 `<FundsHeader active="bond" right={...}>` 等传入。
  *
- * 注意：discovery-* tab 只有一个「全量刷新」按钮（5 阶段流水线已内置 fund_name_em 拉名单）；
- * 老 tab 的「刷新」按钮保留（刷新 yaml 名单 60 只的业绩）。
+ * 注意：discovery-* tab 只有一个「市场刷新」按钮（5 阶段流水线已内置 fund_name_em 拉名单）；
+ * 老 tab 的「三分法刷新」按钮保留（刷新 yaml 名单 60 只的业绩）。
+ * 两种刷新互斥：任一进行中时另一入口禁用（11-17 方案 B）。
  */
 'use client';
 
 import { useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 
-import { Cog6ToothIcon, FunnelIcon } from '@heroicons/react/24/outline';
+import { ArrowPathIcon, Cog6ToothIcon, FunnelIcon } from '@heroicons/react/24/outline';
 
 import { discoveryBondApi, discoveryStockApi } from '@/lib/api';
 import { FundsNavigation } from './FundsNavigation';
@@ -41,6 +42,8 @@ interface FundsHeaderProps {
   onFullRefreshComplete?: (preFilters: FullRefreshFilters) => void;
   /** 当前生效的预筛选值（用于初始化弹窗 default） */
   preFilters?: FullRefreshFilters;
+  /** 标题覆盖（11-15-source-segmented：合并页不再按 tab 命名，如「债基」「股基」） */
+  titleOverride?: string;
 }
 
 const TITLE: Record<FundsTab, string> = {
@@ -59,16 +62,24 @@ const REFRESH_URL: Partial<Record<FundsTab, string>> = {
   'managers': '/funds/api/funds/managers/refresh',
 };
 
-/** discovery-* tab 的全量 refresh：start 闭包 + poll 闭包（避免组件持有 URL 字符串） */
+/**
+ * tab 的「全量刷新」端点（跑市场全量流水线 L0..L5）。
+ *
+ * ⚠ 11-14 修复：key 原来只有 'discovery-bond' / 'discovery-stock'，而 11-15 合并页
+ * 之后 /bond 与 /stock 页传的是 exportKind="bond" / "stock" → 查表 undefined →
+ * 按钮整个不渲染（全量刷新入口失联，只能等每周定时任务）。
+ * 现在 key 与 exportKind 对齐；后端端点仍在 /api/funds/discovery-* 前缀下
+ * （那套 router 活着，只是前端不再从 discovery-* 路由进）。
+ */
 const FULL_REFRESH_API: Partial<Record<FundsTab, {
   startFullRefresh: (filters: FullRefreshFilters) => Promise<{ task_id: string; status: string }>;
   pollFullRefreshStatus: (taskId: string) => Promise<RefreshStatus>;
 }>> = {
-  'discovery-bond': {
+  'bond': {
     startFullRefresh: (filters: FullRefreshFilters) => discoveryBondApi.fullRefresh(filters),
     pollFullRefreshStatus: (taskId: string) => discoveryBondApi.getFullRefreshStatus(taskId),
   },
-  'discovery-stock': {
+  'stock': {
     startFullRefresh: (filters: FullRefreshFilters) => discoveryStockApi.fullRefresh(filters),
     pollFullRefreshStatus: (taskId: string) => discoveryStockApi.getFullRefreshStatus(taskId),
   },
@@ -84,13 +95,17 @@ export function FundsHeader({
   exportKind,
   onFullRefreshComplete,
   preFilters,
+  titleOverride,
 }: FundsHeaderProps) {
-  const title = TITLE[active];
+  const title = titleOverride ?? TITLE[active];
   const refreshUrl = REFRESH_URL[exportKind];
   const statusUrl = refreshUrl ? `${refreshUrl}/status` : undefined;
   const fullRefreshApi = FULL_REFRESH_API[exportKind];
 
   const [fullOpen, setFullOpen] = useState(false);
+  // 两种刷新互斥：三分法刷新（名单业绩）与市场刷新（全量流水线）不允许同时跑
+  const [quickBusy, setQuickBusy] = useState(false);
+  const [fullBusy, setFullBusy] = useState(false);
   const searchParams = useSearchParams();
   const [schedulerOpen, setSchedulerOpen] = useState(searchParams.get('scheduler') === '1');
 
@@ -104,8 +119,8 @@ export function FundsHeader({
           >
             ← 返回首页
           </a>
-          <div className="flex items-baseline gap-3 mt-0.5 flex-wrap">
-            <h1 className="text-lg font-semibold text-ink-strong">{title}</h1>
+          <h1 className="text-lg font-semibold text-ink-strong mt-0.5">{title}</h1>
+          <div className="mt-1">
             <FundsNavigation active={active} />
           </div>
         </div>
@@ -115,16 +130,21 @@ export function FundsHeader({
               refreshUrl={refreshUrl}
               statusUrl={statusUrl}
               onRefreshed={onRefreshed}
+              disabled={fullBusy}
+              onBusyChange={setQuickBusy}
             />
           )}
           {fullRefreshApi && onFullRefreshComplete && (
             <>
               <button
                 onClick={() => setFullOpen(true)}
-                className="inline-flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg bg-paper-deep text-ink-muted hover:bg-info-tint hover:text-info transition-colors"
-                aria-label="全量刷新"
+                disabled={quickBusy}
+                className="inline-flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg bg-paper-deep text-ink-muted hover:bg-info-tint hover:text-info transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-paper-deep disabled:hover:text-ink-muted"
+                aria-label="市场刷新"
+                title={quickBusy ? '三分法刷新进行中，暂不可用' : '市场全量流水线（名单 → 业绩 → 经理 → 净值 → 风险指标），约 10 分钟起，低频'}
               >
-                全量刷新
+                <ArrowPathIcon className={`w-4 h-4 ${fullBusy ? 'animate-spin' : ''}`} />
+                市场刷新
               </button>
               <FullRefreshDialog
                 open={fullOpen}
@@ -137,6 +157,8 @@ export function FundsHeader({
                   onRefreshed();
                 }}
                 initial={preFilters}
+                disabled={quickBusy}
+                onBusyChange={setFullBusy}
               />
             </>
           )}

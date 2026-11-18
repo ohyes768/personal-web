@@ -9,9 +9,11 @@ import { ApiHttpError } from '@/lib/api-client';
 
 const buttonClass = 'text-xs text-accent-deep hover:underline underline-offset-4 disabled:opacity-40 disabled:no-underline';
 
-export function SessionDownloadButton({ runId, download }: {
+export function SessionDownloadButton({ runId, download, label = '下载会话记录' }: {
   runId: string | null | undefined;
   download: (runId: string) => Promise<void>;
+  /** 紧凑场景（表格行内）可传短文案，如「会话」 */
+  label?: string;
 }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
@@ -31,8 +33,8 @@ export function SessionDownloadButton({ runId, download }: {
 
   return (
     <span className="inline-flex items-center gap-1.5">
-      <button type="button" className={buttonClass} disabled={pending} onClick={() => void handleClick()}>
-        {pending ? '生成中…' : '下载会话记录'}
+      <button type="button" className={buttonClass} disabled={pending} title={pending ? undefined : '下载本次 Hermes 会话记录（markdown）'} onClick={() => void handleClick()}>
+        {pending ? '生成中…' : label}
       </button>
       {error && <span role="alert" className="text-xs text-red-600">{error}</span>}
     </span>

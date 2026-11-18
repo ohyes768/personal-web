@@ -313,7 +313,6 @@ function UpdateTaskRow({
 function buildCurrentConfig(item: AlertStatusItem | undefined): AlertConfigRequest | null {
   if (!item) return null;
   return {
-    enabled: item.enabled,
     levels: item.levels ?? {
       heavy_position: null,
       add_position: null,
@@ -1163,6 +1162,7 @@ function DividendPageContent() {
           priceMap={alertPriceMap}
           priceUpdatedAt={alertPriceUpdatedAt}
           onOpenAlertSettings={handleOpenAlertSettings}
+          sourceQuery={searchParams.toString()}
         />
       ) : (
         !(activeTab === 'all' && favOnly && displayData.length === 0)

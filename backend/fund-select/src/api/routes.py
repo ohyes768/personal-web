@@ -9,12 +9,13 @@ API 路由定义
 import json
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Path, Query
 from sqlalchemy import select
 
 from src.api.models import (
     AchievementRankDTO,
     FundDetailResponse,
+    FundLookupResponse,
     RefreshResponse,
     RefreshStatusResponse,
     ScreenResponse,
@@ -32,6 +33,7 @@ from src.scheduler.tasks import (
 )
 # refresh_market_full_sync 单独 import（避免 tasks.py 循环依赖 market_full_pipeline）
 from src.services.filter_service import FilterService
+from src.services.lookup_service import resolve_tab
 from src.utils.logger import setup_logger
 
 logger = setup_logger("fund-select.api")
@@ -40,6 +42,18 @@ router = APIRouter()
 router_stock = APIRouter(prefix="/stock", tags=["stock"])
 router_discovery_bond = APIRouter(prefix="/discovery-bond", tags=["discovery-bond"])
 router_discovery_stock = APIRouter(prefix="/discovery-stock", tags=["discovery-stock"])
+
+
+def _parse_market_types(raw: Optional[str]) -> list[str] | None:
+    """查询串 '债券型,定开债券' → ['债券型','定开债券']；None/空 → None（走默认）
+
+    四个筛选路由（/screen、/stock/screen、discovery-bond/screen、discovery-stock/screen）
+    共用：前端 UI 选的是粗类别，展开成精确 market_subtype 后以 CSV 传进来。
+    """
+    if not raw:
+        return None
+    out = [s.strip() for s in raw.split(",") if s.strip()]
+    return out if out else None
 
 
 @router.get("/health", tags=["system"])
@@ -57,15 +71,29 @@ async def screen(
     sort: str = Query("size_yi", description="排序字段"),
     order: str = Query("desc", pattern="^(asc|desc)$"),
     exclude_qdii: bool = Query(False, description="排除 fund_type 以 QDII 开头或互认基金"),
+    source: str = Query("curated", pattern="^(curated|market|all)$",
+                        description="来源分段：curated=雪球三分法名单，market=市场子类，all=并集"),
+    market_type: Optional[str] = Query(None,
+                                       description="精确 market_subtype 白名单，CSV；空 = 不按类型收窄"),
+    code: Optional[str] = Query(None, pattern=r"^\d{6}$",
+                                description="按代码精确取一只（命中时忽略全部阈值/来源）"),
     page: int = Query(1, ge=1, description="页码，1-indexed"),
     limit: int = Query(50, ge=1, le=200, description="每页条数"),
     db=Depends(get_db),
 ):
-    """筛选（分页：page/limit 默认 1/50）"""
+    """筛选（分页：page/limit 默认 1/50；source 默认 curated=旧债基 tab 行为）
+
+    `code` 非空 = 代码搜索：只按代码取这一只，其余筛选参数全部不生效
+    （见 FilterService.search_by_code 的语义说明）。
+    """
     if sort not in ("size_yi", "age_years", "mgr_experience_years", "dd_3y",
                     "ret_1y", "ret_3y", "ret_5y", "fee_annual", "code"):
         raise HTTPException(status_code=422, detail=f"不支持的排序字段: {sort}")
     svc = FilterService(db)
+    if code is not None:
+        result = svc.search_by_code(code, "bond")
+        result["source"] = source
+        return result
     return svc.screen(
         min_age=min_age,
         min_size_yi=min_size_yi,
@@ -74,6 +102,8 @@ async def screen(
         sort=sort,
         order=order,
         exclude_qdii=exclude_qdii,
+        source=source,
+        market_types=_parse_market_types(market_type),
         page=page,
         limit=limit,
     )
@@ -118,9 +148,13 @@ async def refresh(
 
 
 @router.get("/stats", response_model=StatsResponse)
-async def stats(db=Depends(get_db)):
-    """债基 tab 库内概况（funds.yaml ∩ is_active）"""
-    counts = FilterService(db).universe_stats("bond")
+async def stats(
+    source: str = Query("curated", pattern="^(curated|market|all)$",
+                        description="来源分段（与 /screen 一致）"),
+    db=Depends(get_db),
+):
+    """债基 tab 库内概况（source=curated: funds.yaml ∩ is_active；market/all 见 _universe_stats_sourced）"""
+    counts = FilterService(db).universe_stats_sourced("bond", "discovery-bond", source)
     last_run = db.execute(
         select(RefreshRun).order_by(RefreshRun.started_at.desc()).limit(1)
     ).scalars().first()
@@ -128,6 +162,25 @@ async def stats(db=Depends(get_db)):
         **counts,
         last_refresh_at=last_run.finished_at if last_run else None,
     )
+
+
+@router.get("/lookup/{code}", response_model=FundLookupResponse)
+async def fund_lookup(
+    code: str = Path(..., pattern=r"^\d{6}$", description="6 位基金代码"),
+    db=Depends(get_db),
+):
+    """基金代码 → 所属 tab 的路由判定（供 header 快速搜索用）。
+
+    ⚠ 必须注册在通用 /{code} 详情路由之前：FastAPI 按注册顺序匹配，
+    后注册会让 /api/funds/lookup/002910 被 /{code} 吞掉当基金代码查
+    （contracts §13 同类陷阱）。
+
+    查不到返回 200 + found=false（业务结果，不是错误）；格式非法由
+    pattern 校验返回 422（调用方 bug，明确暴露）。
+    """
+    if len(code) != 6 or not code.isdigit():
+        raise HTTPException(status_code=422, detail="基金代码必须是 6 位数字")
+    return resolve_tab(db, code)
 
 
 @router.get("/{code}", response_model=FundDetailResponse)
@@ -170,15 +223,29 @@ async def stock_screen(
     sort: str = Query("ret_5y"),
     order: str = Query("desc", pattern="^(asc|desc)$"),
     exclude_qdii: bool = Query(False, description="排除 fund_type 以 QDII 开头或互认基金"),
+    source: str = Query("curated", pattern="^(curated|market|all)$",
+                        description="来源分段：curated=雪球三分法名单，market=市场子类，all=并集"),
+    market_type: Optional[str] = Query(None,
+                                       description="精确 market_subtype 白名单，CSV；空 = 不按类型收窄"),
+    code: Optional[str] = Query(None, pattern=r"^\d{6}$",
+                                description="按代码精确取一只（命中时忽略全部阈值/来源）"),
     page: int = Query(1, ge=1, description="页码，1-indexed"),
     limit: int = Query(50, ge=1, le=200, description="每页条数"),
     db=Depends(get_db),
 ):
-    """股票 tab 筛选（funds_stock.yaml ∩ is_active；分页 page/limit 默认 1/50）"""
+    """股票 tab 筛选（source 默认 curated=旧股票 tab 行为；分页 page/limit 默认 1/50）
+
+    `code` 非空 = 代码搜索（语义同 `/screen`）：只按代码取这一只。
+    """
+    if code is not None:
+        result = FilterService(db).search_by_code(code, "stock")
+        result["source"] = source
+        return result
     return FilterService(db).screen_stock(
         min_age=min_age, min_size_yi=min_size_yi,
         max_dd_3y=max_dd_3y, min_mgr_exp=min_mgr_exp, min_sharpe=min_sharpe,
         sort=sort, order=order, exclude_qdii=exclude_qdii,
+        source=source, market_types=_parse_market_types(market_type),
         page=page, limit=limit,
     )
 
@@ -222,9 +289,13 @@ async def stock_refresh_status(
 
 
 @router_stock.get("/stats", response_model=StatsResponse)
-async def stock_stats(db=Depends(get_db)):
-    """股票 tab 库内概况（funds_stock.yaml ∩ is_active）"""
-    counts = FilterService(db).universe_stats("stock")
+async def stock_stats(
+    source: str = Query("curated", pattern="^(curated|market|all)$",
+                        description="来源分段（与 /screen 一致）"),
+    db=Depends(get_db),
+):
+    """股票 tab 库内概况（source=curated: funds_stock.yaml ∩ is_active）"""
+    counts = FilterService(db).universe_stats_sourced("stock", "discovery-stock", source)
     last_run = db.execute(
         select(RefreshRun).order_by(RefreshRun.started_at.desc()).limit(1)
     ).scalars().first()
@@ -263,14 +334,6 @@ async def stock_fund_detail(code: str, db=Depends(get_db)):
 # 成员 = market_type ∈ DEFAULT_DISCOVERY_UNIVERSE ∩ is_active
 # 单只详情复用 /api/funds/{code}（设计决策 D2）
 # ──────────────────────────────────────────────────────────────────
-
-
-def _parse_market_types(raw: Optional[str]) -> list[str] | None:
-    """查询串 '债券型,定开债券' → ['债券型','定开债券']；None/空 → None（走默认）"""
-    if not raw:
-        return None
-    out = [s.strip() for s in raw.split(",") if s.strip()]
-    return out if out else None
 
 
 @router_discovery_bond.get("/screen", response_model=ScreenResponse)

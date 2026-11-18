@@ -14,6 +14,7 @@ from fastapi.responses import Response
 
 from src.api.models import (
     ScreeningRequest, ScreeningResponse,
+    StockScreeningResponse, ScreeningStatusesResponse, ScreeningStatusItem,
     FavoritesBatchRequest, FavoritesBatchResponse,
     BoardInfo,
     BoardInfoResponse,
@@ -28,12 +29,10 @@ from src.api.models import (
     AlertLevel,
     AlertStatusItem,
     AlertStatusResponse,
-    AlertCheckResult,
     AlertBatchRequest,
     AlertBatchResponse,
     AlertBatchResultItem,
     AlertBatchUpdateItem,
-    AlertEnabledRequest,
     ValuationApplyRequest,
     HealthResponse,
     M120ListResponse,
@@ -63,7 +62,7 @@ from src.api.models import (
 from src.services.data_reader import DataReader
 from src.services.favorites_service import FavoritesService
 from src.services.filter_service import FilterService, normalize_search_keyword
-from src.services.screening_service import evaluate_stock, DIVIDEND_YEARS
+from src.services.screening_service import evaluate_stock, build_checks, DIVIDEND_YEARS
 from src.services.m120_service import M120Service
 from src.services.pe_service import PEDataService
 from src.services.realtime_service import get_realtime_service
@@ -484,6 +483,28 @@ def _normalize_codes_filter(codes: Optional[str]) -> Optional[set[str]]:
     return set(normalized) or None
 
 
+def _build_single_stock_model(code: str) -> Optional[DividendStock]:
+    """单股模型（含股东户数与财务指标），供单股筛选复核接口使用。"""
+    if data_reader is None:
+        return None
+    row = data_reader.get_stock_by_code(code)
+    if row is None:
+        return None
+    info = stock_info_service.get_stock_info(code) if stock_info_service is not None else None
+    shareholder_map = (
+        shareholder_reader.read_map()
+        if shareholder_reader is not None and shareholder_reader.check_exists()
+        else {}
+    )
+    financial_map = (
+        financial_reader.read_map()
+        if financial_reader is not None and financial_reader.check_exists()
+        else {}
+    )
+    key = str(row["股票代码"]).zfill(6)
+    return _row_to_stock_model(row, info, shareholder_map.get(key), financial_map.get(key))
+
+
 def _build_stock_list(
     min_yield: float,
     max_yield: Optional[float],
@@ -611,6 +632,78 @@ async def screen_stocks(body: ScreeningRequest):
                              financial_last_updated=file_mtime_iso(financial_path) if financial_path else None,
                              last_updated=stocks.last_updated, total=len(items),
                              dividend_years=list(DIVIDEND_YEARS))
+
+
+@router.get("/stocks/screen/statuses", response_model=ScreeningStatusesResponse)
+async def get_screening_statuses(
+    min_yield: float = Query(3.5, ge=0, le=100, allow_inf_nan=False, description="近三年平均股息率下限(%)"),
+    min_roe: float = Query(10, ge=0, le=100, allow_inf_nan=False, description="最近年度 ROE 下限(%)"),
+    min_roe_avg_3y: float = Query(10, ge=0, le=100, allow_inf_nan=False, description="近三年平均 ROE 下限(%)"),
+    max_quarter_profit_decline_pct: float = Query(30, gt=0, le=100, allow_inf_nan=False, description="单季扣非最大降幅(%)"),
+    min_cagr_3y: float = Query(0, ge=-100, le=100, allow_inf_nan=False, description="扣非净利润3年复合增长率下限(%)"),
+):
+    """批量筛选状态：全池每股只回 code + status（阅读页下拉列表标注用，无明细）"""
+    if data_reader is None:
+        raise HTTPException(status_code=500, detail="服务未初始化")
+
+    conditions = ScreeningRequest(
+        min_yield=min_yield,
+        min_roe=min_roe,
+        min_roe_avg_3y=min_roe_avg_3y,
+        max_quarter_profit_decline_pct=max_quarter_profit_decline_pct,
+        min_cagr_3y=min_cagr_3y,
+    )
+    stocks = await get_stocks(
+        min_yield=0, max_yield=None, exchange=None, industry=None,
+        index=None, sort_by="avg_yield_3y", sort_order="desc",
+    )
+    items = [
+        ScreeningStatusItem(code=stock.code, status=evaluate_stock(stock, conditions).status)
+        for stock in stocks.items
+    ]
+    return ScreeningStatusesResponse(items=items, total=len(items), conditions=conditions)
+
+
+
+
+
+@router.get("/stocks/{code}/screening", response_model=StockScreeningResponse)
+async def get_stock_screening(
+    code: str,
+    min_yield: float = Query(3.5, ge=0, le=100, allow_inf_nan=False, description="近三年平均股息率下限(%)"),
+    min_roe: float = Query(10, ge=0, le=100, allow_inf_nan=False, description="最近年度 ROE 下限(%)"),
+    min_roe_avg_3y: float = Query(10, ge=0, le=100, allow_inf_nan=False, description="近三年平均 ROE 下限(%)"),
+    max_quarter_profit_decline_pct: float = Query(30, gt=0, le=100, allow_inf_nan=False, description="单季扣非最大降幅(%)"),
+    min_cagr_3y: float = Query(0, ge=-100, le=100, allow_inf_nan=False, description="扣非净利润3年复合增长率下限(%)"),
+):
+    """单股筛选复核：状态 + 原因 + 逐条条件判定（基本面资料阅读页用）"""
+    if data_reader is None:
+        raise HTTPException(status_code=500, detail="服务未初始化")
+
+    conditions = ScreeningRequest(
+        min_yield=min_yield,
+        min_roe=min_roe,
+        min_roe_avg_3y=min_roe_avg_3y,
+        max_quarter_profit_decline_pct=max_quarter_profit_decline_pct,
+        min_cagr_3y=min_cagr_3y,
+    )
+    stock = await asyncio.to_thread(_build_single_stock_model, code)
+    if stock is None:
+        raise HTTPException(status_code=404, detail=f"股票 {code} 不存在")
+
+    item = evaluate_stock(stock, conditions)
+    financial_path = find_latest_aux_file("财务指标汇总")
+    return StockScreeningResponse(
+        code=stock.code,
+        name=stock.name,
+        status=item.status,
+        reasons=item.reasons,
+        warnings=item.warnings,
+        checks=build_checks(stock, conditions),
+        conditions=conditions,
+        last_updated=file_mtime_iso(data_reader.csv_path) if data_reader.check_csv_exists() else None,
+        financial_last_updated=file_mtime_iso(financial_path) if financial_path else None,
+    )
 
 
 @router.get("/stocks/{code}", response_model=StockDetailResponse)
@@ -1423,28 +1516,10 @@ async def refresh_realtime_prices(body: CodesRequest):
         # 批量更新实时价格
         count = m120_service.update_realtime_prices(codes, show_progress=True)
 
-        # 刷新完股价后顺带跑一次挡位检查（每日 cron 调用此接口即可触发推送）
-        alert_summary: dict | None = None
-        try:
-            from src.services.alert_service import get_alert_service
-            alert_service = get_alert_service()
-            alert_summary = alert_service.check_all()
-            logger.info(
-                f"挡位检查完成: scanned={alert_summary['scanned']} "
-                f"triggered={len(alert_summary['triggered'])} pushed={alert_summary['pushed']}"
-            )
-        except RuntimeError:
-            # AlertService 未初始化（早期开发 / 测试环境），静默跳过
-            pass
-        except Exception as alert_err:
-            # 监控失败不影响股价刷新的主流程
-            logger.error(f"挡位检查异常（不影响股价刷新）: {alert_err}", exc_info=True)
-
         return {
             "success": True,
             "message": f"实时价格刷新完成，成功更新 {count} 只股票",
             "count": count,
-            "alerts": alert_summary,
         }
 
     except Exception as e:
@@ -3515,28 +3590,16 @@ async def clear_favorite_alerts(code: str):
 @router.get("/favorites/alerts/status", response_model=AlertStatusResponse)
 async def get_alerts_status():
     """
-    返回所有收藏股票的挡位配置 + 今日触发记录。
+    返回所有收藏股票的四条挡位价格线（只读）。
 
-    用于前端展示「挡位状态」列与今日是否触发。
+    挡位推送与监控已移除（2026-11-14）：这里不再有 enabled/今日触发/钉钉状态，
+    只负责把已保存的 levels 给前端画区间与区间列。
     """
     if favorites_service is None:
         raise HTTPException(status_code=500, detail="收藏服务未初始化")
 
-    try:
-        from src.services.alert_service import get_alert_service
-        alert_service = get_alert_service()
-    except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e))
-
-    from src.services.dingtalk_notifier import DingTalkNotifier
-
     data = favorites_service.get_all()
-    today_records = alert_service.get_today_records()
-    today_by_code: dict[str, list[str]] = {}
-    for r in today_records:
-        today_by_code.setdefault(r.get("code", ""), []).append(r.get("level_key", ""))
 
-    # 名称从 data_reader 拿（favorites items 没 name 字段）
     name_map: dict[str, str] = {}
     if data_reader is not None:
         try:
@@ -3547,19 +3610,15 @@ async def get_alerts_status():
             pass
 
     items: list[AlertStatusItem] = []
-    enabled_count = 0
     for fav_item in data["items"]:
         alerts = fav_item.get("alerts")
         levels_dict = (alerts or {}).get("levels") or {}
         level_count = sum(1 for v in levels_dict.values() if v and v.get("price"))
-        if alerts and alerts.get("enabled"):
-            enabled_count += 1
 
         items.append(
             AlertStatusItem(
                 code=fav_item["code"],
                 name=name_map.get(fav_item["code"]),
-                enabled=bool(alerts and alerts.get("enabled")),
                 has_levels=level_count > 0,
                 level_count=level_count,
                 updated_at=alerts.get("updated_at") if alerts else None,
@@ -3574,35 +3633,10 @@ async def get_alerts_status():
                         if v and v.get("price")
                     }
                 ) if levels_dict else None,
-                triggered_today=today_by_code.get(fav_item["code"], []),
             )
         )
 
-    return AlertStatusResponse(
-        total=len(data.get("codes", [])),
-        enabled_count=enabled_count,
-        triggered_today_count=len(today_records),
-        dingtalk_configured=DingTalkNotifier().is_configured(),
-        items=items,
-    )
-
-
-@router.post("/favorites/alerts/check", response_model=AlertCheckResult)
-async def manually_check_alerts():
-    """
-    手动触发一次挡位检查（通常由前端"测试推送"按钮调用）。
-
-    跟随 realtime/refresh 后自动触发的逻辑一致：扫所有收藏的 alerts，
-    比对现价，触发写历史 + 推钉钉。
-    """
-    try:
-        from src.services.alert_service import get_alert_service
-        alert_service = get_alert_service()
-    except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e))
-
-    result = alert_service.check_all()
-    return AlertCheckResult(**result)
+    return AlertStatusResponse(total=len(data.get("codes", [])), items=items)
 
 
 # ========== Batch API（外部 agent 入口） ==========
@@ -3975,27 +4009,4 @@ async def apply_valuation_report(code: str, body: ValuationApplyRequest):
         raise HTTPException(status_code=400, detail=str(e))
     except KeyError:
         raise HTTPException(status_code=404, detail=f"{code} 不在收藏中，请先加入收藏")
-    return _to_favorites_response(data)
-
-
-@router.put("/favorites/{code}/alerts/enabled", response_model=FavoritesResponse)
-async def set_favorite_alerts_enabled(code: str, body: AlertEnabledRequest):
-    """暂停/恢复挡位监控：仅翻转 enabled，保留 levels；未配置挡位时 400"""
-    if favorites_service is None:
-        raise HTTPException(status_code=500, detail="收藏服务未初始化")
-    try:
-        data = favorites_service.get_all()
-        item = next((it for it in data["items"] if it["code"] == code), None)
-        if item is None:
-            raise KeyError(f"{code} 不在收藏中")
-        alerts = item.get("alerts")
-        if not alerts or not (alerts.get("levels") or {}):
-            raise ValueError(f"{code} 尚未配置挡位，无需启停监控")
-        alerts["enabled"] = bool(body.enabled)
-        alerts["updated_at"] = datetime.now().isoformat()
-        data = favorites_service.update_alerts(code, alerts)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except KeyError:
-        raise HTTPException(status_code=404, detail=f"{code} 不在收藏中")
     return _to_favorites_response(data)

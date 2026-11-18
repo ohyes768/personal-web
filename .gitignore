@@ -83,6 +83,9 @@ status.json
 backend/fund-select/data/
 backend/fund-select/cache/
 backend/fund-select/logs/
+# 规范库文件在 data/；config/ 下的 funds.db 是相对路径误建的空壳（DATABASE_URL 写成
+# sqlite:///funds.db 时落在当前工作目录），一律不入库
+backend/fund-select/config/*.db
 backend/fund-select/.coverage
 backend/fund-select/.pytest_cache/
 backend/fund-select/.pytest-tmp*/

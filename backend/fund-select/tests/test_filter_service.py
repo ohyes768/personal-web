@@ -139,7 +139,7 @@ class TestPagination:
             code = f"{i + 10:06d}"
             codes.append(code)
             rows.append(Fund(
-                code=code, name=f"基金{code}", fund_type="债券型-长期纯债",
+                code=code, name=f"基金{code}", fund_type="债券型-长债",
                 age_years=5.0, size_yi=float(i + 1),  # 1..30
                 mgr_name="张", mgr_company="某司",
                 mgr_days=3650, mgr_experience_years=10.0, is_active=True,
@@ -228,3 +228,120 @@ class TestPagination:
         # 第 2 页：第 5 名 + 3 个 empty（None 排末位）
         r2 = FilterService(db_session).screen(sort="size_yi", order="desc", page=2, limit=4)
         assert [it["size_yi"] for it in r2["items"]] == [6.0, None, None, None]
+
+
+# ─────────────────────────────────────────────────────────────
+# v2 三道门（11-13-sharpe-board-v2-rules）：谓词纯逻辑测试
+# 三个新参数默认 None 时行为与 v1 逐字节一致（回归锁）
+# ─────────────────────────────────────────────────────────────
+from types import SimpleNamespace  # noqa: E402
+
+from src.services.filter_service import entry_predicate  # noqa: E402
+
+
+class TestV2EntryGates:
+    @staticmethod
+    def _row(**kw):
+        base = dict(age_years=4.0, size_yi=10.0, dd_3y=-15.0,
+                    mgr_experience_years=6.0, sharpe=1.0,
+                    market_subtype="混合型-偏股",
+                    ir=0.6, sample_days=720, peer_pct=15.0)
+        base.update(kw)
+        return SimpleNamespace(**base)
+
+    def test_min_ir_boundary_and_null(self):
+        p = entry_predicate(min_ir=0.5)
+        assert p(self._row(ir=0.5)) is True      # 含等号
+        assert p(self._row(ir=0.49)) is False
+        assert p(self._row(ir=None)) is False    # NULL 不命中
+
+    def test_min_sample_days_boundary_and_null(self):
+        p = entry_predicate(min_sample_days=700)
+        assert p(self._row(sample_days=700)) is True
+        assert p(self._row(sample_days=699)) is False
+        assert p(self._row(sample_days=None)) is False
+
+    def test_max_peer_pct_boundary_and_null(self):
+        p = entry_predicate(max_peer_pct=20.0)
+        assert p(self._row(peer_pct=20.0)) is True   # 含等号（前 20%）
+        assert p(self._row(peer_pct=20.1)) is False
+        assert p(self._row(peer_pct=None)) is False  # 无数据不命中
+
+    def test_three_gates_combined_all_pass(self):
+        p = entry_predicate(min_ir=0.5, min_sample_days=700, max_peer_pct=20.0)
+        assert p(self._row()) is True
+        # 任一门不达标即淘汰
+        assert p(self._row(ir=0.4)) is False
+        assert p(self._row(sample_days=699)) is False
+        assert p(self._row(peer_pct=21.0)) is False
+
+    def test_new_params_none_keeps_v1_behavior(self):
+        """三个新参数全 None → 与 v1 旧谓词结果完全一致（逐条对照）。"""
+        rows = [
+            self._row(sharpe=1.2, dd_3y=-15),
+            self._row(sharpe=0.8, dd_3y=-10),   # 等号
+            self._row(sharpe=0.5, dd_3y=-8),
+            self._row(sharpe=None),             # 风险指标缺失
+            self._row(age_years=None),
+            self._row(dd_3y=None),
+            self._row(market_subtype="QDII-股票"),
+        ]
+        v1 = entry_predicate(min_age=3, min_size_yi=5, max_dd_3y=30,
+                             min_mgr_exp=5, min_sharpe=0.8)
+        v2_default = entry_predicate(min_age=3, min_size_yi=5, max_dd_3y=30,
+                                     min_mgr_exp=5, min_sharpe=0.8,
+                                     min_ir=None, min_sample_days=None,
+                                     max_peer_pct=None)
+        assert [v1(r) for r in rows] == [v2_default(r) for r in rows]
+
+    def test_gates_ignore_unrelated_missing_fields(self):
+        """v2 门只认自己那三个字段；v1 字段缺失仍按 v1 语义处理。"""
+        p = entry_predicate(min_ir=0.5, min_sample_days=700, max_peer_pct=20.0)
+        # 显式排除 QDII 不在 v2 门内
+        assert p(self._row(market_subtype="QDII-股票")) is True
+
+
+class TestV3YearlyGate:
+    """v3 年度同类排名门槛（11-14 任务）：谓词只读冻结好的 qualified_years。"""
+
+    @staticmethod
+    def _row(**kw):
+        base = dict(age_years=4.0, size_yi=10.0, dd_3y=-15.0,
+                    mgr_experience_years=6.0, sharpe=1.0,
+                    market_subtype="混合型-偏股",
+                    ir=0.6, sample_days=720, qualified_years=2)
+        base.update(kw)
+        return SimpleNamespace(**base)
+
+    def test_min_years_boundary(self):
+        p = entry_predicate(min_yearly_years=2)
+        assert p(self._row(qualified_years=2)) is True    # 含等号
+        assert p(self._row(qualified_years=3)) is True
+        assert p(self._row(qualified_years=1)) is False
+        assert p(self._row(qualified_years=0)) is False
+        assert p(self._row(qualified_years=None)) is False  # 无证据不命中
+
+    def test_default_none_does_not_affect_v2(self):
+        """min_yearly_years 默认 None → v2 三道门行为逐字节不变。"""
+        rows = [
+            self._row(ir=0.6, sample_days=720),
+            self._row(ir=0.4),
+            self._row(sample_days=699),
+            self._row(ir=None, sample_days=None),
+        ]
+        v2 = entry_predicate(min_ir=0.5, min_sample_days=700)
+        v3_default = entry_predicate(min_ir=0.5, min_sample_days=700,
+                                     min_yearly_years=None)
+        assert [v2(r) for r in rows] == [v3_default(r) for r in rows]
+
+    def test_combined_with_v2_gates(self):
+        p = entry_predicate(min_ir=0.5, min_sample_days=700, min_yearly_years=2)
+        assert p(self._row()) is True
+        assert p(self._row(ir=0.4)) is False          # IR 挡
+        assert p(self._row(qualified_years=1)) is False  # 年度挡
+
+    def test_does_not_depend_on_peer_pct(self):
+        """v3 不看滚动 peer_pct（那是 v2 的门）。"""
+        p = entry_predicate(min_yearly_years=2)
+        assert p(self._row(peer_pct=None)) is True    # peer_pct 缺不影响
+        assert p(self._row(peer_pct=99.0)) is True

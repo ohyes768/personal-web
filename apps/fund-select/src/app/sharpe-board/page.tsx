@@ -25,6 +25,7 @@ import { SharpeBoardEmptyCard, SharpeBoardStatusBar } from '@/components/sharpe-
 import { SharpeBoardTable } from '@/components/sharpe-board/SharpeBoardTable';
 import {
   classifySharpeBoard,
+  DEFAULT_SHARPE_FILTERS,
   fetchSharpeBoard,
   hasPointInRange,
   parseSharpeFiltersFromSearch,
@@ -107,7 +108,7 @@ function SharpeBoardPageInner() {
     (patch: Partial<Filters>) => {
       const next: Filters = { ...filters, ...patch };
       const pageAffecting =
-        'source' in patch || 'minLatestSharpe' in patch || 'minWeeks' in patch || 'latestOnly' in patch;
+        'source' in patch || 'minLatestSharpe' in patch || 'minListedPct' in patch || 'latestOnly' in patch;
       if (pageAffecting) next.page = 1;
       const qs = sharpeFiltersToSearch(next).toString();
       router.push(qs ? `?${qs}` : '?', { scroll: false });
@@ -141,7 +142,7 @@ function SharpeBoardPageInner() {
   }, []);
 
   const clearDisplayFilters = useCallback(() => {
-    updateFilters({ minLatestSharpe: null, minWeeks: 1, latestOnly: false });
+    updateFilters({ minLatestSharpe: null, minListedPct: DEFAULT_SHARPE_FILTERS.minListedPct, latestOnly: false });
   }, [updateFilters]);
 
   // 聚焦 = 除目标外全部隐藏（与图例隐藏合并为 effectiveHidden）
@@ -170,8 +171,8 @@ function SharpeBoardPageInner() {
             >
               ← 返回首页
             </a>
-            <div className="flex items-baseline gap-3 mt-0.5 flex-wrap">
-              <h1 className="text-lg font-semibold text-ink-strong">夏普榜单</h1>
+            <h1 className="text-lg font-semibold text-ink-strong mt-0.5">夏普榜单</h1>
+            <div className="mt-1">
               <FundsNavigation active="sharpe-board" />
             </div>
           </div>
@@ -197,7 +198,9 @@ function SharpeBoardPageInner() {
       </header>
 
       <div className="max-w-[1400px] mx-auto px-3 sm:px-4 py-4 space-y-3">
-        {data && <SharpeBoardProfileCard profile={data.profile} />}
+        {data && (
+          <SharpeBoardProfileCard profile={data.profile} gapWeeks={data.diagnostics.gap_weeks} />
+        )}
         {data && <SharpeBoardStatusBar data={data} />}
 
         <SharpeBoardFilters filters={filters} onChange={updateFilters} />
@@ -244,7 +247,7 @@ function SharpeBoardPageInner() {
             {!error && data && phase === 'ok' && !rangeHasPoint && (
               <div className="h-[420px] flex flex-col items-center justify-center gap-2 text-ink-muted">
                 <p className="text-sm">所选时间范围内无数据点</p>
-                <p className="text-xs">范围只裁图；列表仍按全历史统计，切换「全部」可看到完整曲线。</p>
+                <p className="text-xs">范围只裁图；列表按近 52 周窗口统计，切换到「近一年(52周)」可看到完整曲线。</p>
               </div>
             )}
             {!error && data && phase === 'ok' && rangeHasPoint && (
@@ -252,6 +255,7 @@ function SharpeBoardPageInner() {
                 weeks={data.weeks}
                 series={data.series}
                 minLatestSharpe={filters.minLatestSharpe}
+                gapWeeks={data.diagnostics.gap_weeks}
                 hiddenCodes={effectiveHidden}
                 onLegendChange={onLegendChange}
               />

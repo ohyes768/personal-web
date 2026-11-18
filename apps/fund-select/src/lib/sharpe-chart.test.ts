@@ -133,3 +133,72 @@ test('x 轴为统一周历：categories 与 weeks 逐字一致', () => {
   });
   assert.deepEqual(option.xAxis.data, weeks);
 });
+
+// ── 数据缺口周标记（11-14-sharpe-board-gap-weeks）─────────────────────────────
+
+test('数据缺口周：竖线标记挂在 markLine（与下限线共存）', () => {
+  const option = buildSharpeChartOption({
+    weeks: ['2026-02-09', '2026-02-16', '2026-02-23'],
+    series: [{ code: '000001', name: 'A', values: [0.9, null, 0.92] }],
+    minLatestSharpe: 0.8,
+    gapWeeks: ['2026-02-16'],
+  });
+  const markLine = option.series[0].markLine as
+    | { data?: Array<{ xAxis?: string; yAxis?: number }> }
+    | undefined;
+  assert.equal(markLine?.data?.length, 2);
+  assert.equal(markLine?.data?.[0]?.yAxis, 0.8);          // 下限线在前
+  assert.equal(markLine?.data?.[1]?.xAxis, '2026-02-16'); // 缺口周竖线
+});
+
+test('无缺口周 → 不画标记；只有缺口周时仍要出标记', () => {
+  const none = buildSharpeChartOption({
+    weeks: ['2026-11-02'],
+    series: [{ code: '000001', name: 'A', values: [1.05] }],
+    minLatestSharpe: null,
+  });
+  assert.equal(none.series[0].markLine, undefined);
+
+  const gapOnly = buildSharpeChartOption({
+    weeks: ['2026-02-16'],
+    series: [{ code: '000001', name: 'A', values: [null] }],
+    minLatestSharpe: null,
+    gapWeeks: ['2026-02-16'],
+  });
+  const markLine = gapOnly.series[0].markLine as
+    | { data?: Array<{ xAxis?: string }> }
+    | undefined;
+  assert.equal(markLine?.data?.length, 1);
+  assert.equal(markLine?.data?.[0]?.xAxis, '2026-02-16');
+});
+
+test('tooltip：缺口周单独提示（不误报「本周无在榜记录」）', () => {
+  const option = buildSharpeChartOption({
+    weeks: ['2026-02-16', '2026-02-23'],
+    series: [{ code: '000001', name: 'A', values: [null, 0.92] }],
+    minLatestSharpe: null,
+    gapWeeks: ['2026-02-16'],
+  });
+  const fmt = option.tooltip.formatter as (p: unknown) => string;
+  const gapHtml = fmt([{ seriesName: '000001', value: null, axisValue: '2026-02-16' }]);
+  assert.match(gapHtml, /数据缺口周/);
+  assert.doesNotMatch(gapHtml, /本周无在榜记录/);
+  // 普通无数据周仍是原话术
+  const normalHtml = fmt([{ seriesName: '000001', value: null, axisValue: '2026-02-23' }]);
+  assert.match(normalHtml, /本周无在榜记录/);
+});
+
+test('标注挂在第一条可见 series（图例隐藏的 series 不绘制 markLine）', () => {
+  const option = buildSharpeChartOption({
+    weeks: ['2026-02-16'],
+    series: [
+      { code: '000001', name: 'A', values: [null] },
+      { code: '000002', name: 'B', values: [null] },
+    ],
+    minLatestSharpe: null,
+    gapWeeks: ['2026-02-16'],
+    hiddenCodes: new Set(['000001']),
+  });
+  assert.equal(option.series[0].markLine, undefined);
+  assert.ok(option.series[1].markLine, '标记应挂在第一条可见曲线上');
+});

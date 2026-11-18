@@ -510,8 +510,35 @@ function resolveCoarseLabel(s: string, kind?: 'stock' | 'bond') {
 | universe | 精确 subtype 列表 |
 |---|---|
 | **stock** | 股票型 / 指数型-海外股票 / 指数型-其他 / 指数型-股票 / 混合型-平衡 / 混合型-绝对收益 / 混合型-灵活 / 混合型-偏股 / QDII-普通股票 / QDII-混合偏股 / QDII-混合灵活 / QDII-混合平衡 / QDII-FOF / QDII-REITs / Reits / REITs |
-| **bond** | 债券型-中短债 / 债券型-混合一级 / 债券型-混合二级 / 债券型-混合债 / 债券型-利率债 / 债券型-信用债 / 债券型-长期纯债 / 指数型-固收 / QDII-纯债 / QDII-混合债 / 混合型-偏债 |
+| **bond** | 债券型-中短债 / 债券型-混合一级 / 债券型-混合二级 / 债券型-混合债 / 债券型-利率债 / 债券型-信用债 / **债券型-长债** / 指数型-固收 / QDII-纯债 / QDII-混合债 / 混合型-偏债 |
 | **other**（不进 universe） | FOF-稳健型 / FOF-均衡型 / FOF-进取型 / 货币型-普通货币 / 货币型-浮动净值 / QDII-商品 / 商品 / 其他 |
+
+### Convention: 键名必须是 akshare 基金类型列的**原值**（逐字一致）
+
+`SUBCLASS_TO_CATEGORY` 的键就是 `funds.market_subtype` 里的原始字符串，**写错一个字符，整类基金静默降级 other**（不进任何 universe，UI 勾不出来，用户只看到"基金凭空少了"）。
+
+**实战踩坑（11-14 修）**：键写成 `"债券型-长期纯债"`，而 akshare 的原值是 `"债券型-长债"` —— 生产库 2653 只长债（库内第三大类）全部落在 `other`：
+
+| | 修复前 | 修复后 |
+|---|---|---|
+| 债基 universe | 7129 只 | **9782 只**（+2653） |
+| 债基三分法 31 只中不在 universe 的 | 8 只 | 3 只（见 §22 债基「全部」分段） |
+
+**排查手法**：拿生产库 `SELECT market_subtype, count(*) FROM funds GROUP BY 1` 的**实际取值**
+跟映射表键集求差集 —— 差集里出现的键就是"库里真实存在但映射表没声明"的子类。
+
+```python
+# 一次性核对（新增/修改映射后必跑）
+map_keys = set(SUBCLASS_TO_CATEGORY)
+db_values = {row[0] for row in db.execute(text("SELECT DISTINCT market_subtype FROM funds"))}
+print("库里有、映射表没有：", db_values - map_keys)   # 必须为空（或逐个显式补映射）
+print("映射表有、库里没有：", map_keys - db_values)   # 允许（预留给未来子类）
+```
+
+前端 `COARSE_TO_SUBTYPES_*` 同样必须逐字一致：写错一个字符 → 该粗类别展开出的
+subtype 列表在库里匹配不到任何一行 → 勾了等于没勾（静默空集）。回归由
+`tests/test_source_segmented.py::TestSubtypeUniverse` 锁住（自动比对后端
+universe 与前端粗类别表，前端漏项直接失败）。
 
 ### Convention: 修改 SUBCLASS_TO_CATEGORY 必须同步改前端 COARSE_TO_SUBTYPES_STOCK/BOND
 
@@ -753,8 +780,8 @@ publish_week_board(db, capture, *, source, profile_version, week_start, trigger,
 - **规则 profile**：`(stock, v1)`（雪球 yaml 名单，market_subtypes=None）与 `(discovery-stock, v1)`（market_subtypes=DISCOVERY_STOCK_SUBTYPES 确定副本 + 采集预筛 min_ret_3y=20/min_size_yi=5/min_mgr_exp=5）。filters=入选条件（成立≥3年/规模≥5亿/回撤绝对值≤30%/经理≥5年/夏普≥0.8/不排 QDII）。**记录参数 filters.min_sharpe 与展示参数 min_latest_sharpe 分开**。规则变更必须换 version，不改旧周行。
 - **周键**：任务 `started_at`（非 finished_at）转 Asia/Shanghai 所在周周一；跨周完成仍归开始周。
 - **冻结范围（易漏）**：入选谓词消费的 `dd_3y` 在 `FundPerformance` 行上，`freeze_base_row` 冻结不到——两条链路必须在 commit 点调 `freeze_dd_rows` 合并进 `base_rows[code]["dd_3y"]`，发布侧只读 capture，**禁止回读共享最新表**（普通刷新会覆盖）。risk_rows 冻结本轮 sharpe + `returns_end_date` + `benchmark_source` + `calculated_at`。
-- **API**：`GET /api/funds/sharpe-board`，参数 `source=stock|discovery-stock`（默认 discovery-stock）/`profile_version=v1`（未知 404）/`min_latest_sharpe` 可空 [-10,10]/`min_weeks>=1` 默认 1/`latest_only` 默认 false/`range=3m|6m|1y|all` 默认 all/`page>=1`/`limit 1..200` 默认 50。返回 9 字段：profile/latest_published_week/latest_attempt/stale/total/items/weeks/series/diagnostics——**全部在 Pydantic DTO 显式声明**（§3a 静默砍字段）。items=当页（code/name/listed_weeks/consecutive_weeks/latest_sharpe/last_listed_week/on_latest_board）；series=全部命中不随分页。静态 router 必须注册在通用 `/{code}` 详情路由**之前**（main.py）。
-- **聚合顺序**：complete 周全历史聚合 → 展示筛选（min_latest_sharpe 含等号、min_weeks、latest_only 用当前来源最新 complete 周而非各基金最后记录周）→ 排序 `(listed_weeks DESC, latest_sharpe DESC, code ASC)` → total 切片前算 → 切片（§分页不变量）。weeks 周历=首次观测周→当前周周一，range **只裁起点且起点对齐回周一网格**，终点恒为当前周；失败/停机/空榜周留位。consecutive_weeks=从最近上榜周向前数相邻自然周，缺席/未知中断。stale=当前周无 complete 榜。
+- **API**：`GET /api/funds/sharpe-board`，参数 `source=stock|discovery-stock`（默认 discovery-stock）/`profile_version=v1`（未知 404）/`min_latest_sharpe` 可空 [-10,10]/`min_listed_pct` [0,100] 默认 60（**旧 `min_weeks` 已下线，见 §23**）/`latest_only` 默认 false/`range=3m|6m|1y|all` 默认 all/`page>=1`/`limit 1..200` 默认 50。返回 9 字段：profile/latest_published_week/latest_attempt/stale/total/items/weeks/series/diagnostics——**全部在 Pydantic DTO 显式声明**（§3a 静默砍字段）。items=当页（code/name/listed_weeks/consecutive_weeks/latest_sharpe/last_listed_week/on_latest_board）；series=全部命中不随分页。静态 router 必须注册在通用 `/{code}` 详情路由**之前**（main.py）。
+- **聚合顺序**：complete 周全历史聚合 → 展示筛选（min_latest_sharpe 含等号、**min_listed_pct 在榜占比**、latest_only 用当前来源最新 complete 周而非各基金最后记录周）→ 排序 `(listed_weeks DESC, latest_sharpe DESC, code ASC)` → total 切片前算 → 切片（§分页不变量）。weeks 周历=首次观测周→当前周周一，range **只裁起点且起点对齐回周一网格**，终点恒为当前周；失败/停机/空榜周留位。consecutive_weeks=从最近上榜周向前数相邻自然周，缺席/未知中断（**§21 起细化：数据缺口周不中断，真实缺席才中断**）。stale=当前周无 complete 榜。
 
 ### 4. Validation & Error Matrix
 
@@ -925,6 +952,60 @@ SQLAlchemy 把结果列类型标成 Boolean —— Python 侧拿到 `True/False`
 
 ---
 
+## 15.5 历任基金行的近 1 年 / 近 3 年 / 近 5 年（与股票 tab 同口径）
+
+经理明细页展开后的「历任基金」表在「年化」后加三列 `近1年` / `近3年` / `近5年`，
+数据源与股票 tab 主表**完全一致**（同表、同回退链、同排名口径）：
+
+| 字段 | 来源 | 备注 |
+|---|---|---|
+| `ret_1y` / `ret_3y` | `FundPerformance`（雪球链路）优先 → `MarketFundRank`（市场链路）回退 | 逐项回退：perf 的某列为 null 时取 market 值 |
+| `ret_5y` | `FundPerformance` 唯一链路 | `market_fund_rank` 表**没有** `ret_5y` 列（市场链路只到近3年/今年以来/成立以来），故无回退，缺失即为空 |
+| `rank_1y` / `rank_3y` / `rank_5y` | `FundAchievementRank`（`阶段业绩` / `近1年`、`近3年`、`近5年`） | 走 `src/utils/rank.py` 的 `parse_peer_rank`（与 filter_service 同一份实现） |
+
+### 15.6 口径差异必须写在表头提示里
+
+这几列是**基金自身时间窗口**的收益，与同一行的「任职回报」（按该经理任职窗口算）
+**不是一回事**：经理离任后基金可能已换人。所以列名用「近1年」而非「任职近1年」，
+表头加 tooltip 说明差异，避免读者把两者当同一口径。
+
+### 15.7 排名解析下沉到 utils
+
+`_parse_peer_rank` 原在 `filter_service` 私有。经理明细也要显示同类排名，
+两处共用一份实现，故提取到 `src/utils/rank.py`；`filter_service._parse_peer_rank`
+保留为薄封装（旧调用点与测试 import 路径不变）。
+
+### 15.8 展开行的 colSpan 必须等于列表表列数
+
+经理列表表有 **12** 列（经理/公司/从业/年化·含离任/在管年化/胜率/独管/最长任期/
+回撤/夏普/规模/在管）。展开的详情行 `td` 必须写 `colSpan={12}`——写成 11 会
+少合并「在管」列（5.5rem），详情面板比列表窄一截，肉眼看是两个不同宽度。
+加载态与空态的 `colSpan` 同样要改。
+
+### 15.9 详情内层表要 table-fixed + 显式列宽
+
+展开层里的「历任基金」表若不设 `table-fixed` 且不显式给列宽，内容会把表格
+撑出容器，父级 `overflow-x-auto` 出现横向滚动条，视觉上又和列表对不齐。
+给每列显式 `w-[…]` 后，内层表与外层列表表同宽铺满。
+
+**列宽总和要 ≤ 可用宽度**：外层 `td` 的内容宽 = 列表表宽 − 左右 padding
+（1280 视口约 1044px）。列宽总和超出时 `table-fixed` 会按比例压缩，最窄的列
+（代码列要塞「在榜 N 周」徽章）就被挤到内容溢出。
+
+**flex 子项要 `shrink-0`**：`RankInline` 的排名色点是 `w-1.5` 的固定尺寸，
+在窄列里会被 flex 压成 0 宽（色点消失）。给色点与百分比加 `shrink-0`。
+
+### 15.10 详情表列宽与内容匹配
+
+| 列 | 宽度 | 依据 |
+|---|---|---|
+| 代码 | 8rem | 6 位代码 + 「在榜 N 周」徽章（约 61px） |
+| 名称 | 7rem | 基金名最长约 10 字，超出截断 |
+| 任职期间 | 9.5rem | 「2021-02-11~2025-04-12」最长 21 字符 |
+| 近1年/近3年/近5年 | 7rem | 收益值（如 `+110.95%`）+ 排名行（色点 + `18.9%` + `395/2091`） |
+
+---
+
 ## 16. 经理 ↔ 基金跨 tab 关联（11-12 双向闭环）
 
 ### 16.1 URL 直达参数是唯一跨页交互协议
@@ -963,3 +1044,902 @@ market_type 全量）/ `board_weeks`（complete 周观测计数，历史累计�
 `fund_name_market`。列表行带 `board_on_current` / `current_fund_total`
 汇总。并行会话重写同文件的 JSX 时必须核对 `AffiliationBadges` 调用点
 是否还在（本次曾被 8a11b2a 覆盖回纯文本）。
+
+---
+
+## 17. 夏普走势页：现算滚动夏普（11-13-fund-sharpe-trend，2026-11-13）
+
+### 17.1 Scope / Trigger
+
+新增导航第七 Tab「夏普走势」（`/funds/sharpe-trend?code=xxx`），用现算的
+周频滚动 3 年夏普曲线回答「这只基金稳不稳」。触发本节的条件：改
+`/sharpe-trend` API、`sharpe_trend_service` 口径/KPI、走势页前端、三处入口。
+
+**与夏普榜单（§13）的分工**（不要合并）：
+- 榜单 = 每周冻结的周观测（只在 ≥0.8 入选时记录，**有幸存者偏差**），
+  回答「谁一直好」，横向比 N 只。
+- 走势 = 现算完整滚动曲线（**跌破 0.8 也看得见**），回答「这一只稳不稳」，
+  纵向单只。
+- 两者最新值同口径，可互相印证。
+
+### 17.2 口径决定：纯净值，不 join 基准（**最关键**）
+
+`risk_service.compute_risk_metrics` 在有基准时会把 `r_p` 与 `r_b` 做
+inner join。生产库 `fund_benchmark` 只有 561 只、最早 2023-11-08，
+**会把历史 3 年窗口截断成 1 年**。
+
+实测（000628，同一份净值、同一窗口定义，仅差是否 join）：
+
+| 窗口截止 | join 基准 | 纯净值 | 样本天数 |
+|---|---|---|---|
+| 2026-11-13 | 0.9753 | 0.9216 | 723 vs 728 |
+| 2024-12-31 | 1.8048 | 0.3298 | 280 vs 729 |
+| 2024-09-30 | 2.4216 | 0.6845 | 219 vs 729 |
+
+若沿用 join 口径，曲线会在 2025 年前后出现**虚假断崖**（同一只基金被
+算成 2.42「优秀」而非 0.68「不稳定」），恰好与「稳定性」判断相反。
+
+**决定：走势页用纯净值口径** —— 只用 `R_p`（东财日增长率/100）与
+`R_f`，不 join `fund_benchmark`。夏普定义本来就不需要基准，基准只服务
+IR/alpha。`rolling_sharpe_series` 的签名里没有 `r_b`，且回归测试
+`test_benchmark_rows_do_not_truncate_window` 逐点比对「有/无基准行」结果
+一致 + 历史窗口 sample_days ≥700。
+
+公式与 `risk_service` 一致：`mean(excess)/std(excess, ddof=1) × √252`；
+`std=0`/NaN → 无定义（该周不出点）。`MIN_SAMPLE_DAYS=250`、
+`TRADING_DAYS=252`、`WINDOW_YEARS=3`。
+
+`risk_free_rate` 生产库当前为**空表**（fetcher 存在但未入调度）→
+`rf_basis="zero"`，如实标注不静默；有数据时 `"rate"`。
+
+**最新点与列表值的对齐**：列表夏普窗口用 `today - 3年`，走势最后一点
+用「最新净值日所在周的最后交易日」回看 3 年。末日相同时数值一致
+（000628 实测 0.9216 vs 走势 0.9163，差 <0.6% 来自窗口起点差 1 天 /
+样本 728 vs 729），契约允许此小数级差异，不强行改算法。
+
+### 17.3 API
+
+`GET /api/funds/sharpe-trend/{code}?range=all|3y|1y`（默认 all）
+
+- 静态路由必须在通用 `/{code}` 详情路由**之前**注册（`main.py`），
+  否则 `/sharpe-trend/000628` 被吞掉报「基金不存在: sharpe-trend」。
+- 三个 DTO 全部在 `models.py` 显式声明（§3a 静默砍字段）：
+  `SharpeTrendPointDTO`（date / sharpe / sample_days）、
+  `SharpeTrendStatsDTO`（11 字段）、`SharpeTrendResponse`（9 字段）。
+  后端加字段要三处同步：`models.py` ↔ `lib/sharpe-trend.ts` ↔ 页面。
+- `range` 只裁**返回的点集**，不改每个点的 3 年滚动窗口。
+- 错误语义（与正常空态分开）：
+
+| 场景 | 响应 |
+|---|---|
+| code 不在 Fund 表 | 404（**不打网络**：akshare 对未知代码抛解析异常，会被误判 502） |
+| 净值网络失败 | 502 `净值拉取失败: ...`（可重试） |
+| 净值 < 250 日 | 200 + `points=[]` + `diagnostics.insufficient_history`（正常空态） |
+| 无有效点但样本够 | 200 + `diagnostics.no_valid_points` |
+
+- `rf_basis` / `algorithm_version="trend-v1"` / `diagnostics` 必须如实返回，
+  前端在 KPI 次级行展示口径。
+
+### 17.4 KPI 定义（threshold 默认 0.8，与榜单入选线一致）
+
+- 有效点 = sharpe 非 None 的点；None（样本不足/无定义）不计入统计，
+  但**打断**连续达标/连续低于的计数。
+- `current` = 最后一个有效点（不是最后一个点）；`max/min/mean` 基于区间内有效点。
+- `above_ratio` = ≥阈值周数 / 有效周数（≥ 含等号）。
+- `consecutive_above` = 从最新点往回连续 ≥阈值 的点数。
+- `longest_below` = 全区最长连续 <阈值 的周数（回答「最差能差多久」）。
+- `trend_12w` = 最近 12 个有效点的最小二乘斜率（每周变化量）；不足 12 → None。
+
+### 17.5 性能与缓存（不落库）
+
+实测：净值拉取 0.12s + 603 个周点计算 0.17s ≈ **0.3s/请求**，
+无需预计算落库。`sharpe_trend_service._cached_nav` 是进程内 TTL 1h
+缓存（按 code 键），失败不缓存（可重试）。**本页纯读：不写任何表、
+不进调度、不影响周榜发布。**
+
+### 17.6 前端契约
+
+- `FundsNavigation` 七 Tab；走势页自行组装头部（同 sharpe-board 模式，
+  不套 FundsHeader），`active="sharpe-trend"`。
+- 无 code → 代码输入框引导态（不造曲线）；带 code → 自动加载。
+- 图表**复用** `SharpeChart` + `buildSharpeChartOption`（单 series，
+  `minLatestSharpe=0.8` 挂参考线），`dynamic(ssr:false)`。
+- `lib/sharpe-trend.ts` 独立 DTO / URL parse / fetch（全路径
+  `/funds/api/funds/...`）；code/range 切换用 AbortController 中止旧请求。
+- basePath 铁律：所有跳转 Link 用相对路径 `/sharpe-trend?code=...`，
+  **不得**带 `/funds` 前缀。
+
+### 17.7 三处入口（**第一版只支持股基**）
+
+| 入口 | 改动 | 注意 |
+|---|---|---|
+| 股基两 tab 列表代码列 | `FundTable` 加 `trendEnabled` prop，仅 `stock`/`discovery-stock` 传 true | Link 必须 `stopPropagation`，否则同时触发 `onRowClick` 开抽屉 |
+| 详情抽屉夏普 KPI | `RiskMetricsGrid` 加 `trendHref` prop；`DetailHero` 传 `/sharpe-trend?code=${fund.code}` | 只有 `RowDetailDrawer`（股基）用；债基 `RowDetailDrawerBond` 不用；显式分支渲染 Link/div，别用动态 Wrapper（TS 会把 Link 的必填 href 强加给 div） |
+| 夏普榜单行代码 | `SharpeBoardTable` 代码 → Link，下方保留极小「详情」按钮 | 行点击是聚焦，Link 需 `stopPropagation`；名称点击仍开抽屉 |
+
+债基两 tab 不传 `trendEnabled`（默认 false）→ 代码纯文本，零行为变化。
+后端对任意 code 都能算，但前端第一版不暴露债基入口。
+
+### 17.8 Tests Required
+
+- 后端 `tests/test_sharpe_trend.py`（33 用例）：纯净值口径不被基准截断
+  （**最关键回归**）、rf 空表/有值、样本不足、缓存失败可重试、
+  KPI 边界（全达标/全不达标/恰好 12 点/单点/None 缺口打断连续计数）、
+  range 只裁点不改窗口、路由顺序、404/502/422/insufficient 200。
+- 前端 `lib/sharpe-trend.test.ts`（13 用例）：URL parse 非法值回退、
+  href 相对路径、格式化、状态分类、fetch 查询串与错误处理。
+- 全量：后端 `pytest tests/ -q` = **630 passed**（597 基线 + 33 新增）；
+  前端 `node --experimental-strip-types --test` 三文件 = 35 passed；
+  `tsc --noEmit` 通过。本 app 无 ESLint 交互配置，`next lint` 不能非交互运行。
+
+### 17.9 Wrong vs Correct
+
+```python
+# Wrong — 沿用 compute_risk_metrics 的 inner join → 历史窗口被基准截断
+joined = pd.concat([r_p.rename("p"), r_b.rename("b")], axis=1, join="inner")
+sharpe = _ratio_annualized(joined["p"] - rf)
+# Correct — 纯净值：走势页不 join 基准，全窗口 3 年样本
+w = r_p[(idx >= end - 1095d) & (idx <= end)]
+sharpe = _ratio_annualized(w - rf_daily_aligned)
+```
+
+```tsx
+// Wrong — <Link href="/funds/sharpe-trend"> 变 /funds/funds/... 404
+// Correct — 相对 basePath
+<Link href={`/sharpe-trend?code=${code}`}>
+```
+
+---
+
+## 18. 夏普榜单 v2：三道门 + 52 周窗口（11-13-sharpe-board-v2-rules，2026-11-13）
+
+### 18.1 Scope / Trigger
+
+触发本节的条件：改 v2 profile / `entry_predicate` 三道门 / `freeze_peer_rows` /
+发布侧 peer 合并 / 52 周窗口聚合 / 榜单 DTO 新字段 / v1 迁移脚本任何一处。
+设计依据与生产数据实测见 `.trellis/tasks/11-13-sharpe-board-v2-rules/research/v2-gate-impact.md`。
+
+### 18.2 v2 入选规则（profile 版本隔离）
+
+`SHARPE_BOARD_PROFILES` 新增 `(stock, v2)` / `(discovery-stock, v2)`，
+**v1 两条一字不改**（v1 历史周行的 `profile_json` 按当时规则冻结，改 v1 常量会让
+新读到的 profile 与已落库快照不一致）。v2 是 v1 的超集：
+
+```python
+_V2_EXTRA_FILTERS = {
+    "min_ir": 0.5,           # 信息比率（跑赢基准效率）
+    "min_sample_days": 700,  # 3 年约 750 交易日，留缺口余量
+    "max_peer_pct": 20.0,    # 近 3 年同类排名前 20%
+}
+ALGORITHM_VERSION_V2 = "risk-3y-v2"
+```
+
+- 默认值三处同步切 v2：`weekly_refresh.BOARD_PROFILE_VERSION`、
+  `api/sharpe_board.py` 的 `profile_version`、`aggregate_board` 默认参数。
+- **回滚规则只需改 `BOARD_PROFILE_VERSION` 一行**（v1 profile 完整保留）。
+- 实测叠加影响（2026-11-02 周）：stock 29→10、discovery-stock 68→33，不空榜。
+- 被否决的两条（勿重提）：规模 ≤100 亿（只影响 2 只，且逻辑不成立）、
+  连续性门槛进入选规则（只筛 1~3 只，降级为展示统计）。
+
+### 18.3 `entry_predicate` 三个新参数（向后兼容铁律）
+
+```python
+entry_predicate(..., min_ir=None, min_sample_days=None, max_peer_pct=None)
+```
+
+- 三个参数默认 `None` = **整段跳过**，v1 profile 调用逐字节不变（由回归测试锁）。
+- NULL 一律不命中；`max_peer_pct` 用 `<=`（含等号，前 20% ↔ 20.0）。
+- **谓词是纯函数，不依赖 `date.today()`**：同类排名的 90 天陈旧过滤、格式校验
+  全在 `freeze_peer_rows` 取值阶段完成，谓词只做数值比较。这样等价性测试可重现。
+
+### 18.4 peer 数据必须冻结（与 `dd_3y` 同一个坑）
+
+`fund_achievement_rank` 会被市场链路 L5 `delete + bulk insert` 覆盖重写。
+发布时回读该表会拿到**下一轮**数据。唯一正确做法：
+
+```python
+freeze_peer_rows(db, codes) -> {code: {"peer_pct", "peer_raw", "as_of"}}
+```
+
+- 一次批量 `in_` 查询（500 codes 分块），**禁止 per-code 查询**。
+- 无记录 / `peer_rank` 格式异常 / `as_of_date` 超 90 天 → 不入字典（= 无数据，不命中）。
+- **陈旧判定用数据自带 `as_of_date`**，不是发布日：`refresh_service.py` 用
+  `out["achievement_as_of_date"] = ref.date()`（取数参考日）而非 `today()`。
+- 冻结进 `capture.peer_rows`；发布只读冻结，evidence_json 里存 `peer` 快照。
+
+**两条链路冻结位置不同**（design §11，早一行就是过期数据）：
+
+| 链路 | achievement 写入时机 | 冻结位置 |
+|---|---|---|
+| stock（雪球 yaml） | `snapshot_fund(fetch_ranking=True)` → `persist_snapshot` 主循环内 | 主循环**之后**，与 `freeze_dd_rows` 同处 |
+| discovery-stock（市场） | **L5** `refresh_market_achievement` | **L5 之后**（L3 的 `freeze_dd_rows` 处还没跑 L5） |
+
+### 18.5 既有缺陷修复：`BASE_ROW_FIELDS`
+
+```python
+BASE_ROW_FIELDS = ("name", "market_subtype", "age_years", "size_yi",
+                   "mgr_experience_years", "mgr_experience_years_max")
+```
+
+`min_mgr_exp` 优先读 `_max`（共管取最长），缺了该列会静默回退到取最短而误杀
+「老将+新人」组合。实测修复前 0/97 的观测证据里带此字段。
+**改这个字段会改变 `evidence_json` 结构**——已有测试断言改为「包含关键字段」
+而非全等（否则每次加字段都会挂）。
+
+### 18.6 发布侧诊断 `gate_missing`
+
+区分「数据缺失」与「不达标」：缺失进 `diagnostics["gate_missing"]`（按门分桶），
+不达标是正常筛选结果**不进诊断**（否则淹没真正的采集问题）。
+
+### 18.7 52 周窗口（统计 + 图表统一卡一年）
+
+```python
+WINDOW_WEEKS = 52
+_RANGE_WEEKS = {"all": 52, "1y": 52, "6m": 26, "3m": 13}
+def _window_start(current): return current - timedelta(weeks=WINDOW_WEEKS - 1)
+```
+
+- **364 = 52×7 恰是 7 的倍数**，窗口起点天然落在周一网格。
+  旧 `_RANGE_DAYS["1y"] = 365`（52 周+1 天）会让起点落周日、series 全 null
+  （§13 记录的 2026-11-05 真实回归）——改用整周数后该缺陷自然消失。
+- `listed_weeks` / `consecutive_weeks` / `latest_sharpe` / `near_12w` 全部
+  **只统计窗口内**；窗口外仍有观测的基金 `listed_weeks=0` → 被硬门槛
+  （窗口内曾在榜，v2 时写作 `min_weeks=1`）筛掉（预期连带后果，实测 13 只被挤出视图）。
+- **窗口只作用于聚合，不删除任何观测行**（AC9c）。
+- `range` 语义收窄为**窗口内缩放**：起点 `max(window_start, range_start, first_obs)`，
+  绝不让用户看到超出 52 周的数据；`all` 与 `1y` 等价。
+- `QUALIFIED_SHARPE = 0.8` 是展示用的绝对参考线，与 v2 `min_sharpe` 解耦。
+
+### 18.8 DTO 新字段（三处同步，§3a 静默砍字段陷阱）
+
+`SharpeBoardItemDTO` / `SharpeBoardItem` / 页面三处同步新增：
+`near_12w_qualified` / `near_12w_total` / `peer_pct` / `peer_as_of`。
+**`aggregate_board` 的 `item_keys` 元组必须同步加字段**，否则被过滤掉。
+
+`peer_as_of` 是 ISO **字符串**（来自 evidence_json），不是 date 对象。
+
+### 18.9 已知排序陷阱
+
+窗口外基金 `latest_sharpe=None`（v2 旧 `min_weeks=0` 时可能进 `matched`；§23 起为硬门槛，永不进）。
+**排序键必须对 None 取 `-inf`**，不能写 `-s["latest_sharpe"]`（TypeError）：
+
+```python
+def _sort_key(s):
+    sh = s["latest_sharpe"]
+    return (-s["listed_weeks"], -sh if sh is not None else float("-inf"), s["code"])
+```
+
+### 18.10 v1 历史处置（迁移脚本）
+
+`scripts/migrate_v1_archive.py` 三阶段，**默认 dry-run**：
+
+1. 导出 v1 weeks（全 status）+ observations → JSON + SQL + manifest(sha256)
+2. 验证：重读比对行数/哈希；临时库重放 SQL 比对
+3. 删除：**仅 `--apply` 执行**；单事务，先删 observations 再删 weeks
+
+- 存档落 `data/archive/`（不入 git），可完整恢复。
+- **部署顺序**：代码上线（版本仍 v1）→ 跑迁移 → 切 `BOARD_PROFILE_VERSION=v2`。
+  不能边删边写新 v1 行。
+- **不做历史回溯**：v2 三道门里「同类排名前 20%」历史上根本不存在
+  （`fund_achievement_rank` 只有 6 个 `as_of` 快照，非时序）。强行用今日快照
+  回填历史周 = 前视偏差，`listed_weeks` 会系统性偏乐观。v2 从上线周干净积累。
+
+### 18.11 Tests Required
+
+- `tests/test_filter_service.py::TestV2EntryGates`：三道门边界/等号/NULL/组合/默认 None 回归
+- `tests/test_sharpe_board_service.py::TestV2Profiles`：v1 不被污染、v2 是 v1 超集、版本升级
+- `tests/test_sharpe_board_service.py::TestV2PublishGates`：三道门拦截、gate_missing 诊断、v1 兼容
+- `tests/test_sharpe_board_service.py::TestFiftyTwoWeekWindow`：100 周封顶 52、周一网格、
+  不足 52 不补零、range 别名、近12周达标、peer 展示、窗口不删数据
+- `tests/test_sharpe_board_capture.py::TestFreezePeerRows`：解析/90 天陈旧/格式异常/500 分块
+- `tests/test_sharpe_board_capture.py::TestV2PeerFreezeWiring`：stock 链路冻结
+- `tests/test_migrate_v1_archive.py`：导出→验证→删除→恢复、只删 v1、dry-run 不删
+- 前端 `sharpe-board.test.ts`：默认 v2、describeEntryFilters 三道门、URL 往返
+
+全量：后端 **668 passed**（630 基线 + 38 新增）；前端 37 passed + `tsc --noEmit` +
+`pnpm build` 通过。
+
+### 18.12 Wrong vs Correct
+
+```python
+# Wrong — 发布时回读会被 L5 覆盖的共享表
+peer = db.get(FundAchievementRank, code).peer_rank
+# Correct — 只读本轮冻结的 capture.peer_rows
+peer = capture.peer_rows.get(code)
+
+# Wrong — 谓词里读 date.today()（测试不可重现）
+if (today - as_of).days > 90: return False
+# Correct — 陈旧过滤在 freeze_peer_rows 完成，谓词只比数值
+if v is None or v > max_peer_pct: return False
+
+# Wrong — 365 天裁剪起点落周日，series 全 null
+start = current - timedelta(days=365)
+# Correct — 52 个整周，起点天然周一
+start = current - timedelta(weeks=51)
+```
+
+---
+
+## 19. 夏普榜单 v3：年度同类排名口径 + 历史回溯（11-14-sharpe-board-v3-yearly-peer，2026-11-14）
+
+### 19.1 Scope / Trigger
+
+触发本节：改年度门槛 / `freeze_yearly_peer_rows` / `yearly_window` /
+回溯脚本 / v3 profile 任何一处。设计依据见任务 `research/yearly-rank-interface.md`。
+
+### 19.2 为什么换口径（核心事实）
+
+`ak.fund_individual_achievement_xq` 返回两类排名，性质截然不同：
+
+| 类型 | period_kind | 性质 | 能否回溯 |
+|---|---|---|---|
+| 年度业绩 | `年度业绩` | 某自然年的**最终**排名，历史固定值 | ✅ |
+| 阶段业绩 | `阶段业绩` | 滚动窗口（「截至今天」），每次调用会变 | ❌ |
+
+**实测证据**：库内 `as_of=2026-09-09` 写入的 2023 年排名（`3456/4165`）与
+2026-11-14 实时接口值**逐字一致**。这是 v3 敢做历史回溯的唯一根据。
+
+v2 用滚动分位（`阶段业绩/近3年`），历史上不存在 → 榜单只能从上线周积累（只有 1 个点）。
+v3 换成年度排名 → 每周判定都能用同一份历史数据复现 → 可补满历史曲线。
+
+### 19.3 门槛定义
+
+```python
+YEARLY_PERIOD_KIND = "年度业绩"
+YEARLY_WINDOW = 3             # 最近 3 个「已完成」自然年度
+MIN_YEARLY_TOP_PCT = 25.0     # 单年分位 ≤25% 算该年达标
+MIN_YEARLY_YEARS = 2          # 3 年中至少 2 年达标
+
+def yearly_window(ref_year):   # 2026 → ["2023","2024","2025"]
+    return [str(y) for y in range(ref_year - 3, ref_year)]
+```
+
+- **排除当年**：当年未结束，年度排名是「今年以来」的不完整值，与完整年度不可比。
+- **不做 `as_of` 陈旧判断**：年度排名是历史事实，不存在过期
+  （v2 的 `PEER_STALE_DAYS=90` 只适用于滚动口径）。
+- 缺失年份记 `None`，不计入达标年数。
+
+### 19.4 `freeze_yearly_peer_rows`（唯一 peer 数据来源）
+
+```python
+freeze_yearly_peer_rows(db, codes, *, ref_year=None,
+                        top_pct=25.0, min_years=2) -> dict[str, dict]
+# {code: {"years": {"2023": 8.2, "2024": None, "2025": 12.5},
+#         "qualified_years": 2, "yearly_top_pct": 25.0,
+#         "min_years": 2, "qualified": True, "window": [...]}}
+```
+
+- 一次批量 `in_` 查询（500 分块），禁止 per-code。
+- **`qualified` 在冻结时算好**，不在谓词里算：阈值随 profile 版本变，
+  把「当时用什么阈值、算出了什么」一并冻结，符合 §13「发布只读本轮证据」。
+- 窗口内**全部年份都无有效排名**的 code 不入字典（无证据 → 发布侧计 `gate_missing`）。
+
+### 19.5 谓词参数与不可混用的警告
+
+```python
+entry_predicate(..., min_yearly_years=None)   # v3：只读 qualified_years
+```
+
+- 只读冻结好的 `qualified_years`，保持纯函数。
+- **`min_yearly_top_pct` 不是谓词参数**——它是冻结阈值，已随 peer_rows 固化。
+  发布侧必须过滤掉它再传给 `entry_predicate`（否则 TypeError）。
+- **不可与 `max_peer_pct` 混用**：后者是滚动口径「单个分位 ≤ X」，
+  前者是「N 年中 M 年达标」，语义完全不同。同一个参数名在不同版本表示不同
+  含义会让排障极难，故 v3 profile 不含 `max_peer_pct`。
+
+### 19.6 v3 profile
+
+`_V3_EXTRA_FILTERS = {min_ir: 0.5, min_sample_days: 700,
+                      min_yearly_top_pct: 25.0, min_yearly_years: 2}`
+
+- `ALGORITHM_VERSION_V3 = "risk-3y-v3"`；默认版本切 v3（周任务/API/聚合三处）。
+- v1 / v2 profile **一字不改**，历史周行按版本隔离。
+- 实测影响（2026-11-14，36 只 v2 成员）：前25%至少2年 → 保留 29 只（81%）。
+
+### 19.7 历史回溯脚本
+
+`scripts/backfill_v3_yearly_peer.py`（基于 `backfill_sharpe_board_ext.py`）：
+
+| 项 | v1 ext 脚本 | v3 脚本 |
+|---|---|---|
+| profile | v1 | v3 |
+| risk_rows | 只存 sharpe | **补 ir + sample_days**（v3 门槛需要） |
+| peer 数据 | 无 | `freeze_yearly_peer_rows`，**一次冻结全周共享** |
+
+- **夏普/IR/样本天数必须按周算**（当周往前 3 年窗口），不能用今天的值——
+  那正是 v2 里拒绝的前视偏差。
+- **年度排名全周共享不构成前视偏差**：它是已发生的历史事实。
+- 幂等：已存在 complete 周的 `(source, v3, week)` 由 `publish_week_board` 跳过。
+- 默认 dry-run，`--publish` 才写库；净值/基准 pickle 缓存复用一次网络拉取。
+
+### 19.8 展示（DTO 三处同步）
+
+v2 的 `peer_pct`（单值滚动分位）保留以支持 `?profile_version=v2` 查询；
+v3 新增：
+- `peer_years: dict[str, float|null]` — 各年分位
+- `peer_qualified_years: int|null` — 达标年数
+- `peer_window: list[str]|null` — 评估年度
+
+前端「同类分位」列：有 `peer_qualified_years` 时渲染 `2/3 年`（hover 显示各年明细），
+否则回退 v2 的 `前 X%`。
+
+### 19.9 Tests Required
+
+- `test_sharpe_board_capture.py::TestYearlyWindow`：窗口滚动/升序/默认常量
+- `test_sharpe_board_capture.py::TestFreezeYearlyPeerRows`：3年/2年/1年达标、
+  缺年、边界 25.0%、超界 25.01%、格式异常、**as_of 陈旧仍有效**、窗口外年份忽略、
+  500 分块、自定义阈值
+- `test_filter_service.py::TestV3YearlyGate`：边界/NULL/默认 None 回归/不看 peer_pct
+- `test_sharpe_board_service.py::TestV3Profiles`：v1/v2 未污染、三版本 algorithm 互异
+- `test_sharpe_board_service.py::TestV3PublishGates`：达标/部分达标入选、evidence 明细、
+  v2 忽略年度参数
+- `test_backfill_v3.py`：dry-run 不写、周键周一、evidence 含年度、幂等、**v2 数据零影响**
+
+全量：后端 **705 passed**（668 基线 + 37 新增）；前端 38 passed + `tsc --noEmit`。
+
+### 19.10 Wrong vs Correct
+
+```python
+# Wrong — 把冻结阈值当谓词参数（TypeError）
+predicate = entry_predicate(**profile["filters"])
+# Correct — 过滤掉冻结专用参数
+kw = {k: v for k, v in profile["filters"].items() if k != "min_yearly_top_pct"}
+predicate = entry_predicate(**kw)
+
+# Wrong — 用年度排名的「当年」数据（不完整年度，与完整年不可比）
+window = [str(y) for y in range(ref_year - 3, ref_year + 1)]
+# Correct — 排除当年
+window = [str(y) for y in range(ref_year - 3, ref_year)]
+
+# Wrong — 回溯时夏普用今天的值（前视偏差）
+risk_rows[code] = {"sharpe": db.get(FundRiskMetrics, code).sharpe}
+# Correct — 按当周往前 3 年窗口重算
+m = compute_risk_metrics(r_p_windowed, r_b_windowed, rf)
+```
+
+---
+
+## 20. 基金代码快速搜索：lookup 路由判定（11-14-fund-code-quick-search，2026-11-14）
+
+### 20.1 Scope / Trigger
+
+触发本节：改 `lookup_service.resolve_tab` 的判定优先级 / `/lookup/{code}` 路由 /
+`FundCodeSearch` 组件任何一处。
+
+### 20.2 判定优先级（yaml 名单优先于 market_type）
+
+```
+1. 在 funds.yaml（债基精选 31 只）        → bond
+2. 在 funds_stock.yaml（股基 142 只）     → stock
+3. market_type 以「债券」开头              → discovery-bond   ← 含脏值防御
+4. market_type == 'stock'                  → discovery-stock
+5. market_type == 'other' + subtype 属债券 → discovery-bond
+6. 其余（other+混合/FOF/货币/空，或未知）  → discovery-stock
+7. 库内无该 code                            → found=False
+```
+
+**为什么 yaml 优先**：yaml 是精选名单，名单内的基金用户多半从对应雪球 tab 认识；
+market_type 是全市场粗分类。两份名单无交集（实测 31 / 142 / 交集 0）。
+
+**为什么 `other` 必须再看 subtype（实测关键陷阱）**：生产库 `other` 有 5115 只，
+其中 **2653 只 `market_subtype` 是「债券型-*」**。若笼统兜底到股基市场，
+这两千多只会跳到错误 tab。必须先用 `DISCOVERY_BOND_SUBTYPES` /
+「债券」前缀判定。
+
+**脏值防御**：`market_type` 有一行被误写成 `'债券型-长债'`（code=519622，
+是 subtype 的值写进了 type 字段）。凡以「债券」开头一律按 bond。
+
+### 20.3 API 契约
+
+`GET /api/funds/lookup/{code}`，`code` 必须 6 位数字（`pattern=r"^\d{6}$"`）。
+
+```python
+class FundLookupResponse(BaseModel):
+    code: str
+    found: bool
+    name: Optional[str] = None
+    tab: Optional[str] = None          # bond|stock|discovery-bond|discovery-stock
+    market_type: Optional[str] = None
+    in_yaml: Optional[str] = None      # 'bond'|'stock'|None
+    path: Optional[str] = None         # '/discovery-stock?code=002910'
+```
+
+- **查不到（found=False）返回 200**，不是 404：这是业务结果，不是错误。
+  返回 404 会让前端必须区分「代码不存在」与「接口挂了」。
+- **格式非法返回 422**：那是调用方 bug，应明确暴露。
+- **`/lookup/{code}` 必须注册在通用 `/{code}` 之前**（契约 §13 同一类陷阱）。
+
+### 20.4 `path` 是相对路径（basePath 契约）
+
+返回值 `path` **不带 `/funds` 前缀**——前端用 Next router 跳转时 Next 会自动补
+basePath；写 `/funds/...` 会变成 `/funds/funds/...` 404（§4 已记录该陷阱）。
+
+**11-16 起 `path` 的形式变了**（代码搜索改为「列表出结果」）：
+
+```
+tab=bond            → /bond?search_code=003547
+tab=stock           → /stock?search_code=002910
+tab=discovery-bond  → /bond?search_code=...      ← 收敛到合并页
+tab=discovery-stock → /stock?search_code=...     ← 收敛到合并页
+```
+
+- `tab` 字段语义**不变**（仍是四值分类，经理页徽章等复用）。
+- `discovery-*` 直接给合并页：它们只是 redirect 壳，经壳会多一跳且把
+  `source=market` 留在 URL 里（退出搜索后用户莫名处在「市场」分段）。
+- **`search_code=` ≠ `code=`**：前者是「列表锁定这一只、点行才开抽屉」，
+  后者是「直达并自动开抽屉」（经理页徽章）。两个参数各管一件事，互不覆盖。
+
+### 20.5 前端接入
+
+- 搜索框在筛选 chip 行右侧（`FilterChipBar` 的 `showCodeSearch`），
+  经理 / 夏普榜单 / 走势页不显示。
+- **搜索态是 URL 状态**：`?search_code=<6 位>`，与筛选参数**并存**
+  （进入/退出搜索都不动任何筛选维度）。解析与序列化在 `lib/search-code.ts` +
+  `lib/useFilters.ts`。
+- **落点 URL 必须由 `buildSearchHref` 拼，不能直接 `router.push(res.path)`**：
+  后端 `path` 只有 `search_code`，直接 push 会把当前筛选整串丢掉（实测踩到）。
+  规则：同页保留当前查询串（替换 `search_code`、`page` 归 1）；跨页只带
+  `search_code`；两者都清掉互斥的 `code` / `focus`。
+- **搜索态不参与 `activeCount`**：它有自己的 chip（「代码搜索 XXX ×」），
+  混进筛选计数会让「筛选(3)」与实际维度对不上。
+- 退出搜索的三个触发：点 chip ×、改任一筛选维度/分类/来源/每页条数、
+  点「清空」。**不退出**：翻页、改排序。
+- `FundTable` 用 `highlightCode` 高亮命中行（accent 竖条 + 浅底，与对比选中的
+  整行 info-tint 区分，两者可叠加）；`emptyHint` 给搜索空结果文案。
+- 搜索态隐藏 `Pagination`（结果只有 1 行）。
+
+### 20.6 Tests Required
+
+- `test_lookup_service.py`：六级优先级全覆盖，重点 `other`+债券型 → discovery-bond
+- `test_lookup_api.py`：200/422 语义、**路由不被 `/{code}` 吞**、7 字段透出、
+  `path` 用 `search_code=` 且 discovery-* 收敛到合并页
+- `test_code_search.py`（11-16）：`/screen?code=` 与 `/stock/screen?code=`
+  单条命中、**阈值被忽略**、`is_active=false` 仍返回、宇宙外仍返回、
+  不存在 code → total=0、非法 code → 422、不带 code 时老链路不变
+- `src/lib/lookup.test.ts`：归一化（trim/全角/夹字符）、6 位校验、状态分类
+- `src/lib/search-code.test.ts`（11-16）：`parseSearchCode` /
+  `searchCodeApiQuery`（只发 `code=`）/ **`buildSearchHref` 保留筛选**、
+  跨页只带 `search_code`、清互斥参数
+
+全量（11-16 后）：后端 **769 passed**（733 基线 + 23 新增 + 13 个 path 断言更新）；
+前端 74 passed + `tsc` + `build`。
+
+### 20.7 Wrong vs Correct
+
+```python
+# Wrong — other 一律兜底股基市场（2653 只债基跳错 tab）
+if mtype == 'other': return 'discovery-stock'
+# Correct — other 按 subtype 细分
+if mtype == 'other':
+    if msub in BOND_SUBTYPES or msub.startswith('债券'): return 'discovery-bond'
+    return 'discovery-stock'
+```
+
+```tsx
+// Wrong — path 加了 /funds 前缀，变 /funds/funds/... 404
+router.push(`/funds${res.path}`)
+// Wrong — 直接 push 后端 path：把当前筛选整串丢掉（实测：筛着规模 ≥5 亿，搜完回来没了）
+router.push(res.path)
+// Correct — 相对路径交给 Next 补 basePath，并让 buildSearchHref 决定筛选去留
+router.push(buildSearchHref(res.path, window.location.search, window.location.pathname))
+```
+
+```python
+# Wrong — 找不到返回 404（前端要区分业务未命中与接口故障）
+raise HTTPException(404)
+# Correct — 200 + found=False
+return {"code": code, "found": False, "path": None, ...}
+```
+
+### 20.8 代码搜索语义：`/screen?code=` 故意不套阈值
+
+`GET /api/funds/screen?code=003547`、`GET /api/funds/stock/screen?code=003547`
+走 `FilterService.search_by_code(code, curated_kind)`：
+
+| 维度 | 行为 | 理由 |
+|---|---|---|
+| 阈值（age/size/dd/mgr/sharpe/exclude_qdii） | **全部忽略** | 搜的是「库里这一只」，不是「当前筛选命中的这一只」；否则用户搜 002910 却因规模 4.9 亿看不到结果，会以为代码错了 |
+| `is_active` | **不要求** | 代码搜索是查询动作，已清盘基金也该能点开看历史 |
+| 当前 tab 宇宙 | **不要求** | 正常路径前端已先经 lookup 判 tab；这里只认 code |
+| 排序/分页 | 不生效（结果 ≤1 条） | — |
+
+返回结构与 `/screen` 同构（`{total, items}`，条目带 `in_curated`），
+表格与文案因此完全复用。**不要**把 `code` 分支塞进 `_screen`：`_screen`
+承担排序/分页/宇宙语义，加单条特例会污染 6 个调用点。
+
+## 21. 夏普榜单数据缺口周口径（11-14-sharpe-board-gap-weeks，2026-11-14）
+
+### 21.1 Scope / Trigger
+
+节假日休市（春节等）会让某一周的**风险样本尾日没有前进**（停在上一周的交易日），
+该周发布结果因此不是「这只基金没达标」，而是**数据不可用**：
+
+| 来源 | 2026-02-16 实测 | 含义 |
+|---|---|---|
+| stock（雪球三分法） | `skipped_no_new_data`，`selected_count=0` | 整周没发榜 |
+| discovery-stock（市场） | `complete`，但只入选 2 只（正常周 19~44 只） | 发了榜，但 38 只候选样本未更新 |
+
+旧口径把这两周都算成「缺席」→ 连续周数被数据缺失打断（`003598` 显示 51 在榜 /
+38 连续），把**数据缺一周**误读成**表现断档**。本节定义缺口周口径。
+
+### 21.2 判定模型（三态）
+
+窗口内每个 (基金, 周) 归为三类：
+
+| 类别 | 判定 | 计入在榜 | 中断连续 |
+|---|---|---|---|
+| `listed` 在榜 | 该周有该基金观测 | ✅ | 否 |
+| `gap` 数据缺口 | 该基金该周**没有有效样本**：该来源该周没有 complete 榜（failed / skipped_no_new_data / 未跑），**或** 该基金在该周该来源的 `diagnostics.stale_codes` 里（样本尾日未前进） | ❌ | **否**（跳过） |
+| `miss` 可评缺席 | 发了 complete 榜、该基金样本新鲜，却没进榜 | ❌ | **是** |
+
+信号全部取自库里已有事实，无新阈值、无启发式：
+
+- 周是否发榜 → `sharpe_board_weeks.status`；
+- 基金样本是否更新 → 同周 `sharpe_board_weeks.diagnostics_json.stale_codes`
+  （发布侧第 6 步写入：入选谓词通过但样本尾日未前进的基金）。
+
+实测：窗口内除 2026-02-16 外所有周 `stale_codes` 为空 → 信号稀疏且精确。
+
+**source=all 的合并**：`gap` = **所有**在册来源都缺口（stock 没发榜 + discovery-stock
+该基金 stale → gap）；任一来源能给出有效样本即为可评（miss 判定）。
+
+### 21.3 统计口径
+
+| 字段 | 定义 |
+|---|---|
+| `listed_weeks` | 窗口内在榜周数（**分子，排序键不变**） |
+| `evaluable_weeks`（新） | 窗口内该基金**有有效样本**的周数 = 52 − 缺口周数（**分母**） |
+| `consecutive_weeks` | 从最近上榜周逐周 -7 天回退：在榜记 1；**缺口周跳过**（不计数、不中断）；miss 周中断 |
+| `gap_weeks`（新，列表项） | 该基金**在榜期间**的缺口周（ISO 日期；上榜前的缺口与它无关，不列） |
+
+`consecutive_weeks` 仍是「在榜周数」的连续段长度（缺口周不在榜，不计入长度）。
+
+`003598` 实测结果：在榜 51 / 可评 51 / 连续 51 / 缺口周 ['2026-02-16'] → 前端显示
+**51/51**。`008261`（2026-03-30 真实缺席）在榜 50 / 可评 51 / 连续 32 —— 真实缺席
+仍然中断连续。
+
+### 21.4 DTO（三处同步，§3a 静默砍字段陷阱）
+
+- `SharpeBoardItemDTO`：`evaluable_weeks: int = 0`、`gap_weeks: list[date] = []`；
+- `SharpeBoardDiagnosticsDTO`：`gap_weeks: list[date] = []`（**周级**缺口周）；
+- `aggregate_board` 的 `item_keys` 元组必须同步加两个字段，否则被过滤掉。
+
+`diagnostics.gap_weeks`（周级）与既有 `no_board_weeks` 并存、语义不同：
+
+- `no_board_weeks` = 周历内**没发 complete 榜**的周；
+- `gap_weeks` = 周历内**数据不可用**的周 = 没发榜 **或** 该周任一来源有基金样本未更新。
+
+### 21.5 陷阱
+
+1. `week_meta` 必须按 **(source, week_start)** 建键——`all` 模式同周两行，用单键会串。
+2. `stale_codes` 解析要容错（`diagnostics_json` NULL / 非 dict / `stale_codes` 非 list
+   → 空集），一条脏数据不得让整页聚合失败。
+3. `missing_evidence`（nav 失败）**不算**缺口周：当周若 complete 而某基金缺证据，
+   它只是没参评，视同 miss（保守口径，与旧行为一致）。
+4. 排序键仍用 `listed_weeks`（分子）——改分母不重排榜单。
+5. 只读聚合层修正，**不改历史周行/观测行**；回滚 = revert 代码。
+
+### 21.6 Tests Required
+
+- `test_sharpe_board_api.py::TestGapWeekSemantics`：
+  stale 基金缺口周不打断连续 / 真实缺席仍中断 / 上榜前缺口不进 `gap_weeks` /
+  `source=all` 需全部来源都缺口才算缺口；
+- `test_response_fields_all_present` 补 `evaluable_weeks` / `gap_weeks` /
+  `diagnostics.gap_weeks`（§3a 回归）。
+
+### 21.7 Wrong vs Correct
+
+```python
+# Wrong — 任何缺席都中断连续（数据缺一周被当成表现断档）
+while w in week_set and w >= window_start:
+    consecutive += 1
+    w -= timedelta(days=7)
+
+# Correct — 缺口周跳过不中断，只有可评却缺席（miss）才中断
+while w >= window_start:
+    if w in week_set:
+        consecutive += 1
+    elif w not in gap_all:
+        break
+    w -= timedelta(days=7)
+```
+
+```python
+# Wrong — 只看「该周有没有榜」，忽略「这只基金那周有没有新样本」
+gap = week_status[w] != STATUS_COMPLETE
+# Correct — 榜发了但该基金 stale，同样是缺口
+gap = (week_status[w] != STATUS_COMPLETE) or (code in stale_codes[w])
+```
+
+---
+
+## 22. 来源分段（source）与 market_type 筛选（11-15-source-segmented + 11-14 收尾）
+
+### 22.1 三态来源分段模型
+
+`/api/funds/screen` 与 `/api/funds/stock/screen`（合并后的债基 / 股基页）都带
+`source` 参数，`pattern="^(curated|market|all)$"`，**默认 `curated`**：
+
+| source | 成员判定 | 行上 `in_curated` |
+|---|---|---|
+| `curated` | yaml 名单（`config/funds.yaml` / `config/funds_stock.yaml`） | 恒 True |
+| `market` | `funds.market_subtype ∈ DISCOVERY_{BOND,STOCK}_SUBTYPES` | 按 code 是否 ∈ 名单逐行算 |
+| `all` | 两个 universe 的 code 并集（SQL IN 一次查询） | 同上 |
+
+`in_curated` 由后端逐行算好返回，前端**不再自己比对名单**。
+
+### 22.2 UI 只暴露两态「市场 | 三分法」——「全部」按数据下线
+
+后端仍支持 `source=curated|market|all`（API 兼容，老链接不会 400），但**前端两个 tab
+都只给两态**：「全部」在本项目里永远与某一态逐行同集，第三态只是噪音。
+
+判据不是「市场是否包含三分法」，而是「**在默认筛选下**，`all` 与哪一态逐行同集」——
+那一态就是该 tab 的默认分段（保证改分段前后首屏一行不变）。
+
+实测（生产库，code 集合逐只比对，默认筛选 3/5/5/5 与 3/5/30/5/0.8）：
+
+| tab | curated | market | all | all ≡ 谁？ | 默认分段 |
+|---|---|---|---|---|---|
+| 股基 | 142 | 16239 | 16239 | **market**（142 只全在市场 universe 内；默认筛选下 85 行 = 85 行） | `market` |
+| 债基 | 31 | 9782 | 9785 | **curated**（默认筛选下 all 13 行 = curated 13 行，market 只有 11 行） | `curated` |
+
+**债基的 3 只固收+（`001756` / `004010` / `017970`）不会因为砍掉「全部」而消失**：
+它们在债基「三分法」里（用户手工精选的名单，31 只全在），也在股基「市场」里
+（akshare 把它们记成 `混合型-灵活` / `QDII-FOF` → 属股基子类）。唯一变化是它们
+**不在债基「市场」视图**里 —— 那是 akshare 子类口径的必然结果，不是 bug。
+
+- 实现：`SourceSegmented` 的 `segments` prop（默认已是两态），两个页面各传自己的
+  `SOURCE_SEGMENTS`（标题里的名单只数不同：142 只 / 31 只）。
+- 老链接 `?source=all`：`parseSource` 归一到该 tab 的默认分段（`fallback !== 'all'`
+  时把 `all` 换成 fallback）——否则分段控件一个都不选中、请求却按 `all` 发出去。
+  归一后行集不变（股基 all ≡ market、债基 all ≡ curated）。
+- `filtersToSearch` 仍写 `source`（值不再是 `all`），`buildQuery` 仍在
+  `source === 'curated'` 时省略该参数（后端默认就是 curated）。
+
+**规矩**：改动 yaml 名单或 `SUBCLASS_TO_CATEGORY` 后，必须重新核对
+「默认筛选下 all 与哪一态同集」→ 那才是该 tab 的默认分段；两态的归属也要重新核对
+（见 §22.3 徽章：市场态标的是**该 tab 名单**的成员）。
+
+### 22.3 三分法成员用行内徽章标出
+
+「市场」态下用户看不出哪几只来自雪球三分法。后端已在 `market` / `all` 态返回
+`in_curated`，前端在**类型列**加一枚「三分法」徽章（`FundTable` 的
+`showCuratedBadge` prop，只在 `source !== 'curated'` 时开——三分法态整表都是名单成员，
+重复标是噪音）。
+
+徽章位置选类型列而不是名称列：名称列宽度固定 7rem 且要放 10 字截断名，塞不下徽章。
+
+徽章语义 = 「**该 tab** 的三分法名单成员」：债基市场态标的是债基 yaml 的 31 只里
+落在债基子类内的那 28 只（3 只固收+ 不在债基子类，见 §22.2）；同一只基金若在股基
+市场视图里出现但不在股基 yaml 里，就**没有**徽章 —— 徽章跟着 tab 走，不跨 tab。
+
+### 22.4 market_type 在合并页也必须能筛（静默死控件的修复）
+
+前端 `buildQuery()` 会把 UI 粗类别展开成精确 subtype 写进 `?market_type=`。
+**后端 `/screen` 与 `/stock/screen` 早期根本不接这个参数**（只有
+`discovery-bond/screen`、`discovery-stock/screen` 接），于是：
+
+- 前端 `api.ts` 调 `fundApi.screen` / `stockApi.screen` 时**没传粗类映射**
+  → 展开不生效 → 后端收到粗类别名（如「纯债型」）→ 匹配不到任何 `market_subtype`
+  → 静默空集 / 或因参数不被识别而**完全不过滤**（更糟：用户以为筛了，其实没筛）。
+
+**契约**：
+
+1. 后端 `/screen`、`/stock/screen` 必须接 `market_type: Optional[str] = Query(None)`，
+   用 `_parse_market_types()` 拆 CSV（**只拆不展开**，粗→精展开在前端）。
+2. 前端 `fundApi.screen` 必须传 `COARSE_TO_SUBTYPES_BOND`，`stockApi.screen` 必须传
+   `COARSE_TO_SUBTYPES_STOCK`。
+3. 语义：`market_type` 是**额外的 WHERE 条件**（`funds.market_subtype IN (...)`），
+   与 `source` 正交 —— 三种 source 下都生效。`market` 态下还会把 universe 子类集合同步收窄
+   （两者叠加等价于交集）。
+
+### 22.4b 前端 hook 的依赖数组必须包含全部影响请求的维度
+
+`useFundList` / `useStockFundList` 的 `useEffect` 依赖是拼出来的 `query` 字符串。
+**凡是会影响请求内容的筛选维度，都必须进这个字符串** —— 漏一个 = 改了筛选不重新请求
+（URL 变了、chip 出来了、列表纹丝不动，用户以为筛选坏了）。
+
+11-14 实战踩坑：合并页（11-15 之前）的两个 hook 漏了 `market_types` 和 `source`
+（两个 `useDiscovery*` hook 反而有 `market_types`）→ 合并后「基金类型」多选一直是死控件。
+
+```typescript
+const query = [
+  filters.min_age, filters.min_size_yi, filters.max_dd_3y, filters.min_mgr_exp,
+  filters.min_sharpe,
+  filters.exclude_qdii, filters.sort, filters.order,
+  filters.page, filters.limit,
+  filters.search_code,
+  (filters.market_types ?? []).join(','),   // ← 漏了 = 改了类型不重拉
+  filters.source ?? '',                     // ← 漏了 = 切分段不重拉
+].join('|');
+```
+
+**验收手法**：改完筛选后在浏览器网络面板确认**确实发出了新的 `/api/funds/*/screen`
+请求**（只看 URL 变化会被骗 —— URL 变了不代表请求发了）。
+
+### 22.5 source 必须真的从 URL 解析（死控件的修复）
+
+`useFilters.parseFiltersFromSearch()` 早期**从不读 `?source=`** —— `parseSource()`
+写好了但没人调用，`filters.source` 每次都回落到默认值。于是分段控件点不动
+（URL 变了、列表不变）。三个返回分支（cleared / 无 numeric / 有 numeric）都必须带上
+`source`，缺一个就复现这个 bug。
+
+`parseSource(search, fallback)` 的 fallback 取该 tab 的默认分段
+（债基 `all`、股基 `market`），**不能硬编码 'all'** —— 否则股基页 URL 不带
+`source=` 时会回落到 `all`（虽然当前与 `market` 同集，但语义错了）。
+
+### 22.6 换分段时清掉 market_type
+
+「基金类型」筛选只在「市场」态暴露（`showMarketTypes={source === 'market'}`）。
+切分段时必须把 `market_types` 一起清掉（`setFilter('source', ...)` 里置 null），
+否则会出现「UI 上看不到这个条件、列表却被它悄悄收窄」的鬼状态。
+
+### 22.7 Tests Required
+
+`backend/fund-select/tests/test_source_segmented.py`：
+
+- `TestSubtypeUniverse::test_long_bond_subtype_in_bond_universe` — `债券型-长债` ∈ 债基 universe
+- `TestSubtypeUniverse::test_every_declared_subtype_is_reachable_from_ui_mapping` — 后端 universe 与前端粗类别表一一对应（前端漏项即失败）
+- `TestMarketTypeFilter::*` — market_type 在 curated / market / all 三态下都收窄；不在 universe 里的白名单返回空集而不报错
+
+## 23. 在榜占比筛选 + 时间范围精简（11-14-sharpe-board-listed-pct-filter，2026-11-14）
+
+### 23.1 Scope / Trigger
+
+「至少上榜 1 周」几乎不过滤（生产库 53 只全通过），用户看不出筛选器在做什么；
+而 v4 口径（§21）已引入「可评周数」并在表格显示 `在榜/可评` 分数。筛选条件应与
+这个分数同源：**在榜占比 = 在榜周数 ÷ 可评周数**。
+
+同时 `range=1y` 与 `range=all` 自 v2 起完全等价（`_RANGE_WEEKS` 都是 52 周），
+下拉里两个选项是重复的。
+
+### 23.2 API 参数变更
+
+| 旧 | 新 |
+|---|---|
+| `min_weeks: int = Query(1, ge=1)` | `min_listed_pct: float = Query(60, ge=0, le=100)` |
+
+判定（`aggregate_board` 第 2 段展示筛选）：
+
+```python
+s["listed_weeks"] >= 1                                            # 硬门槛：窗口内曾在榜
+and s["listed_weeks"] * 100 >= min_listed_pct * s["evaluable_weeks"]   # 占比（整数左乘，避免浮点误差）
+```
+
+- 分母 `evaluable_weeks` 与表格「近52周在榜」同源（§21）；
+- `min_listed_pct=0` 恒真 ≡ 不限（等价旧 `min_weeks=1`）；
+- 硬门槛保留：窗口内从未上榜的基金任何下限都看不到（避免「0/52」噪声行）；
+- 越界（-1 / 101）→ 422；旧参数 `min_weeks` 已下线（FastAPI 忽略未知参数 → 旧链接落默认 60%）。
+
+生产库 `source=all` / v3 / 53 只命中实测：≥0% → 53、≥50% → 41、**≥60% → 32**、≥80% → 22。
+
+### 23.3 时间范围精简
+
+- 前端 `SharpeRange` 去掉 `'1y'`；`RANGE_OPTIONS` 只留 3 项，按时长升序：
+  `3m 近 3 个月` / `6m 近 6 个月` / `all 近一年(52周)`。
+- 后端 `_RANGE_WEEKS` 保留 `1y` 兼容旧链接（52 周，与 all 等价），但前端不再暴露；
+  旧 URL `?range=1y` 在前端回落默认 `all`，**行为不变**。
+
+### 23.4 前端三处同步
+
+- `SharpeBoardFilters.minWeeks` → `minListedPct`，默认 60；
+- URL 参数 `min_weeks` → `min_listed_pct`（默认值不写进 URL）；
+- `sharpeFiltersActive` 用 60 作基准；`page.tsx` 的 `pageAffecting` 与
+  `clearDisplayFilters` 同步改名；
+- 筛选条是**可编辑数字输入**（0~100，步长 1），不是预设下拉；`title` 说明分母口径。
+
+### 23.5 陷阱
+
+1. `sharpeFiltersActive` 忘了改默认 → 「筛选已激活」永远为 false。
+2. `parseSharpeFiltersFromSearch` 里 `Number('') = 0` → 空串必须显式判断，
+   否则清空输入框会意外变成「不限」。
+3. `min_listed_pct=0` 与硬门槛 `listed_weeks>=1` 是两件事：不限占比 ≠ 显示从未在榜的基金。
+4. 测试里直接调 `aggregate_board(...)` 不带 `min_listed_pct` 时默认是 60%，
+   只测统计/排序的旧用例要显式传 `min_listed_pct=0`，否则命中集被悄悄收窄。
+
+### 23.6 Tests Required
+
+- `test_sharpe_board_api.py::TestListedPctFilter`：API 默认 60%、0%=不限、
+  从未在榜不通过、分母用可评周数（缺口周不拉低占比）；越界 422；
+- `sharpe-board.test.ts`：默认 60 / URL 往返 / 越界回落 / 旧 `min_weeks` 落默认 /
+  `RANGE_OPTIONS` 只 3 项且不含 `1y`。

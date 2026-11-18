@@ -8,8 +8,16 @@
  */
 'use client';
 
+/**
+ * 榜单来源：stock = 三分法，discovery-stock = 市场。
+ *
+ * 「全部」（all，两条链路聚合）已从 UI 下线（与基金列表页的「市场 | 三分法」两态统一）：
+ * 后端仍支持 source=all（API 兼容、其它调用方可能仍用），但本页不再暴露这个分段，
+ * 老链接 ?source=all 由 parseSharpeFiltersFromSearch 归一到默认来源「市场」。
+ */
 export type SharpeSource = 'stock' | 'discovery-stock';
-export type SharpeRange = '3m' | '6m' | '1y' | 'all';
+/** 图时间范围：all = 近一年(52 周)。旧 '1y' 与 all 等价，已从下拉移除 */
+export type SharpeRange = '3m' | '6m' | 'all';
 
 /** 固定规则 profile（source/version/filters/prefilters/algorithm） */
 export interface SharpeBoardProfile {
@@ -36,8 +44,13 @@ export interface SharpeBoardAttempt {
 export interface SharpeBoardItem {
   code: string;
   name: string;
+  /** v2：52 周窗口内在榜周数（不是全历史累计） */
   listed_weeks: number;
+  /** 可评周数（分母）：窗口内该基金有有效样本的周数（数据缺口周不计入） */
+  evaluable_weeks: number;
   consecutive_weeks: number;
+  /** 该基金在榜期间的数据缺口周（无榜 / 样本未更新）；不计入在榜、不打断连续 */
+  gap_weeks: string[];
   /** 最近上榜夏普（不是「当前夏普」，R3） */
   latest_sharpe: number | null;
   last_listed_week: string | null;
@@ -45,6 +58,16 @@ export interface SharpeBoardItem {
   /** 近 1 年/近 3 年收益（实时表当前值，仅展示） */
   ret_1y: number | null;
   ret_3y: number | null;
+  /** v2：近 12 周夏普≥0.8 的周数 / 分母（不足12周为实际周数） */
+  near_12w_qualified: number | null;
+  near_12w_total: number | null;
+  /** v2 滚动口径：同类排名分位（%，如前 14.2%）与数据日期 */
+  peer_pct: number | null;
+  peer_as_of: string | null;
+  /** v3 年度口径：各年分位 / 达标年数 / 评估年度窗口 */
+  peer_years: Record<string, number | null> | null;
+  peer_qualified_years: number | null;
+  peer_window: string[] | null;
 }
 
 /** 曲线序列（全部命中基金，不随 items 分页；values 长度 == weeks 长度） */
@@ -57,6 +80,8 @@ export interface SharpeBoardSeries {
 /** 数据状态透明化（成功空榜/采集失败/样本未更新可区分） */
 export interface SharpeBoardDiagnostics {
   no_board_weeks: string[];
+  /** 周历内数据不可用的周：没发榜，或该周有基金样本未更新（节假日休市等） */
+  gap_weeks: string[];
   latest_diagnostics: Record<string, unknown>;
 }
 
@@ -84,8 +109,8 @@ export interface SharpeBoardFilters {
   profileVersion: string;
   /** 展示下限：最近上榜夏普 ≥ X（含等于）；null = 不限 */
   minLatestSharpe: number | null;
-  /** 至少上榜几周（全历史累计） */
-  minWeeks: number;
+  /** 在榜占比下限（%，在榜周数 ÷ 可评周数；0=不限） */
+  minListedPct: number;
   /** 只看最新成功一周在榜的基金 */
   latestOnly: boolean;
   /** 图时间范围（只裁图，不改统计与命中集合） */
@@ -96,36 +121,44 @@ export interface SharpeBoardFilters {
 
 export const DEFAULT_SHARPE_FILTERS: SharpeBoardFilters = {
   source: 'discovery-stock',
-  profileVersion: 'v1',
+  profileVersion: 'v3',
   minLatestSharpe: null,
-  minWeeks: 1,
+  minListedPct: 60,
   latestOnly: false,
   range: 'all',
   page: 1,
   limit: 50,
 };
 
+/** 两态来源分段（「全部」已下线，见 SharpeSource）。顺序与基金列表页一致：市场 → 三分法。 */
 export const SOURCE_OPTIONS: { value: SharpeSource; label: string }[] = [
-  { value: 'discovery-stock', label: '股基·市场' },
-  { value: 'stock', label: '股基·雪球三分法' },
+  { value: 'discovery-stock', label: '市场' },
+  { value: 'stock', label: '三分法' },
 ];
 
 export const RANGE_OPTIONS: { value: SharpeRange; label: string }[] = [
-  { value: 'all', label: '全部' },
+  // 窗口恒为最近 52 周，range 只是窗口内的缩放；旧 '1y' 与 'all' 等价已移除，
+  // 按时长升序排列
   { value: '3m', label: '近 3 个月' },
   { value: '6m', label: '近 6 个月' },
-  { value: '1y', label: '近 1 年' },
+  { value: 'all', label: '近一年(52周)' },
 ];
 
 const SOURCES = new Set<string>(SOURCE_OPTIONS.map(o => o.value));
 const RANGES = new Set<string>(RANGE_OPTIONS.map(o => o.value));
 
-/** 从 URL 解析展示筛选；非法值逐字段回退默认（不抛错） */
+/**
+ * 从 URL 解析展示筛选；非法值逐字段回退默认（不抛错）。
+ *
+ * ⚠ `source=all` 的归一化：本页来源分段现只有「市场 | 三分法」两态（「全部」已下线），
+ * 老链接 ?source=all 不在 SOURCES 内 → 回落到默认来源「市场」，不会出现「一个分段都没
+ * 选中、请求却按 all 发出去」的状态。后端 API 仍支持 all，只是本页不再生成这个值。
+ */
 export function parseSharpeFiltersFromSearch(search: URLSearchParams): SharpeBoardFilters {
   const sourceRaw = search.get('source');
   const rangeRaw = search.get('range');
   const minSharpeRaw = search.get('min_latest_sharpe');
-  const minWeeksRaw = search.get('min_weeks');
+  const minPctRaw = search.get('min_listed_pct');
   const pageRaw = search.get('page');
   const limitRaw = search.get('limit');
   const filters: SharpeBoardFilters = { ...DEFAULT_SHARPE_FILTERS };
@@ -136,9 +169,10 @@ export function parseSharpeFiltersFromSearch(search: URLSearchParams): SharpeBoa
     const v = Number(minSharpeRaw);
     if (Number.isFinite(v) && v >= -10 && v <= 10) filters.minLatestSharpe = v;
   }
-  if (minWeeksRaw !== null && minWeeksRaw !== '') {
-    const v = Number(minWeeksRaw);
-    if (Number.isInteger(v) && v >= 1) filters.minWeeks = v;
+  // 旧参数 min_weeks（周数）已下线：旧链接落到默认 60%
+  if (minPctRaw !== null && minPctRaw !== '') {
+    const v = Number(minPctRaw);
+    if (Number.isFinite(v) && v >= 0 && v <= 100) filters.minListedPct = Math.round(v);
   }
   if (search.get('latest_only') === '1') filters.latestOnly = true;
   if (rangeRaw && RANGES.has(rangeRaw)) filters.range = rangeRaw as SharpeRange;
@@ -161,7 +195,9 @@ export function sharpeFiltersToSearch(filters: SharpeBoardFilters): URLSearchPar
     params.set('profile_version', filters.profileVersion);
   }
   if (filters.minLatestSharpe !== null) params.set('min_latest_sharpe', String(filters.minLatestSharpe));
-  if (filters.minWeeks !== DEFAULT_SHARPE_FILTERS.minWeeks) params.set('min_weeks', String(filters.minWeeks));
+  if (filters.minListedPct !== DEFAULT_SHARPE_FILTERS.minListedPct) {
+    params.set('min_listed_pct', String(filters.minListedPct));
+  }
   if (filters.latestOnly) params.set('latest_only', '1');
   if (filters.range !== DEFAULT_SHARPE_FILTERS.range) params.set('range', filters.range);
   if (filters.page !== DEFAULT_SHARPE_FILTERS.page) params.set('page', String(filters.page));
@@ -177,7 +213,7 @@ export function sharpeFiltersToQuery(filters: SharpeBoardFilters): string {
   params.set('range', filters.range);
   params.set('page', String(filters.page));
   params.set('limit', String(filters.limit));
-  params.set('min_weeks', String(filters.minWeeks));
+  params.set('min_listed_pct', String(filters.minListedPct));
   const q = params.toString();
   return q ? `?${q}` : '';
 }
@@ -228,7 +264,7 @@ export function classifySharpeBoard(
 export function sharpeFiltersActive(filters: SharpeBoardFilters): boolean {
   return (
     filters.minLatestSharpe !== null
-    || filters.minWeeks !== DEFAULT_SHARPE_FILTERS.minWeeks
+    || filters.minListedPct !== DEFAULT_SHARPE_FILTERS.minListedPct
     || filters.latestOnly
   );
 }
@@ -258,6 +294,21 @@ export function describeEntryFilters(profile: SharpeBoardProfile): string[] {
   if (exp !== null) out.push(`经理从业 ≥ ${exp} 年`);
   const sharpe = num(f.min_sharpe);
   if (sharpe !== null) out.push(`近三年夏普 ≥ ${sharpe}`);
+  // v2 三道新门（11-13 任务）
+  const ir = num(f.min_ir);
+  if (ir !== null) out.push(`信息比率 IR ≥ ${ir}`);
+  const days = num(f.min_sample_days);
+  if (days !== null) out.push(`样本交易日 ≥ ${days} 天`);
+  // v2 滚动口径
+  const peer = num(f.max_peer_pct);
+  if (peer !== null) out.push(`近三年同类排名前 ${peer}%`);
+  // v3 年度口径（与滚动口径互斥，不会同时出现）
+  const yearlyTop = num(f.min_yearly_top_pct);
+  const yearlyYears = num(f.min_yearly_years);
+  if (yearlyTop !== null && yearlyYears !== null) {
+    // 窗口固定 3 个完整年度（不含当年），min_yearly_years 是「其中至少几年达标」
+    out.push(`近 3 个完整年度中至少 ${yearlyYears} 年同类排名前 ${yearlyTop}%`);
+  }
   if (f.exclude_qdii === true) out.push('排除 QDII');
   return out;
 }
@@ -292,4 +343,46 @@ export function formatBoardTime(iso: string | null): string {
     minute: '2-digit',
     hour12: false,
   }).format(new Date(iso));
+}
+
+// ─────────────────────────────────────────────────────────────
+// 数据缺口周口径（11-14-sharpe-board-gap-weeks）
+//
+// 「近52周在榜」= 在榜周数 / 可评周数：分母是窗口内该基金**有有效样本**的周数。
+// 数据缺口周（没发榜 / 样本未更新）既不计入在榜，也不打断连续周数——
+// 连续段只被「可评却没上榜」的真实缺席打断。
+// ─────────────────────────────────────────────────────────────
+
+/** 在榜列文案：在榜/可评（51/51）；可评周数缺失（老后端）→ 只显示在榜周数 */
+export function formatListedWeeks(
+  listed: number,
+  evaluable: number | null | undefined,
+): string {
+  if (typeof evaluable !== 'number' || evaluable <= 0) return `${listed}`;
+  return `${listed}/${evaluable}`;
+}
+
+/** 在榜列 tooltip：分母口径 + 该基金的数据缺口周 */
+export function listedWeeksTip(
+  listed: number,
+  evaluable: number | null | undefined,
+  gapWeeks: readonly string[] = [],
+): string {
+  const head =
+    typeof evaluable === 'number' && evaluable > 0
+      ? `近 52 周在榜 ${listed}/${evaluable}：在榜 ${listed} 周 ÷ 可评 ${evaluable} 周（该基金有有效样本的周数）`
+      : `近 52 周在榜 ${listed} 周`;
+  if (gapWeeks.length === 0) return head;
+  return `${head}；数据缺口周（无榜 / 样本未更新，不计入在榜、也不打断连续）：${gapWeeks.join('、')}`;
+}
+
+/** 连续周数列 tooltip：连续段口径 + 该基金的数据缺口周 */
+export function consecutiveWeeksTip(
+  consecutive: number,
+  gapWeeks: readonly string[] = [],
+): string {
+  const base =
+    `最近连续 ${consecutive} 周：从最近上榜周逐周往回数；数据缺口周跳过、不中断，真实缺席（可评却未上榜）才中断`;
+  if (gapWeeks.length === 0) return base;
+  return `${base}；该基金的数据缺口周：${gapWeeks.join('、')}`;
 }

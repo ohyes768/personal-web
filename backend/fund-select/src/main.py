@@ -30,6 +30,7 @@ from src.api.routes import (
 )
 from src.api.manager_routes import router as router_managers
 from src.api.sharpe_board import router as sharpe_board_router
+from src.api.sharpe_trend import router as sharpe_trend_router
 from src.db.session import init_db
 from src.scheduler.manager import SchedulerManager
 from src.scheduler.routes import router as scheduler_router
@@ -79,6 +80,7 @@ app.include_router(scheduler_router, prefix="/api/funds")
 # 静态 /sharpe-board 与 /managers 必须在通用 /{code} 详情路由（router）之前注册：
 # FastAPI 按注册顺序匹配，后注册会被 /{code} 吞掉当基金代码查（404）
 app.include_router(sharpe_board_router, prefix="/api/funds")
+app.include_router(sharpe_trend_router, prefix="/api/funds")
 app.include_router(router_managers, prefix="/api/funds")
 app.include_router(router, prefix="/api/funds")
 app.include_router(router_stock, prefix="/api/funds")

@@ -1,7 +1,7 @@
 """valuation 路由集成测试（TestClient + 假 Hermes，不真连）。
 
 覆盖：analyze 受理/503/400/422、GET /valuation、apply 成功/陈旧 409/非 ready 400/未收藏 404、
-alerts/enabled 暂停恢复、失败与未应用不覆盖旧监控。
+失败与未应用不覆盖旧挡位（推送与监控已移除，不再有启停接口）。
 """
 import json
 import time
@@ -89,7 +89,7 @@ def configure_hermes(monkeypatch, version="1.0.0", status="ready"):
     monkeypatch.setenv("HERMES_BASE_URL", "http://nas:8642")
     monkeypatch.setenv("HERMES_API_KEY", "secret")
     monkeypatch.setenv("HERMES_VALUATION_SKILL_VERSION", version)
-    monkeypatch.setattr(routes, "submit_run", lambda cfg, prompt, key: key)
+    monkeypatch.setattr(routes, "submit_run", lambda cfg, prompt, key, instructions="": key)
     monkeypatch.setattr(routes, "poll_run",
                         lambda cfg, run_id: fake_report(run_id.split("-")[1], "样本", status=status))
     # _watch 路径用的单次查询/停止也要打桩
@@ -127,6 +127,23 @@ class TestAnalyze:
         monkeypatch.delenv("HERMES_API_KEY", raising=False)
         response = test_client.post("/valuation/analyze", json={"codes": ["000001"]})
         assert response.status_code == 503
+
+    def test_failed_analysis_exposes_run_id_for_session_download(self, client, monkeypatch):
+        test_client, manager, _, _ = client
+        monkeypatch.setenv("HERMES_BASE_URL", "http://nas:8642")
+        monkeypatch.setenv("HERMES_API_KEY", "secret")
+        monkeypatch.setenv("HERMES_VALUATION_SKILL_VERSION", "1.0.0")
+        monkeypatch.setattr(routes, "submit_run", lambda cfg, prompt, key, instructions="": "run-fail-1")
+        monkeypatch.setattr(routes, "poll_run", lambda cfg, run_id: "")
+        monkeypatch.setattr(routes, "get_run", lambda cfg, run_id: {"status": "failed", "error": "boom"})
+        monkeypatch.setattr(routes, "stop_run", lambda cfg, run_id: "stopping")
+        accepted = test_client.post("/valuation/analyze", json={"codes": ["000001"]})
+        assert accepted.status_code == 202
+        assert wait_job(manager, accepted.json()["job_id"])["status"] == "failed"
+        # 失败也要带 run_id：界面据此下载失败那次的会话记录
+        per_code = test_client.get("/valuation").json()["per_code"]
+        assert per_code["000001"]["state"] == "failed"
+        assert per_code["000001"]["run_id"] == "run-fail-1"
 
     def test_code_not_in_pool_400(self, client, monkeypatch):
         test_client, _, _, _ = client
@@ -203,33 +220,6 @@ class TestApply:
         assert response.status_code == 404
 
 
-class TestAlertsEnabled:
-    def test_pause_keeps_levels(self, client):
-        test_client, _, _, _ = client
-        response = test_client.put("/favorites/600000/alerts/enabled", json={"enabled": False})
-        assert response.status_code == 200
-        item = next(it for it in response.json()["items"] if it["code"] == "600000")
-        assert item["alerts"]["enabled"] is False
-        assert item["alerts"]["levels"]["heavy_position"]["price"] == 9.0
-
-    def test_resume(self, client):
-        test_client, _, _, _ = client
-        assert test_client.put("/favorites/600000/alerts/enabled", json={"enabled": False}).status_code == 200
-        response = test_client.put("/favorites/600000/alerts/enabled", json={"enabled": True})
-        item = next(it for it in response.json()["items"] if it["code"] == "600000")
-        assert item["alerts"]["enabled"] is True
-
-    def test_no_alerts_400(self, client):
-        test_client, _, _, _ = client
-        response = test_client.put("/favorites/000001/alerts/enabled", json={"enabled": False})
-        assert response.status_code == 400
-
-    def test_not_favorited_404(self, client):
-        test_client, _, _, _ = client
-        response = test_client.put("/favorites/999999/alerts/enabled", json={"enabled": False})
-        assert response.status_code == 404
-
-
 class TestOldMonitorPreserved:
     def test_failed_evaluation_never_touches_alerts(self, client, monkeypatch):
         test_client, _, favorites, _ = client
@@ -237,7 +227,7 @@ class TestOldMonitorPreserved:
         monkeypatch.setenv("HERMES_BASE_URL", "http://nas:8642")
         monkeypatch.setenv("HERMES_API_KEY", "secret")
         monkeypatch.setenv("HERMES_VALUATION_SKILL_VERSION", "1.0.0")
-        monkeypatch.setattr(routes, "submit_run", lambda cfg, prompt, key: key)
+        monkeypatch.setattr(routes, "submit_run", lambda cfg, prompt, key, instructions="": key)
         monkeypatch.setattr(routes, "poll_run",
                             lambda cfg, run_id: (_ for _ in ()).throw(Exception("run 失败")))
         monkeypatch.setattr(routes, "get_run",

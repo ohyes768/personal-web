@@ -71,6 +71,13 @@
   （`/api` 同时覆盖外部的 `/api/services/*` 与后端直连的 `/api/*`；不能写成 `/api/services`，否则直连全 401）。
 - 写请求（非 GET/HEAD/OPTIONS）必须带 Origin，且满足其一：与请求 Host 同源 / 命中 allowlist /
   与 `X-Forwarded-Host` 同源**且直连方是回环地址**（仅开发期 Next rewrite 用）。
+- **直连前端容器端口时写操作会被拒**（e2e / SSH 隧道场景）：Next 的 rewrite 代理是
+  `changeOrigin: true`，会把 `Host` 改写成后端容器地址（`service-manager-backend:8102`），
+  后端按 `Origin == Host` 判同源必然不等；而「信任 `X-Forwarded-Host`」那条只认回环直连方，
+  容器网桥的源 IP 不是回环 → 401「请求来源不被允许」。生产走 nginx 不受影响
+  （nginx 用 `$http_host` 保留原始 Host）。修法是给后端显式 allowlist 回环来源：
+  NAS compose 默认 `SERVICE_MANAGER_ALLOWED_ORIGINS=http://127.0.0.1:3012,http://localhost:3012`，
+  只放开这两个确切来源，伪造来源（`https://evil.example`、换个端口、换 IP）依旧 401。
 - **反代的 `$host` 不含端口**：nginx 文档里 `$host` 是「去掉端口的 host 名」，
   而浏览器 Origin 带端口（`https://web.duomi77.cn:9443`）。字面比较必然不等 →
   生产上所有写操作 401，而开发期 Next rewrite 会带 `X-Forwarded-Host` 所以本地正常。
@@ -78,26 +85,76 @@
   「hostname 与 scheme 相同即接受」（跨站仍拒绝）。这是「本地正常、生产炸」的真实案例。
 - 登录失败按来源限速 5 次/分钟。生产缺口令或签名密钥时 `Settings` 直接抛错，拒绝启动。
 
-### 2.7 分组（自己开发的 vs 其他）
+### 2.7 归属（ownership）已退役
 
-- `GET /api/services` 的每项带 `projects`：该服务包含的 compose 项目，
+- `services.ownership` **列已删除**：API 不再接受也不再返回；列表也不再按它分组。
+- **语义交给标签**：谁维护哪些服务，用 `personal-web` 这类标签表达（手动打，导入不自动加）。
+  不要为了「分组」再往台账里加第二个说法——两套语义并存必然漂移。
+- 迁移：启动时直接 `ALTER TABLE services DROP COLUMN ownership`
+  （`Store._drop_column`，列不存在时是 no-op）。**不把旧值迁成标签**——
+  用户已手动打好标签，迁移只会造出重复标签。
+- 连带下线：`SERVICE_MANAGER_OWN_PROJECTS` 环境变量、`summary.own_projects` 字段
+  （曾经用来按 compose 项目名单推导分组，现在没有任何消费者）。
+- `GET /api/services` 的每项仍带 `projects`：该服务包含的 compose 项目，
   由 `service_components.source_key`（`nas:compose:{project}:...`）反解，**不额外问 Docker**；
-  没有 compose 标签的游离容器（`nas:container:*`）不进任何项目。
-- `GET /api/summary` 带 `own_projects`：哪些 compose 项目算「我自己开发的」，
-  由 `SERVICE_MANAGER_OWN_PROJECTS`（逗号分隔，默认 `personal-web`）决定。
-- 前端据此把列表分成两个 tab。分组是**纯展示**，不改任何检查口径，
-  一个服务同时属于多个项目时，只要命中任一 own 项目就算「自己那组」；
-  **一个组件都没关联的服务**（人工登记）也算「自己那组」，
-  而「有容器但没有 compose 标签」（`nas:container:*`）算其他。
+  只作来源信息展示。
 
 ### 2.8 备份与恢复
 
 - 导出只含**人工表**：services / service_components / component_overrides / endpoints / port_notes /
   release_sources / discovery_decisions。排除观测、检查结果、job、release 缓存与已读、以及任何凭据。
+  恢复时**归属也一起还原**；老备份没有 `ownership` 字段时按 2.7 的默认口径兜底，不要全落一边。
 - 恢复三步不可省：`preview`（返回 digest + registry_revision）→ 用**同一份字节** `restore` →
   校验 digest 与 revision 一致 → 先 `backup_to()` 落一份本地快照 → 单事务替换 → 失败整笔回滚。
 - 恢复会清空 `check_results` 与 `release_reads`，并把 `release_sync.baseline_done` 归零
   （下次同步重建基线，避免历史未读轰炸）。恢复**不触发**任何外部检查。
+
+### 2.8 标签
+
+- 标签是**人工表上的一个 JSON 数组**（`services.tags`），**没有独立标签表**：没有标签 ID，
+  因此不支持重命名 / 合并 / 使用计数。
+- 契约：单个标签 **≤32 字符**、每条服务 **≤20 个**、保存时**去重并按字典序排序**
+  （`clean_tags()`；排序让筛选栏那排标签的顺序稳定）。
+- `PATCH /api/services/{id}` 的 `tags` 是**全量替换**语义（不是增量）。
+- `GET /api/summary` 带 `all_tags`：**全库标签词表**（所有服务标签的并集，排序）。
+  筛选栏的候选项必须用它——从「当前搜索命中的那几条」派生的话，
+  一搜索候选词表就缩水，用户没法选别的标签。
+- `GET /api/services?tag=x` 仍是**单标签**过滤（前端做多选 AND 过滤，不走后端）。
+
+### 2.9 分类退役（category 已下线）
+
+- `category` 字段**已删除**：前端不再有分类下拉/输入框，API 不再收也不再返回。
+- 迁移在 `registry.migrate_category_to_tags()`：**先转标签、后删列**，同一事务内完成，
+  中途失败整笔回滚。删列不可逆（`ALTER TABLE services DROP COLUMN`，需 SQLite ≥3.35）。
+- 迁移幂等：列不存在时什么都不做（新建的库本来就没有这一列）。
+- 旧备份里带 `category` 键的：恢复时**忽略**，不报错。
+- 备份导出**显式列名**（不再 `SELECT *`），避免把已退役的字段又带进备份。
+
+### 2.10 界面已下线、实现暂留的能力
+
+前端砍掉了详情页与入口/发布/组件明细等界面，但**后端实现、接口、数据一律保留**：
+
+| 能力 | 后端状态 |
+|------|---------|
+| `GET /api/services/{id}`（服务详情） | 仍可用（200） |
+| 入口 CRUD（`/services/{id}/endpoints*`） | 仍可用；20 条入口数据仍在库里 |
+| `PUT /services/{id}/primary-endpoint` | **新增**：只收 `url`，按 URL 判定 kind/tls_check 并 upsert（列表页行内改 URL 用它） |
+| 人工端口（`port-notes`）、发布源（`release-source`）、`/services/{id}/releases` | 仍可用 |
+| URL / TLS / Release 检查（`checker.py`、`checks/`） | **仍在跑**（巡检接口仍可用），只是前端不再展示 URL/证书/发布三个维度 |
+| 资源总览的 `/resources/domains`、`/resources/certificates` | 仍可用（数据源是入口） |
+
+要点：
+
+- **下线的是界面，不是检查**：后端仍会检查各入口的 URL 与证书并写 `check_results`。
+  2026-11-14 起列表页**恢复**了「主入口」与「证书」两列（URL 行内可编辑，证书显示状态与到期天数）；
+  **URL / 发布**两个维度仍不展示（发布没有任何仓库关联，显示只会是假状态）。
+- `GET /api/services` 的每项带 `primary_endpoint`（url/label/kind/tls_check + 证书状态与到期天数
+  + `server_port`：主入口 URL 上的端口，用 `parse_http_url(...).effective_port` 算，与证书检查
+  的口径一致（省略端口时取 scheme 默认 443/80）；
+  主入口的选取规则与既有行为一致：**external 优先，否则第一个**。
+- **备份格式不变**：导出仍含 endpoints / port_notes / release_sources；
+  旧备份恢复照旧能用。
+- 分类（category）与归属（ownership）两列已删，导出用**显式列名**（不再 `SELECT *`）。
 
 ## 3. 验证命令
 
