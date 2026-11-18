@@ -29,7 +29,9 @@ import {
   VALUATION_ZONE_COLOR,
   VALUATION_ZONE_LABEL,
   VALUATION_ZONE_TEXT_COLOR,
+  areLevelsSemanticallyValid,
   buildValuationQueue,
+  hasAllFourLevels,
   deriveFavoriteTrackingState,
   deriveTrackingActions,
   deriveValuationAttempt,
@@ -237,7 +239,7 @@ export function FavoritesTrackingTab({
         <div className="rounded-lg border border-rule bg-paper-tint px-4 py-2.5 flex items-center justify-between gap-3">
           <p className="text-sm text-ink">
             <b>{pendingApplyCount} 份挡位评估等待确认</b>
-            <span className="text-ink-muted"> · 包含首次评估与已有挡位后的新评估，应用前旧挡位持续生效</span>
+            <span className="text-ink-muted"> · 应用前旧挡位持续生效</span>
           </p>
           <button type="button" className={`${chip} ${chipActive} shrink-0`} onClick={() => setFilter('ready')}>
             查看待应用
@@ -292,9 +294,8 @@ export function FavoritesTrackingTab({
         </p>
       )}
       {!configured && (
-        <div className="rounded-lg border border-amber-400/40 bg-warn-tint px-4 py-2.5 text-sm text-amber-900">
-          自动评估未启用（后端缺 HERMES_BASE_URL / HERMES_API_KEY）。
-          不影响阅读与监控——每行「挡位设置」可手动配置价格挡位，配置后自动接管。
+        <div className="rounded-lg border border-warn bg-warn-tint px-4 py-2.5 text-sm text-warn-deep">
+          自动评估暂未启用（后端未完成配置）。阅读与监控不受影响，每行「挡位设置」可手动配置价格挡位，配置后自动接管。
         </div>
       )}
 
@@ -307,7 +308,7 @@ export function FavoritesTrackingTab({
               <th className="p-3 font-medium">基本面</th>
               <th className="p-3 font-medium">现价（元）</th>
               <th className="p-3 font-medium min-w-[440px]">挡位（元）</th>
-              <th className="p-3 font-medium" title="现价落在哪一区，以及再涨/跌多少会改变告警动作">区间</th>
+              <th className="p-3 font-medium">区间</th>
               <th className="p-3 font-medium">评估</th>
               <th className="p-3 font-medium">操作</th>
             </tr>
@@ -334,7 +335,7 @@ export function FavoritesTrackingTab({
             ))}
             {visible.length === 0 && (
               <tr>
-                <td colSpan={6} className="p-10 text-center text-ink-muted">
+                <td colSpan={7} className="p-10 text-center text-ink-muted">
                   {rows.length === 0
                     ? '还没有收藏的股票，去「全部」或「选股关注」添加收藏。'
                     : '没有符合条件的收藏股，试试其他状态或搜索词。'}
@@ -512,15 +513,18 @@ function TrackingRow({
 
   // 「区间」列：当前所在区 + 到下一个会改变告警动作的价格线还有多远。
   // 口径见 resolveValuationZone / resolveZoneSteps（与后端 AlertService 一致）。
+  const zoneSource = levels ?? candidateLevels;
+  const zoneInvalid = zoneSource != null
+    && hasAllFourLevels(zoneSource)
+    && !areLevelsSemanticallyValid(zoneSource);
   const zoneInfo = useMemo(() => {
-    const source = levels ?? candidateLevels;
-    if (!source || currentPrice == null) return null;
-    const zone = resolveValuationZone(source, currentPrice);
+    if (!zoneSource || currentPrice == null) return null;
+    const zone = resolveValuationZone(zoneSource, currentPrice);
     return {
       zone,
-      steps: resolveZoneSteps(source, currentPrice),
+      steps: resolveZoneSteps(zoneSource, currentPrice),
     };
-  }, [levels, candidateLevels, currentPrice]);
+  }, [zoneSource, currentPrice]);
 
   const evalPill = (() => {
     if (isAttemptRunning(attempt.state)) {
@@ -563,21 +567,21 @@ function TrackingRow({
     }
     if (actions.evaluate === 'evaluate') {
       return (
-        <button type="button" className={primaryBtn} disabled={!configured} title={configured ? '调用 Hermes 四挡位估值（约几分钟）' : 'Hermes 未配置'} onClick={onEvaluate}>
+        <button type="button" className={primaryBtn} disabled={!configured} title={configured ? '生成四挡位估值建议（约几分钟）' : '自动评估暂未启用（后端未完成配置）'} onClick={onEvaluate}>
           评估挡位
         </button>
       );
     }
     if (actions.evaluate === 'retry') {
       return (
-        <button type="button" className={primaryBtn} disabled={!configured} title={configured ? '重试这次失败的估值' : 'Hermes 未配置'} onClick={onEvaluate}>
+        <button type="button" className={primaryBtn} disabled={!configured} title={configured ? '重试这次失败的估值' : '自动评估暂未启用（后端未完成配置）'} onClick={onEvaluate}>
           重试评估
         </button>
       );
     }
     if (actions.evaluate === 'reevaluate') {
       return (
-        <button type="button" className={primaryBtn} disabled={!configured} title={configured ? '用 Hermes 重新评估这一只（约几分钟）' : 'Hermes 未配置'} onClick={onEvaluate}>
+        <button type="button" className={primaryBtn} disabled={!configured} title={configured ? '重新评估这一只（约几分钟）' : '自动评估暂未启用（后端未完成配置）'} onClick={onEvaluate}>
           再评估
         </button>
       );
@@ -623,7 +627,7 @@ function TrackingRow({
             type="button"
             className={ghostBtn}
             disabled={!qualityConfigured}
-            title={qualityConfigured ? '对这只股票调用 AI 五维基本面评级（约几分钟）' : 'Hermes 未配置（需 HERMES_BASE_URL 与 HERMES_API_KEY），无法评级'}
+            title={qualityConfigured ? '对这只股票调用 AI 五维基本面评级（约几分钟）' : '自动评级暂未启用（后端未完成配置）'}
             onClick={onAnalyzeQuality}
           >
             分析
@@ -743,6 +747,10 @@ function TrackingRow({
               </div>
             ))}
           </div>
+        ) : zoneInvalid ? (
+          <span className="text-xs text-ink-muted max-w-[152px] whitespace-normal">
+            挡位顺序异常，无法判断区间
+          </span>
         ) : (
           <span className="text-xs text-ink-muted">—</span>
         )}

@@ -8,7 +8,7 @@
  */
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Modal } from './shared-ui/Modal';
 import { Button } from './shared-ui/Button';
 import type {
@@ -20,6 +20,8 @@ import type {
 } from '@/lib/types';
 import { formatBeijingTs } from '@/lib/formatTs';
 import {
+  correctLevelsByPrice,
+  hasAllFourLevels,
   resolveValuationZone,
   VALUATION_ZONE_TEXT_COLOR,
   VALUATION_ZONE_LABEL,
@@ -76,8 +78,9 @@ function levelsToForm(levels?: AlertLevels | null): AlertLevels {
   };
 }
 
-function formatUpdatedAt(iso?: string | null): string {
-  if (!iso) return '从未设置';
+/** 右上角「更新于」文案：有挡位但时间缺失（老数据）时不能再说「从未设置」，否则与列表里的挡位条互相矛盾 */
+function formatUpdatedAt(iso: string | null | undefined, hasLevels: boolean): string {
+  if (!iso) return hasLevels ? '已设置' : '从未设置';
   return formatBeijingTs(iso) ?? iso;
 }
 
@@ -94,18 +97,28 @@ export function AlertSettingsModal({
   const [levels, setLevels] = useState<AlertLevels>({ ...EMPTY_LEVELS });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // 行内确认（替代原生 confirm()）：挡位顺序异常时的「仍要保存」、清除配置前的二次确认
+  // 挡位顺序异常：阻断保存（不猜、不放行），四档全填时提供按价格升序的自动纠正；
+  // confirmClear：清除配置前的二次确认（替代原生 confirm()）
   const [orderWarnMsg, setOrderWarnMsg] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
 
-  // 同步 currentConfig 到本地表单
+  // 同步 currentConfig 到本地表单：仅在打开、或服务器配置内容真正变化时。
+  // currentConfig 是父组件每次渲染新建的对象（页面有 2s 级轮询重渲染），
+  // 直接依赖对象引用会把用户正在编辑的值和警告面板每几秒冲掉一次。
+  const configSig = useMemo(() => JSON.stringify(currentConfig?.levels ?? null), [currentConfig]);
+  const lastSigRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      lastSigRef.current = null;
+      return;
+    }
+    if (lastSigRef.current === configSig) return; // 内容没变，只是引用变了
+    lastSigRef.current = configSig;
     setLevels(levelsToForm(currentConfig?.levels));
     setError(null);
     setOrderWarnMsg(null);
     setConfirmClear(false);
-  }, [isOpen, currentConfig]);
+  }, [isOpen, configSig, currentConfig]);
 
   const currentPrice = technical?.realtime ?? technical?.close ?? null;
 
@@ -221,7 +234,7 @@ export function AlertSettingsModal({
             </span>
           )}
           <span className="text-ink-muted ml-auto">
-            更新于 <span className="font-mono text-ink">{formatUpdatedAt(currentUpdatedAt)}</span>
+            更新于 <span className="font-mono text-ink">{formatUpdatedAt(currentUpdatedAt, validLevelCount > 0)}</span>
           </span>
         </div>
 
@@ -250,6 +263,7 @@ export function AlertSettingsModal({
                   step="0.01"
                   min="0"
                   placeholder="0.00"
+                  aria-label={`${label} 价格`}
                   value={priceStr}
                   onChange={e => updateLevel(key, 'price', e.target.value)}
                   className="bg-paper-card border border-rule rounded px-2 py-1 text-right font-mono text-sm focus:outline-none focus:border-accent"
@@ -259,6 +273,7 @@ export function AlertSettingsModal({
                   step="0.1"
                   min="0"
                   placeholder="-"
+                  aria-label={`${label} PE（选填）`}
                   value={peStr}
                   onChange={e => updateLevel(key, 'pe', e.target.value)}
                   className="bg-paper-card border border-rule rounded px-2 py-1 text-right font-mono text-sm focus:outline-none focus:border-accent"
@@ -268,6 +283,7 @@ export function AlertSettingsModal({
                   step="0.01"
                   min="0"
                   placeholder="-"
+                  aria-label={`${label} PB（选填）`}
                   value={pbStr}
                   onChange={e => updateLevel(key, 'pb', e.target.value)}
                   className="bg-paper-card border border-rule rounded px-2 py-1 text-right font-mono text-sm focus:outline-none focus:border-accent"
@@ -289,20 +305,30 @@ export function AlertSettingsModal({
         </div>
 
         {orderWarnMsg && (
-          <div className="border border-rule-strong bg-warn-tint rounded px-3 py-2 text-sm text-warn-deep">
-            <div className="font-medium">挡位价格顺序异常：</div>
+          <div className="border border-rule-strong bg-warn-tint rounded px-3 py-2 text-sm text-warn-deep" role="alert">
+            <div className="font-medium">挡位价格顺序异常，已阻止保存：</div>
             <ul className="mt-1 list-disc list-inside text-ink">
               {orderWarnMsg.split('\n').map(line => (
                 <li key={line}>{line.replace(/^· /, '')}</li>
               ))}
             </ul>
+            {hasAllFourLevels(validLevels) && (
+              <p className="mt-2 text-ink">
+                四条线都填了但买线高于卖线，监控方向会反。可以按价格升序自动纠正（最低→重仓、次低→加仓、次高→减仓、最高→全卖），纠正后请再点保存。
+              </p>
+            )}
             <div className="mt-2 flex gap-2">
               <Button size="sm" variant="secondary" onClick={() => setOrderWarnMsg(null)}>
                 返回修改
               </Button>
-              <Button size="sm" variant="primary" onClick={doSave} disabled={saving}>
-                仍要保存
-              </Button>
+              {hasAllFourLevels(validLevels) && (
+                <Button size="sm" variant="primary" disabled={saving} onClick={() => {
+                  setLevels(correctLevelsByPrice(validLevels));
+                  setOrderWarnMsg(null);
+                }}>
+                  按价格自动纠正
+                </Button>
+              )}
             </div>
           </div>
         )}
@@ -340,22 +366,31 @@ export function AlertSettingsModal({
 }
 
 /**
- * 检查 4 档价格是否满足"重仓 < 加仓 < 减仓 < 全卖"
- * 返回警告字符串（不满足时）；返回空串表示 OK
+ * 检查挡位语义：买线（重仓/加仓）必须全低于卖线（减仓/全卖），
+ * 组内 重仓<加仓、减仓<全卖。只查相邻对会漏掉「重仓 42 / 全卖 30」这类
+ * 全反置（神华存量数据），所以买×卖每个交叉对都要查。
+ * 返回警告字符串（不满足时）；返回空串表示 OK。
  */
 function checkLevelOrder(levels: AlertLevels): string {
   const warnings: string[] = [];
-  const pairs: Array<[LevelKey, LevelKey, string]> = [
-    ['heavy_position', 'add_position', '加仓价应高于重仓价'],
-    ['add_position', 'reduce_position', '减仓价应高于加仓价'],
-    ['reduce_position', 'full_exit', '全卖价应高于减仓价'],
-  ];
-  for (const [a, b, msg] of pairs) {
-    const la = levels[a];
-    const lb = levels[b];
-    if (la && lb && la.price > 0 && lb.price > 0 && la.price >= lb.price) {
-      warnings.push(`· ${msg}（${la.price} ≥ ${lb.price}）`);
+  const label: Record<LevelKey, string> = {
+    heavy_position: '重仓', add_position: '加仓', reduce_position: '减仓', full_exit: '全卖',
+  };
+  const price = (k: LevelKey) => levels[k]?.price ?? 0;
+  const has = (k: LevelKey) => price(k) > 0;
+
+  for (const b of ['heavy_position', 'add_position'] as const) {
+    for (const s of ['reduce_position', 'full_exit'] as const) {
+      if (has(b) && has(s) && price(b) >= price(s)) {
+        warnings.push(`· ${label[b]}价（${price(b)}）应低于${label[s]}价（${price(s)}）`);
+      }
     }
+  }
+  if (has('heavy_position') && has('add_position') && price('heavy_position') >= price('add_position')) {
+    warnings.push(`· 重仓价应低于加仓价（${price('heavy_position')} ≥ ${price('add_position')}）`);
+  }
+  if (has('reduce_position') && has('full_exit') && price('reduce_position') >= price('full_exit')) {
+    warnings.push(`· 减仓价应低于全卖价（${price('reduce_position')} ≥ ${price('full_exit')}）`);
   }
   return warnings.join('\n');
 }

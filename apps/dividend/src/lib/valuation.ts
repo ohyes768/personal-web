@@ -565,6 +565,49 @@ export const VALUATION_ALERT_LABEL: Record<ValuationLevelKey, string> = {
   full_exit: '全部清仓',
 };
 
+/** 四档是否填齐（全部 price > 0） */
+export function hasAllFourLevels(levels: AlertLevels | null | undefined): boolean {
+  return !!levels && VALUATION_LEVEL_KEYS.every(k => (levels[k]?.price ?? 0) > 0);
+}
+
+/**
+ * 四档语义有效性：重仓 < 加仓 < 减仓 < 全卖（买线全低于卖线）。
+ *
+ * 存量数据可能存在 key 反置（如 重仓=42 / 全卖=30）：旧版按价格位置解构
+ * 会默默接受这类配置，但买/卖方向是错的。下游（价格条 / 区间列 / 设置弹框）
+ * 用本函数统一判「挡位配置异常」，不再猜测。
+ */
+export function areLevelsSemanticallyValid(levels: AlertLevels | null | undefined): boolean {
+  if (!levels) return false;
+  const g = (k: ValuationLevelKey) => levels[k]?.price;
+  const heavy = g('heavy_position');
+  const add = g('add_position');
+  const reduce = g('reduce_position');
+  const full = g('full_exit');
+  if ([heavy, add, reduce, full].some(p => p == null || !(p > 0))) return false;
+  return heavy! < add! && add! < reduce! && reduce! < full!;
+}
+
+/**
+ * 顺序反置的自动纠正：把四条线按价格升序重映射回 重仓/加仓/减仓/全卖。
+ * 无法从数据反推用户本意（PE 与价格正相关），但升序唯一符合表单语义
+ * （「跌破→买」「涨破→卖」），故作为唯一可辩护的纠正。
+ * 不足四条或价格重复时原样返回（不动数据）。
+ */
+export function correctLevelsByPrice(levels: AlertLevels): AlertLevels {
+  const list = VALUATION_LEVEL_KEYS
+    .map(key => levels[key])
+    .filter((lv): lv is NonNullable<AlertLevels[ValuationLevelKey]> => lv != null && lv.price > 0);
+  if (list.length !== VALUATION_LEVEL_KEYS.length) return levels;
+  const sorted = [...list].sort((a, b) => a.price - b.price);
+  if (sorted.some((p, i) => i > 0 && p.price <= sorted[i - 1].price)) return levels;
+  const out: AlertLevels = { heavy_position: null, add_position: null, reduce_position: null, full_exit: null };
+  for (let i = 0; i < VALUATION_LEVEL_KEYS.length; i++) {
+    out[VALUATION_LEVEL_KEYS[i]] = { ...sorted[i] };
+  }
+  return out;
+}
+
 export interface ValuationZoneResult {
   /** 现价所在区间；档位不足四条时判不出（null） */
   zone: ValuationZone | null;
@@ -585,6 +628,9 @@ export interface ValuationZoneResult {
  * ≤重仓=重仓区、≤加仓=加仓区、≤减仓=持有区、≤全卖=减仓区、>全卖=全卖区。
  * 命中判定严格复刻后端 AlertService._find_hit_level：先卖后买、severity 高者优先，
  * 持有区两边都不命中（不推提醒）。
+ *
+ * 区间判定按 key 取价（不再按价格位置解构）：顺序反置的存量配置（重仓线反而
+ * 高于全卖线）会返回空结果——方向错了宁可空着，也不能标错区。
  */
 export function resolveValuationZone(
   levels: AlertLevels | null | undefined,
@@ -600,9 +646,14 @@ export function resolveValuationZone(
     .filter((p): p is { key: ValuationLevelKey; price: number } => p.price != null && p.price > 0);
   // 不足四条线判不出区间（手工配置可能只填一档）
   if (points.length !== VALUATION_LEVEL_KEYS.length) return empty;
+  // 顺序反置（买线高于卖线）时不猜测、不画错区：返回空，由 UI 显式提示「挡位配置异常」
+  if (!areLevelsSemanticallyValid(levels)) return empty;
 
-  const sorted = [...points].sort((a, b) => a.price - b.price);
-  const [heavy, add, reduce, full] = sorted;
+  const g = (k: ValuationLevelKey) => points.find(p => p.key === k)!;
+  const heavy = g('heavy_position');
+  const add = g('add_position');
+  const reduce = g('reduce_position');
+  const full = g('full_exit');
 
   const zone: ValuationZone = price <= heavy.price ? 'heavy'
     : price <= add.price ? 'add'
@@ -666,9 +717,14 @@ export function resolveZoneSteps(
     .map(key => ({ key, price: levels[key]?.price }))
     .filter((p): p is { key: ValuationLevelKey; price: number } => p.price != null && p.price > 0);
   if (points.length !== VALUATION_LEVEL_KEYS.length) return [];
+  // 顺序反置时不编造「下一步」（口径同 resolveValuationZone）
+  if (!areLevelsSemanticallyValid(levels)) return [];
 
-  const sorted = [...points].sort((a, b) => a.price - b.price);
-  const [heavy, add, reduce, full] = sorted;
+  const g = (k: ValuationLevelKey) => points.find(p => p.key === k)!;
+  const heavy = g('heavy_position');
+  const add = g('add_position');
+  const reduce = g('reduce_position');
+  const full = g('full_exit');
   const step = (point: typeof heavy, direction: ValuationZoneStep['direction']): ValuationZoneStep => ({
     key: point.key,
     price: point.price,

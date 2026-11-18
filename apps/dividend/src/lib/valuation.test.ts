@@ -7,9 +7,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  areLevelsSemanticallyValid,
+  correctLevelsByPrice,
   deriveTrackingActions,
   deriveValuationAttempt,
   deriveValuationEvalState,
+  hasAllFourLevels,
   resolveValuationZone,
   resolveZoneSteps,
 } from './valuation.ts';
@@ -143,6 +146,63 @@ test('档位/现价不完整时区间列留空（不编造）', () => {
   assert.deepEqual(resolveZoneSteps(four, null), []);
   assert.deepEqual(resolveZoneSteps(null, 30), []);
   assert.deepEqual(resolveZoneSteps(four, 0), []);
+});
+
+/* ---------------- 语义校验与自动纠正：顺序反置不再被默默接受 ---------------- */
+
+test('语义校验：重仓<加仓<减仓<全卖 才有效', () => {
+  assert.equal(areLevelsSemanticallyValid(four), true);
+  assert.equal(areLevelsSemanticallyValid({
+    heavy_position: { price: 42 }, add_position: { price: 38 },
+    reduce_position: { price: 34 }, full_exit: { price: 30 },
+  }), false);
+  // 部分缺失不算「四条线全填」
+  assert.equal(hasAllFourLevels({ heavy_position: { price: 10 } }), false);
+  assert.equal(hasAllFourLevels(four), true);
+});
+
+test('顺序反置时区间判定返回空（不猜、不标错区）', () => {
+  const inverted: AlertLevels = {
+    heavy_position: { price: 42 }, add_position: { price: 38 },
+    reduce_position: { price: 34 }, full_exit: { price: 30 },
+  };
+  const r = resolveValuationZone(inverted, 39.5);
+  assert.equal(r.zone, null);
+  assert.equal(r.willTrigger, false);
+  assert.deepEqual(resolveZoneSteps(inverted, 39.5), []);
+});
+
+test('买线高于卖线（相邻对不反置也反置）同样判无效', () => {
+  const crossed: AlertLevels = {
+    heavy_position: { price: 26 }, add_position: { price: 30 },
+    reduce_position: { price: 29 }, full_exit: { price: 44 },
+  };
+  assert.equal(areLevelsSemanticallyValid(crossed), false);
+});
+
+test('自动纠正：四条线按价格升序重映射回 重仓/加仓/减仓/全卖', () => {
+  const inverted: AlertLevels = {
+    heavy_position: { price: 42, pe: 12 }, add_position: { price: 38, pe: 11 },
+    reduce_position: { price: 34, pe: 10 }, full_exit: { price: 30, pe: 9 },
+  };
+  const fixed = correctLevelsByPrice(inverted);
+  assert.equal(fixed.heavy_position?.price, 30);
+  assert.equal(fixed.heavy_position?.pe, 9);
+  assert.equal(fixed.add_position?.price, 34);
+  assert.equal(fixed.reduce_position?.price, 38);
+  assert.equal(fixed.full_exit?.price, 42);
+  assert.equal(areLevelsSemanticallyValid(fixed), true);
+});
+
+test('自动纠正：已合法 / 不足四条 / 价格重复时原样返回', () => {
+  assert.deepEqual(correctLevelsByPrice(four), four);
+  const partial: AlertLevels = { heavy_position: { price: 10 }, full_exit: { price: 20 } };
+  assert.deepEqual(correctLevelsByPrice(partial), partial);
+  const dup: AlertLevels = {
+    heavy_position: { price: 30 }, add_position: { price: 30 },
+    reduce_position: { price: 34 }, full_exit: { price: 42 },
+  };
+  assert.deepEqual(correctLevelsByPrice(dup), dup);
 });
 
 /* ---------------- deriveValuationEvalState：评估状态（与监控开关无关） ---------------- */

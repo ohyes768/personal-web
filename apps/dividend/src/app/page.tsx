@@ -191,13 +191,13 @@ function IndexStatusPopover({
                         className="text-xs text-red-400 shrink-0 max-w-32 truncate"
                         title={
                           state.item.prefilter_resynced === false
-                            ? `prefilter 同步失败：${state.item.prefilter_error || '详见后端日志'}`
+                            ? `成分股名单同步失败：${state.item.prefilter_error || '详见后端日志'}`
                             : state.item.error || '失败'
                         }
                       >
                         ✗{' '}
                         {state.item.prefilter_resynced === false
-                          ? 'prefilter 失败'
+                          ? '成分股同步失败'
                           : state.item.error || '失败'}
                       </span>
                       <button
@@ -358,6 +358,8 @@ function DividendPageContent() {
   // 股票搜索输入：命中完整收集池（不受股息率阈值限制）
   const [searchInput, setSearchInput] = useState('');
   const searchKeyword = normalizeSearchKeyword(searchInput);
+  // 导出失败行内提示（替代原生 alert，与筛选区「查询中…」同一位置）
+  const [exportError, setExportError] = useState<string | null>(null);
 
   // URL query 同步 tab（?tab=alerts）+ 收藏过滤（?fav=1）
   // 提前解析：主列表/技术指标按 Tab 按需加载依赖 activeTab（11-02 提速任务）
@@ -487,7 +489,7 @@ function DividendPageContent() {
       URL.revokeObjectURL(url);
     } catch (err) {
       console.error('导出报告失败:', err);
-      alert('导出报告失败，请稍后重试');
+      setExportError('导出报告失败，请稍后重试');
     }
   };
 
@@ -633,7 +635,7 @@ function DividendPageContent() {
     { key: 'sw_industry', label: '申万行业', sub: '申万一级/二级/三级', status: auxStatuses.sw_industry, updateFn: updateSwIndustry, loadingKey: 'sw_industry' },
     { key: 'financial', label: '财务指标', sub: '财报基础数据', status: auxStatuses.financial, updateFn: (force) => updateFinancial(financialMissingCodes.length > 0 ? financialMissingCodes : undefined, force), loadingKey: 'financial' },
     { key: 'shareholder', label: '股东户数', sub: '披露日统计', status: auxStatuses.shareholder, updateFn: updateShareholder, loadingKey: 'shareholder' },
-    { key: 'board', label: '个股板块', sub: 'emweb 板块归属', status: auxStatuses.board, updateFn: (force) => updateBoard(boardMissingCodes.length > 0 ? boardMissingCodes : undefined, force), loadingKey: 'board' },
+    { key: 'board', label: '个股板块', sub: '概念与行业板块', status: auxStatuses.board, updateFn: (force) => updateBoard(boardMissingCodes.length > 0 ? boardMissingCodes : undefined, force), loadingKey: 'board' },
   ];
   const auxPendingCount = auxItems.filter(i => i.status?.needs_update).length;
   const auxAnyLoading = auxItems.some(i => updateState[i.loadingKey] === 'loading');
@@ -976,6 +978,9 @@ function DividendPageContent() {
             >
               <button
                 onClick={() => setExportOpen(!exportOpen)}
+                onKeyDown={(e) => { if (e.key === 'Escape') setExportOpen(false); }}
+                aria-haspopup="menu"
+                aria-expanded={exportOpen}
                 className="flex items-center gap-2 rounded border border-rule-strong bg-paper-card px-3.5 py-2 text-sm font-medium text-ink transition-colors hover:border-accent hover:text-accent"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -987,26 +992,31 @@ function DividendPageContent() {
                 </svg>
               </button>
               {exportOpen && (
-                <div className="absolute right-0 mt-1 bg-paper-card border border-rule rounded-lg shadow-lg z-50 min-w-[200px] overflow-hidden">
+                <div role="menu" className="absolute right-0 mt-1 bg-paper-card border border-rule rounded-lg shadow-lg z-50 min-w-[200px] overflow-hidden">
                   <button
+                    role="menuitem"
                     onClick={() => downloadReport('a4')}
                     className="block w-full text-left px-4 py-2 text-sm text-ink hover:bg-paper-tint first:rounded-t"
                   >
                     <div className="font-medium">A4 一图版（横版）</div>
                   </button>
                   <button
+                    role="menuitem"
                     onClick={() => downloadReport('carousel')}
                     className="block w-full text-left px-4 py-2 text-sm text-ink hover:bg-paper-tint border-t border-rule"
                   >
                     <div className="font-medium">手机竖版（轮播）</div>
-                    <div className="text-xs text-ink-muted mt-0.5">1080×1920 · 可下载原图</div>
                   </button>
                   <button
+                    role="menuitem"
                     onClick={downloadCsv}
                     className="block w-full text-left px-4 py-2 text-sm text-ink hover:bg-paper-tint border-t border-rule"
                   >
                     <div className="font-medium">CSV 表格</div>
                   </button>
+                  {exportError && (
+                    <p role="alert" className="px-4 py-2 text-xs text-down-deep bg-down-tint border-t border-down">{exportError}</p>
+                  )}
                 </div>
               )}
             </div>
@@ -1040,8 +1050,10 @@ function DividendPageContent() {
       )}
 
       {/* Tab 切换：全部 / 挡位监控；收藏过滤用右侧"只看收藏"按钮 */}
-      <div className="flex border-b border-rule mb-4 items-center">
+      <div className="flex border-b border-rule mb-4 items-center" role="tablist" aria-label="视图切换">
         <button
+          role="tab"
+          aria-selected={activeTab === 'all'}
           onClick={() => handleTabChange('all')}
           className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
             activeTab === 'all'
@@ -1053,6 +1065,8 @@ function DividendPageContent() {
           <span className="ml-2 text-xs bg-paper-deep text-ink px-1.5 py-0.5 rounded tabular-nums">{activeTab === 'all' ? stocksWithTechnical.length : (totalCollected ?? '')}</span>
         </button>
         <button
+          role="tab"
+          aria-selected={activeTab === 'alerts'}
           onClick={() => handleTabChange('alerts')}
           className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
             activeTab === 'alerts'
@@ -1066,7 +1080,7 @@ function DividendPageContent() {
           收藏跟踪
           <span className="ml-1 text-xs bg-paper-deep text-ink px-1.5 py-0.5 rounded tabular-nums">{watchlist.total}</span>
         </button>
-        <button onClick={() => handleTabChange('screening')} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'screening' ? 'border-accent text-accent-deep' : 'border-transparent text-ink-muted hover:text-ink'}`}>选股关注</button>
+        <button role="tab" aria-selected={activeTab === 'screening'} onClick={() => handleTabChange('screening')} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'screening' ? 'border-accent text-accent-deep' : 'border-transparent text-ink-muted hover:text-ink'}`}>选股关注</button>
         {/* 只看收藏 toggle：仅 all tab 显示，过滤当前列表 */}
         {activeTab === 'all' && (
           <button

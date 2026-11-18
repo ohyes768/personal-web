@@ -175,6 +175,40 @@ export function DetailModal({ isOpen, onClose, type, stock }: DetailModalProps) 
     }
 
     if (!history || history.length === 0) {
+      // 逐次分红未收录时回退显示年度分红（列表里的 3 年股息率就来自这里），
+      // 避免「列表有 6.7%、点开却空」的信任断裂。
+      const annualYears = [
+        { year: 2025, dividend: stock.dividend_2025, yieldPct: stock.yield_2025, count: stock.dividend_count_2025 },
+        { year: 2024, dividend: stock.dividend_2024, yieldPct: stock.yield_2024, count: stock.dividend_count_2024 },
+        { year: 2023, dividend: stock.dividend_2023, yieldPct: stock.yield_2023, count: stock.dividend_count_2023 },
+      ].filter((r) => r.dividend != null || r.yieldPct != null);
+      if (annualYears.length > 0) {
+        return (
+          <div className="py-4">
+            <p className="text-xs text-ink-muted mb-3">逐次分红记录未收录，以下为年度分红数据。</p>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-rule text-left text-xs text-ink-muted">
+                  <th className="py-1.5 font-medium">年度</th>
+                  <th className="py-1.5 font-medium text-right">每股分红（元）</th>
+                  <th className="py-1.5 font-medium text-right">分红次数</th>
+                  <th className="py-1.5 font-medium text-right">年度股息率</th>
+                </tr>
+              </thead>
+              <tbody>
+                {annualYears.map((r) => (
+                  <tr key={r.year} className="border-b border-rule/60">
+                    <td className="py-1.5">{r.year}</td>
+                    <td className="py-1.5 text-right font-mono">{r.dividend != null ? r.dividend.toFixed(2) : '—'}</td>
+                    <td className="py-1.5 text-right font-mono">{r.count ?? '—'}</td>
+                    <td className="py-1.5 text-right font-mono">{r.yieldPct != null ? `${r.yieldPct.toFixed(2)}%` : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      }
       return <div className="flex items-center justify-center py-8 text-gray-400">暂无分红数据</div>;
     }
 
@@ -519,19 +553,6 @@ export function DetailModal({ isOpen, onClose, type, stock }: DetailModalProps) 
         return renderVolatilityContent();
       default:
         return null;
-    }
-  };
-
-  // 根据类型选择合适的尺寸
-  const getModalSize = () => {
-    switch (type) {
-      case 'yearly':
-      case 'quarterly':
-        return 'xs';
-      case 'volatility':
-        return 'xs';
-      default:
-        return 'sm';
     }
   };
 

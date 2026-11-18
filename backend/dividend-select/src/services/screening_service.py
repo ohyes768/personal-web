@@ -81,27 +81,27 @@ def build_checks(stock: DividendStock, conditions: ScreeningRequest) -> list[Scr
     checks.append(_threshold_check(
         stock.roe_avg_3y, conditions.min_roe_avg_3y, "近三年平均 ROE", "roe_avg_3y", "近三年平均 ROE"))
 
-    # 固定条件：连续三年年度 ROE 完整
+    # 固定条件：近三年逐年 ROE 完整（区别于上面对均值/最近年度的门槛检查）
     history = {item.year: item.value for item in stock.roe_history}
     if stock.roe_year is None:
         checks.append(ScreeningCheck(
-            key="roe_history", label="连续三年年度 ROE", result="missing", value_text="待补",
-            threshold_text="最近年报及前两年均有值", detail="缺年度 ROE，刷新后复核",
-            reason="连续三年年度 ROE 数据缺失",
+            key="roe_history", label="近三年逐年 ROE", result="missing", value_text="待补",
+            threshold_text="最近年报及前两年均有值", detail="缺逐年 ROE 明细，刷新后复核",
+            reason="近三年逐年 ROE 缺失（均值/最近年度有值但缺逐年明细）",
         ))
     else:
         years = range(stock.roe_year - 2, stock.roe_year + 1)
         missing_years = [year for year in years if not _finite(history.get(year))]
         if missing_years:
             checks.append(ScreeningCheck(
-                key="roe_history", label="连续三年年度 ROE", result="missing",
+                key="roe_history", label="近三年逐年 ROE", result="missing",
                 value_text="缺 " + "、".join(str(year) for year in missing_years),
-                threshold_text="最近年报及前两年均有值", detail="年度 ROE 缺失，刷新后复核",
-                reason="连续三年年度 ROE 数据缺失",
+                threshold_text="最近年报及前两年均有值", detail="逐年 ROE 缺失，刷新后复核",
+                reason="近三年逐年 ROE 缺失（均值/最近年度有值但缺逐年明细）",
             ))
         else:
             checks.append(ScreeningCheck(
-                key="roe_history", label="连续三年年度 ROE", result="pass",
+                key="roe_history", label="近三年逐年 ROE", result="pass",
                 value_text="、".join(str(year) for year in years), threshold_text="最近年报及前两年均有值",
             ))
 

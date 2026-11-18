@@ -25,9 +25,10 @@ import {
   VALUATION_LEVEL_KEYS,
   VALUATION_LEVEL_LABEL,
   VALUATION_ZONE_COLOR,
-  VALUATION_ZONE_LABEL,
   type ValuationLevelKey,
   type ValuationZone,
+  areLevelsSemanticallyValid,
+  hasAllFourLevels,
 } from '@/lib/valuation';
 
 const SEG_COLORS = VALUATION_ZONE_COLOR;
@@ -83,11 +84,6 @@ function popoverAlign(leftPct: number): 'left' | 'center' | 'right' {
 
 function fmtPrice(p: number): string {
   return p.toFixed(2);
-}
-
-function fmtPct(p: number): string {
-  const sign = p > 0 ? '+' : '';
-  return `${sign}${p.toFixed(1)}%`;
 }
 
 function calcYieldAtPrice(dividend: number | null | undefined, price: number): number | null {
@@ -159,18 +155,20 @@ export function ValuationPriceBar({
   }
   segments.push({ side: 'full', left: pct(maxP), width: 100 - pct(maxP) });
 
+  // 四条线全填但顺序反置（买线高于卖线）：五段色带是按位置命名的，画出来
+  // 就是「红点坐在绿段上」的错图。宁可不画条、明确提示，等设置弹框纠正。
+  if (hasAllFourLevels(levels) && !areLevelsSemanticallyValid(levels)) {
+    return (
+      <div className="text-xs text-ink-muted max-w-[260px] whitespace-normal" role="alert">
+        挡位配置异常：买线高于卖线，价格条无法表示。请打开挡位设置核对。
+      </div>
+    );
+  }
+
   const hasPrice = currentPrice != null && currentPrice > 0;
   const belowAll = hasPrice && currentPrice < minP;
   const aboveAll = hasPrice && currentPrice > maxP;
   const markerPct = !hasPrice ? null : belowAll ? 8 : aboveAll ? 92 : pct(currentPrice);
-
-  const currentSegSide: ValuationZone | null = !hasPrice
-    ? null
-    : currentPrice <= points[0].price ? 'heavy'
-      : currentPrice <= points[1].price ? 'add'
-        : currentPrice <= points[2].price ? 'hold'
-          : currentPrice <= points[3].price ? 'reduce'
-            : 'full';
 
   // 价签错层：四档价签 + 现价一起算（现价也占位，避免与档位价签重叠）
   const labelLefts = [
@@ -188,30 +186,14 @@ export function ValuationPriceBar({
     return parts.length > 0 ? parts.join(' · ') : null;
   };
 
-  // 悬浮 tooltip 承载被移出的细节：每档 PE/PB 与距各档距离
-  const detailTitle = (() => {
-    const lines: string[] = [];
-    if (title) lines.push(title);
-    lines.push(points.map(p => {
-      const pePb = fmtPePb(p.pe, p.pb);
-      const dist = hasPrice && p.price > 0 ? `距 ${fmtPct(((currentPrice - p.price) / p.price) * 100)}` : '';
-      return `${VALUATION_LEVEL_LABEL[p.key]} ¥${fmtPrice(p.price)}${pePb ? ` · ${pePb}` : ''}${dist ? ` · ${dist}` : ''}`;
-    }).join('　'));
-    if (hasPrice) {
-      lines.push(`现价 ¥${fmtPrice(currentPrice)}${fmtPePb(currentPE, currentPB) ? ` · ${fmtPePb(currentPE, currentPB)}` : ''}${currentSegSide ? ` · ${VALUATION_ZONE_LABEL[currentSegSide]}` : ''}`);
-    } else {
-      lines.push('现价缺失');
-    }
-    if (variant === 'candidate') lines.push('评估结果尚未应用，监控未启用');
-    return lines.join('\n');
-  })();
-
+  // 逐档 PE/PB 与距离不再堆整条 tooltip（一行读不完，且与「区间」列重复）：
+  // 距离由「区间」列回答，PE/PB 在每档圆点与报告面板里。
   return (
     <div
       ref={rootRef}
       className="relative w-[400px] max-w-full"
       style={style}
-      title={detailTitle}
+      title={title}
       data-testid={`valuation-bar-${variant}`}
     >
       {/* 行1 价签 + 行2 色条 */}

@@ -273,7 +273,7 @@ export function DividendTable({
     return (
       <div className="border border-rule rounded-lg bg-paper-card">
         <div className="py-8 flex items-center justify-center text-ink-muted">
-          暂无数据
+          暂无符合条件的股票，试试调整筛选或搜索词
         </div>
       </div>
     );
@@ -552,7 +552,6 @@ export function DividendTable({
                           stock.payout_ratio <= 80 ? 'text-up font-semibold' :
                           'text-accent font-bold'
                         }`}
-                        title={`基于 ${stock.eps_year ?? '?'} 年报 EPS = ${stock.eps?.toFixed(2) ?? '?'} 元`}
                       >
                         {stock.payout_ratio.toFixed(2)}%
                       </span>

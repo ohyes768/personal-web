@@ -126,13 +126,13 @@ export function ScreeningTab({ watchlist, refreshRevision = 0, sourceQuery = 'ta
     ['股票', ''],
     ['基本面操作', ''],
     ['五维评级', ''],
-    ['三年股息率', '近三年平均股息率'],
-    ['近三年平均ROE', '近三年平均 ROE'],
-    ['最近年度ROE', '最近年度 ROE'],
-    ['3年CAGR', '扣非净利润3年复合增长率：三年首尾的年化复合增速，近三年有亏损时算不出来'],
-    ['当前股息率（TTM）', '当前股息率，只展示不参与筛选'],
-    ['最新季扣非同比', '最新单季扣非净利润同比'],
-    ...(showReason ? [['原因', '未符合条件的原因与提示']] as [string, string][] : []),
+    ['三年股息率', ''],
+    ['近三年平均ROE', ''],
+    ['最近年度ROE', ''],
+    ['3年CAGR', ''],
+    ['当前股息率（TTM）', ''],
+    ['最新季扣非同比', ''],
+    ...(showReason ? [['原因', '']] as [string, string][] : []),
     ['收藏', ''],
   ];
   // 评级弹框与详情弹框互斥：开一个先关另一个
@@ -172,7 +172,7 @@ export function ScreeningTab({ watchlist, refreshRevision = 0, sourceQuery = 'ta
         {qualityJob && qualityJob.failed_codes.length > 0 && qualityJob.status !== 'queued' && qualityJob.status !== 'running' && <button className={`${buttonClass} ml-2`} onClick={() => void analyze(qualityJob.failed_codes)}>重试失败 {qualityJob.failed_codes.length} 只</button>}
       </p>}
       {message && <p role="status" className="text-sm text-ink">{message}{failedCodes.length > 0 && <button className={`${buttonClass} ml-2`} disabled={saving} onClick={() => void save(failedCodes)}>重试失败项</button>}
-        {lastAdded.length > 0 && <button className={`${buttonClass} ml-2`} disabled={quickPending || !qualityConfigured} title={qualityConfigured ? '用 Hermes 四挡位估值评估这些新收藏（约几分钟）' : 'Hermes 未配置，无法估值'} onClick={() => void quickEvaluate(lastAdded)}>{quickPending ? '提交中…' : `评估挡位 (${lastAdded.length})`}</button>}
+        {lastAdded.length > 0 && <button className={`${buttonClass} ml-2`} disabled={quickPending || !qualityConfigured} title={qualityConfigured ? '用四挡位估值评估这些新收藏（约几分钟）' : '自动评估暂未启用（后端未完成配置）'} onClick={() => void quickEvaluate(lastAdded)}>{quickPending ? '提交中…' : `评估挡位 (${lastAdded.length})`}</button>}
         {quickNotice && <span className="ml-3 text-ink-muted">{quickNotice}</span>}
       </p>}
       {activeView === 'insufficient_data' && <p className="text-sm text-ink-muted">缺少必需数据的股票暂不入选，通过「数据更新」刷新财务指标后重新查询。</p>}
@@ -209,8 +209,8 @@ export function ScreeningTab({ watchlist, refreshRevision = 0, sourceQuery = 'ta
                   return status !== 'eligible'
                     ? <span className="text-ink-muted">待分析</span>
                     : score
-                      ? <button className={buttonClass} disabled={pending(stock.code) || saving || !qualityConfigured} title={pending(stock.code) ? '评级任务进行中，完成后自动刷新' : qualityConfigured ? '用当前数据重新评级' : 'Hermes 未配置，无法评级'} onClick={() => void analyze([stock.code])}>重评</button>
-                      : <button className={buttonClass} disabled={pending(stock.code) || saving || !qualityConfigured} title={pending(stock.code) ? '评级任务进行中，完成后自动刷新' : qualityConfigured ? '对这只股票调用 AI 五维基本面评级（约几分钟）' : 'Hermes 未配置（需 HERMES_BASE_URL 与 HERMES_API_KEY），无法评级'} onClick={() => void analyze([stock.code])}>分析</button>;
+                      ? <button className={buttonClass} disabled={pending(stock.code) || saving || !qualityConfigured} title={pending(stock.code) ? '评级任务进行中，完成后自动刷新' : qualityConfigured ? '用当前数据重新评级' : '自动评级暂未启用（后端未完成配置）'} onClick={() => void analyze([stock.code])}>重评</button>
+                      : <button className={buttonClass} disabled={pending(stock.code) || saving || !qualityConfigured} title={pending(stock.code) ? '评级任务进行中，完成后自动刷新' : qualityConfigured ? '对这只股票调用 AI 五维基本面评级（约几分钟）' : '自动评级暂未启用（后端未完成配置）'} onClick={() => void analyze([stock.code])}>分析</button>;
                 })()}
               </td>
               <td className="p-3" onClick={event => event.stopPropagation()}>
