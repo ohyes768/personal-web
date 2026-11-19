@@ -2,6 +2,7 @@
 
 /** 历史回溯 Tab：4 组固定窗口 + 全历史，默认单图展示（周口径）。 */
 import { useEffect, useState } from "react";
+import OccupancyPanel from "./OccupancyPanel";
 import TrendChart from "./TrendChart";
 import { api } from "../lib/api";
 import type { ChartData, HistoryOverview } from "../lib/types";
@@ -101,6 +102,7 @@ export default function HistoryTab({ overview, selected, onSelect, reloadKey }: 
       {state.chart && (
         <div className="chart-card">
           <TrendChart data={state.chart} chartId={`history-${selected}`} />
+          <OccupancyPanel data={state.chart} />
           <div className="range-note">
             <span>
               拟合区间 {state.chart.model.fit_start} – {state.chart.model.fit_end}

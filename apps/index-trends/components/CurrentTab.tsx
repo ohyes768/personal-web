@@ -2,6 +2,7 @@
 
 /** 当前通道 Tab：近10年 / 成立以来模型切换 + 状态摘要 + 主图（含约 1 年趋势延伸）。 */
 import { useEffect, useState } from "react";
+import OccupancyPanel from "./OccupancyPanel";
 import TrendChart from "./TrendChart";
 import { api } from "../lib/api";
 import {
@@ -261,6 +262,7 @@ export default function CurrentTab({ selected, onSelect, onGoHistory, reloadKey 
           {state.chart && (
             <div className="chart-card">
               <TrendChart data={state.chart} chartId={`current-${selected}`} />
+              <OccupancyPanel data={state.chart} />
               <div className="range-note">
                 <span>
                   拟合区间 {state.chart.model.fit_start} – {state.chart.model.fit_end}
