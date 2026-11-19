@@ -217,16 +217,20 @@ export function DetailModal({ isOpen, onClose, type, stock }: DetailModalProps) 
       (a, b) => new Date(a.ex_date).getTime() - new Date(b.ex_date).getTime()
     );
 
-    // 生成固定36个月的时间序列 (2023年1月 ~ 2025年12月)
+    // 生成 36 个月滚动窗口时间序列（从当前月往前 35 个月）。
+    // 此前硬编码 2023-01~2025-12：进入 2026 后图表永远缺最新月份。
+    // 年度股息率后端只采集 4 个日历年（yield_2022~2025），窗口内更早的月份折线留空。
+    const now = new Date();
     const months: string[] = [];
     for (let i = 35; i >= 0; i--) {
-      const d = new Date(2025, 11 - i, 1); // 固定2023-01到2025-12
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
     }
 
-    // 只保留2023年及以后的分红数据
+    // 只保留窗口内的分红数据
+    const windowStart = new Date(now.getFullYear(), now.getMonth() - 35, 1).getTime();
     const recentHistory = sortedHistory.filter(
-      (item) => new Date(item.ex_date).getTime() >= new Date('2023-01-01').getTime()
+      (item) => new Date(item.ex_date).getTime() >= windowStart
     );
 
     // 构建月份到股息数据的映射
@@ -236,13 +240,13 @@ export function DetailModal({ isOpen, onClose, type, stock }: DetailModalProps) 
       dividendByMonth[monthKey] = item.ratio;
     });
 
-    // 获取近4年每年股息率 (2022-2025)
+    // 获取某年股息率（后端只采集 2022-2025，超出范围返回 null，折线断开）
     const getYearlyYield = (year: number): number | null => {
       const key = `yield_${year}` as keyof DividendStock;
       return stock?.[key] as number | null;
     };
 
-    // chart data - 36个月的固定序列，年度股息率作为折线
+    // chart data - 36个月滚动窗口，年度股息率作为折线
     const chartData = months.map((month) => {
       const year = parseInt(month.slice(0, 4));
       const monthlyYield = getYearlyYield(year);

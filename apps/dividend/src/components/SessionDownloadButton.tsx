@@ -1,6 +1,7 @@
 /**
- * SessionDownloadButton — 下载某个 Hermes run 的会话记录（markdown）。
+ * SessionDownloadButton — 下载某次评级的会话记录（markdown）。
  * 供估值/评级报告弹窗共用；无 run_id（旧报告）不渲染。
+ * 用户可见文案不出现内部系统名（Hermes）——「会话记录」自解释。
  */
 'use client';
 
@@ -33,7 +34,7 @@ export function SessionDownloadButton({ runId, download, label = '下载会话�
 
   return (
     <span className="inline-flex items-center gap-1.5">
-      <button type="button" className={buttonClass} disabled={pending} title={pending ? undefined : '下载本次 Hermes 会话记录（markdown）'} onClick={() => void handleClick()}>
+      <button type="button" className={buttonClass} disabled={pending} title={pending ? undefined : '下载本次评估的会话记录（markdown）'} onClick={() => void handleClick()}>
         {pending ? '生成中…' : label}
       </button>
       {error && <span role="alert" className="text-xs text-red-600">{error}</span>}

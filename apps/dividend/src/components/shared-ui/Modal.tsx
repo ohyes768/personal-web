@@ -4,13 +4,16 @@
  * 试点：apps/dividend 拆离 monorepo
  *
  * 无障碍：role=dialog + aria-modal + aria-labelledby（标题 h2 即 accessible name）；
- * 打开时焦点迁入弹框（首个可聚焦元素），Tab/Shift+Tab 在弹框内循环（焦点圈），
+ * 打开时焦点迁入弹框（首个可聚焦元素），Tab/Shift+Tab 在弹框内循环（焦点圈，useFocusTrap），
  * 关闭（Esc / 遮罩 / 按钮）后焦点归还给触发元素。
+ * 叠层：Esc 只关最顶层（modal-stack），避免抽屉+弹框叠加时一次 Esc 两层全关。
  */
 'use client';
 
-import { useEffect, useCallback, useRef, useId } from 'react';
+import { useEffect, useRef, useId } from 'react';
 import { createPortal } from 'react-dom';
+import { useFocusTrap } from './useFocusTrap';
+import { pushLayer, popLayer, hasLayerOnTop } from '@/lib/modal-stack';
 
 export interface ModalProps {
   isOpen: boolean;
@@ -35,92 +38,51 @@ const sizeClasses = {
   xl: 'max-w-6xl',  // 1152px - 特大
 };
 
-const FOCUSABLE_SELECTOR =
-  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
 export function Modal({ isOpen, onClose, title, children, size = 'md', className = '', footer }: ModalProps) {
   const titleId = useId(); // 多弹框同开时 aria-labelledby 不冲突
   const rootRef = useRef<HTMLDivElement>(null);
-  // 打开前的触发元素：关闭后焦点归还，读屏/键盘用户不丢失上下文
-  const lastFocusedRef = useRef<HTMLElement | null>(null);
+  // 弹层层级 id（pushLayer 的结果存 ref，供 Esc/焦点圈判断谁在最顶层）
+  const layerIdRef = useRef<symbol | null>(null);
+  // 焦点圈范围 = dialog 内容本体（遮罩不进 Tab 序列）
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(isOpen, dialogRef, layerIdRef);
 
-  const handleEsc = useCallback((e: KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      onClose();
-    }
-  }, [onClose]);
-
-  // Esc + body 锁滚
+  // 入栈 + Esc（仅最顶层响应）+ body 锁滚
   useEffect(() => {
     if (!isOpen) return;
+    const layerId = pushLayer();
+    layerIdRef.current = layerId;
+
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (hasLayerOnTop(layerId)) return; // 有更晚打开的弹层，Esc 先退它
+      onClose();
+    };
     document.addEventListener('keydown', handleEsc);
     document.body.style.overflow = 'hidden';
     return () => {
+      popLayer(layerId);
+      layerIdRef.current = null;
       document.removeEventListener('keydown', handleEsc);
       document.body.style.overflow = '';
     };
-  }, [isOpen, handleEsc]);
-
-  // 焦点迁入 + 焦点圈（Tab 循环）+ 关闭时焦点归还
-  useEffect(() => {
-    if (!isOpen) return;
-    lastFocusedRef.current = (document.activeElement as HTMLElement | null) ?? null;
-
-    const root = rootRef.current;
-    // 焦点圈范围=dialog 内容本体（遮罩不进入 Tab 序列：aria-modal 已把读屏上下文圈在 dialog 内，
-    // 焦点落在遮罩上读屏用户听不到弹框内容；Enter/Esc 关闭由 dialog 内「关闭」按钮与 Esc 兜底）
-    const dialog = root?.querySelector<HTMLElement>('[role="dialog"]') ?? null;
-    const getFocusable = () => (dialog ? [...dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)] : []);
-
-    // 迁入弹框首个可聚焦元素（一般是标题栏的「关闭」按钮）
-    const t = window.setTimeout(() => {
-      const list = getFocusable();
-      (list[0] ?? dialog ?? root)?.focus();
-    }, 0);
-
-    const trapTab = (e: KeyboardEvent) => {
-      if (e.key !== 'Tab') return;
-      const list = getFocusable();
-      if (list.length === 0) { e.preventDefault(); return; }
-      const first = list[0];
-      const last = list[list.length - 1];
-      const active = document.activeElement as HTMLElement | null;
-      if (e.shiftKey) {
-        if (active === first || !dialog?.contains(active)) { e.preventDefault(); last.focus(); }
-      } else if (active === last || !dialog?.contains(active)) {
-        e.preventDefault(); first.focus();
-      }
-    };
-    document.addEventListener('keydown', trapTab);
-
-    return () => {
-      window.clearTimeout(t);
-      document.removeEventListener('keydown', trapTab);
-      lastFocusedRef.current?.focus?.();
-    };
-  }, [isOpen]);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
   return createPortal(
     <div ref={rootRef} className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      {/* 遮罩层 - 渐变暗色背景 */}
+      {/* 遮罩层：点击关闭（视觉装饰，不进读屏/Tab 序列——aria-modal 已把上下文圈在 dialog 内，
+          关闭另有 dialog 内「关闭」按钮与 Esc） */}
       <div
-        className="absolute inset-0 bg-black/70 backdrop-blur-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-info"
+        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
         onClick={onClose}
-        role="button"
-        tabIndex={0}
-        aria-label="关闭"
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            onClose();
-          }
-        }}
+        aria-hidden="true"
       />
 
       {/* 弹框内容：dialog 语义，标题 h2 提供 accessible name */}
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
@@ -128,7 +90,7 @@ export function Modal({ isOpen, onClose, title, children, size = 'md', className
       >
         {/* 标题栏 */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
-          <h2 id="modal-title" className="text-lg font-semibold text-gray-100">{title}</h2>
+          <h2 id={titleId} className="text-lg font-semibold text-gray-100">{title}</h2>
           <button
             onClick={onClose}
             className="min-h-[44px] min-w-[44px] flex items-center justify-center text-gray-400 hover:text-ink-strong hover:bg-paper-tint focus:outline-none focus:ring-2 focus:ring-info rounded-md transition-colors cursor-pointer"

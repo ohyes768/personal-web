@@ -210,7 +210,7 @@ function IndexStatusPopover({
                     <span className="text-xs text-green-400 shrink-0">✓ 持仓已有</span>
                   ) : state.kind === 'missing_in_holdings' ? (
                     <>
-                      <span className="text-xs text-red-400 shrink-0" title="指数成分股名单未同步，点击「重试」重新拉取">✗ 持仓缺失</span>
+                      <span className="text-xs text-red-400 shrink-0">✗ 持仓缺失</span>
                       <button
                         type="button"
                         onClick={() => onRetry(code)}
@@ -620,6 +620,8 @@ function DividendPageContent() {
   const alertsStatus = useAlertsStatus();
   const [alertStock, setAlertStock] = useState<DividendStock | null>(null);
   const [alertOpen, setAlertOpen] = useState(false);
+  // 点「挡位」但股票不在当前列表（列表已变更）：行内提示+重试，不用原生 alert()
+  const [openAlertError, setOpenAlertError] = useState<string | null>(null);
   const [schedulerOpen, setSchedulerOpen] = useState(false);
   const [dataUpdateOpen, setDataUpdateOpen] = useState(false);
 
@@ -649,8 +651,10 @@ function DividendPageContent() {
     if (s) {
       setAlertStock(s);
       setAlertOpen(true);
+      setOpenAlertError(null);
     } else {
-      alert(`未找到股票 ${code}，请刷新页面后重试`);
+      // 行内错误（与全站「失败：前缀 + 重试」范式一致），重试=按当前筛选重拉列表
+      setOpenAlertError(`未找到股票 ${code}，列表可能已更新`);
     }
   }, [data, independentFavorites]);
 
@@ -1106,6 +1110,23 @@ function DividendPageContent() {
 
       {/* 三个 tab 的面板区：flex-1 撑满首屏剩余高度，短内容 tab 页面高度一致 */}
       <div className="flex-1">
+      {/* 点「挡位」但股票不在当前列表：行内提示 + 重试（替代原生 alert()） */}
+      {openAlertError && (
+        <div role="alert" className="mb-4 bg-down-tint border border-down px-4 py-3 rounded flex items-center justify-between gap-3">
+          <span className="text-down-deep text-sm">{openAlertError}，请刷新页面后重试</span>
+          <button
+            type="button"
+            onClick={() => {
+              setOpenAlertError(null);
+              refetch({ min_yield: appliedFilter.min_yield, exchange: appliedFilter.exchange || undefined });
+              setRefreshKey(k => k + 1);
+            }}
+            className="shrink-0 px-3 py-1.5 rounded text-sm font-medium bg-down text-white hover:opacity-90 transition-opacity"
+          >
+            重试
+          </button>
+        </div>
+      )}
       {/* 「全部」tab 顶部面板：股票搜索 + 筛选条件（与「选股关注」筛选表单同层同位置）。
           搜索覆盖完整收集池（不受股息率阈值限制）；交易所/股息率筛选在只看收藏模式下不显示。 */}
       {activeTab === 'all' && (

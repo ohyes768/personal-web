@@ -7,6 +7,7 @@ import { useEffect, useRef } from 'react';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import { CompareDrawerProps } from '@/lib/types';
 import { CompareTable } from './CompareTable';
+import { pushLayer, popLayer, hasLayerOnTop } from '@/lib/modal-stack';
 
 export function CompareDrawer({
   isOpen,
@@ -17,21 +18,22 @@ export function CompareDrawer({
 }: CompareDrawerProps) {
   const contentRef = useRef<HTMLDivElement>(null);
 
-  // 键盘导航：ESC 关闭
+  // 键盘导航：ESC 关闭（仅最顶层响应——抽屉上叠开弹框时 Esc 先退弹框，modal-stack）
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
-        onClose();
-      }
-    };
+    if (!isOpen) return;
+    const layerId = pushLayer();
 
-    if (isOpen) {
-      document.addEventListener('keydown', handleKeyDown);
-      // 禁用背景滚动
-      document.body.style.overflow = 'hidden';
-    }
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (hasLayerOnTop(layerId)) return;
+      onClose();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    // 禁用背景滚动
+    document.body.style.overflow = 'hidden';
 
     return () => {
+      popLayer(layerId);
       document.removeEventListener('keydown', handleKeyDown);
       document.body.style.overflow = '';
     };

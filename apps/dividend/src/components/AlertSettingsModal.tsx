@@ -176,8 +176,8 @@ export function AlertSettingsModal({
       await onSubmit(stock.code, body);
       onClose();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : '保存失败';
-      setError(msg);
+      // 统一「保存失败：」前缀（与全站错误态范式一致，不裸拼接口消息）
+      setError(`保存失败：${err instanceof Error ? err.message : '请重试'}`);
     } finally {
       setSaving(false);
     }
@@ -214,7 +214,7 @@ export function AlertSettingsModal({
     onClear(stock.code)
       .then(() => onClose())
       .catch(err => {
-        setError(err instanceof Error ? err.message : '清除失败');
+        setError(`清除失败：${err instanceof Error ? err.message : '请重试'}`);
       })
       .finally(() => setSaving(false));
   };

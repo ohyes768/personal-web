@@ -40,7 +40,7 @@ export function QualityReportModal({ score, onClose, onReanalyze, currentSkillVe
             <button
               className="rounded border border-rule-strong px-3 py-2 text-sm text-ink hover:border-accent disabled:opacity-40"
               disabled={reanalyzePending || reanalyzeDisabled}
-              title={reanalyzePending ? '评级任务进行中，完成后自动刷新' : reanalyzeDisabled ? 'Hermes 未配置（需 HERMES_BASE_URL 与 HERMES_API_KEY），无法评级' : undefined}
+              title={reanalyzePending ? '评级任务进行中，完成后自动刷新' : reanalyzeDisabled ? '评级服务未完成配置，配置后自动启用' : undefined}
               onClick={() => onReanalyze(score.code)}
             >
               {reanalyzePending ? '评级中…' : '重评'}

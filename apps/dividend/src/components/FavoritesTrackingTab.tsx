@@ -503,10 +503,10 @@ function TrackingRow({
       行内用短文案「会话」，完整说明在悬停里 */
   const sessionBlock = attempt.runId ? (
     <span title={attempt.state === 'failed'
-      ? `评估失败，可下载本次 Hermes 会话排查：${attempt.error ?? '未知原因'}`
+      ? `评估失败，可下载本次会话记录排查：${attempt.error ?? '未知原因'}`
       : attempt.state === 'cancelled'
         ? '本次评估被取消，可下载会话记录复盘'
-        : '下载本次评估的 Hermes 会话记录'}>
+        : '下载本次评估的会话记录'}>
       <SessionDownloadButton runId={attempt.runId} download={dividendApi.downloadValuationSession} label="会话" />
     </span>
   ) : null;
