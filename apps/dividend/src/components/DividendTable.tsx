@@ -104,18 +104,20 @@ const formatPriceDeviation = (technical: TechnicalIndicators | null): {
 
   const close = technical.close !== null && technical.close !== undefined ? formatValue(technical.close) : '-';
 
-  // 计算昨日收盘/M120 的比率及颜色
-  let ratioStr = '-';
-  let ratioClass = '';
-  if (technical.close !== null && technical.close !== undefined && technical.m120) {
-    const ratio = technical.close / technical.m120;
-    ratioStr = ratio.toFixed(3);
-    if (ratio < 0.90) {
-      ratioClass = 'text-green-400';
-    } else if (ratio > 1.10) {
-      ratioClass = 'text-red-500';
-    }
-  }
+  // 昨日收盘相对 M120 的带符号偏差（+1.8% = 高于均线 1.8%；负=低于），一眼可解码。
+  // 颜色阈值与旧比值口径等价：<0.90 ↔ -10%、>1.10 ↔ +10%。
+  const formatDeviation = (price: number | null | undefined, m120: number): { str: string; cls: string } => {
+    if (price === null || price === undefined || !m120) return { str: '-', cls: '' };
+    const dev = (price / m120 - 1) * 100;
+    const sign = dev > 0 ? '+' : '';
+    let cls = '';
+    if (dev < -10) cls = 'text-green-400';
+    else if (dev > 10) cls = 'text-red-500';
+    return { str: `${sign}${dev.toFixed(1)}%`, cls };
+  };
+  const dev = formatDeviation(technical.close, technical.m120);
+  const ratioStr = dev.str;
+  const ratioClass = dev.cls;
 
   const line1 = `昨日：${close}（<span class="${ratioClass}">${ratioStr}</span>）`;
 
@@ -124,17 +126,9 @@ const formatPriceDeviation = (technical: TechnicalIndicators | null): {
     ? formatValue(technical.realtime)
     : '-';
 
-  let realtimeRatioStr = '-';
-  let realtimeRatioClass = '';
-  if (technical.realtime !== null && technical.realtime !== undefined && technical.m120) {
-    const realtimeRatio = technical.realtime / technical.m120;
-    realtimeRatioStr = realtimeRatio.toFixed(3);
-    if (realtimeRatio < 0.90) {
-      realtimeRatioClass = 'text-green-400';
-    } else if (realtimeRatio > 1.10) {
-      realtimeRatioClass = 'text-red-500';
-    }
-  }
+  const realtimeDev = formatDeviation(technical.realtime, technical.m120);
+  const realtimeRatioStr = realtimeDev.str;
+  const realtimeRatioClass = realtimeDev.cls;
 
   const line2 = `实时：${realtimeClose}（<span class="${realtimeRatioClass}">${realtimeRatioStr}</span>）`;
 
@@ -299,56 +293,45 @@ export function DividendTable({
             <th className="w-24 px-2 py-3 text-left text-[11px] font-semibold text-ink-strong uppercase tracking-wider">
               行业
             </th>
-            <th
-              className="w-20 px-2 py-3 text-right text-[11px] font-semibold text-ink-strong whitespace-nowrap cursor-pointer hover:text-accent select-none"
-              onClick={() => handleSort('avg_yield_3y')}
-              aria-sort={ariaSortFor('avg_yield_3y')}
-            >
-              3年股息率 <SortIcon field="avg_yield_3y" />
+            {/* 可排序列：th 内放真 button——键盘 Tab/Enter 可达（裸 th+onClick 对键盘用户是死列） */}
+            <th className="w-20 px-2 py-3 text-right text-[11px] font-semibold text-ink-strong whitespace-nowrap" aria-sort={ariaSortFor('avg_yield_3y')}>
+              <button type="button" onClick={() => handleSort('avg_yield_3y')} className="w-full inline-flex items-center justify-end gap-1 cursor-pointer hover:text-accent select-none focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/60 rounded" aria-label={`按3年股息率${sortField === 'avg_yield_3y' ? (sortOrder === 'desc' ? '升序' : '降序') : '排序'}`}>
+                3年股息率 <SortIcon field="avg_yield_3y" />
+              </button>
             </th>
-            <th
-              className="w-20 px-2 py-3 text-right text-[11px] font-semibold text-ink-strong whitespace-nowrap cursor-pointer hover:text-accent select-none"
-              onClick={() => handleSort('realtime_yield')}
-              aria-sort={ariaSortFor('realtime_yield')}
-            >
-              实时股息率 <SortIcon field="realtime_yield" />
+            <th className="w-20 px-2 py-3 text-right text-[11px] font-semibold text-ink-strong whitespace-nowrap" aria-sort={ariaSortFor('realtime_yield')}>
+              <button type="button" onClick={() => handleSort('realtime_yield')} className="w-full inline-flex items-center justify-end gap-1 cursor-pointer hover:text-accent select-none focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/60 rounded" aria-label={`按实时股息率${sortField === 'realtime_yield' ? (sortOrder === 'desc' ? '升序' : '降序') : '排序'}`}>
+                实时股息率 <SortIcon field="realtime_yield" />
+              </button>
             </th>
-            <th
-              className="w-14 px-2 py-3 text-left text-[11px] font-semibold text-ink-strong uppercase tracking-wider cursor-pointer hover:text-accent select-none"
-              onClick={() => handleSort('m120')}
-              aria-sort={ariaSortFor('m120')}
-            >
-              M120 <SortIcon field="m120" />
+            <th className="w-14 px-2 py-3 text-left text-[11px] font-semibold text-ink-strong uppercase tracking-wider" aria-sort={ariaSortFor('m120')}>
+              <button type="button" onClick={() => handleSort('m120')} className="w-full inline-flex items-center gap-1 cursor-pointer hover:text-accent select-none focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/60 rounded" aria-label={`按M120${sortField === 'm120' ? (sortOrder === 'desc' ? '升序' : '降序') : '排序'}`}>
+                M120 <SortIcon field="m120" />
+              </button>
             </th>
-            <th
-              className="w-16 px-2 py-3 text-left text-[11px] font-semibold text-ink-strong whitespace-nowrap cursor-pointer hover:text-accent select-none"
-              onClick={() => handleSort('shareholder_count')}
-              aria-sort={ariaSortFor('shareholder_count')}
-            >
-              户数 <SortIcon field="shareholder_count" />
+            <th className="w-16 px-2 py-3 text-left text-[11px] font-semibold text-ink-strong whitespace-nowrap" aria-sort={ariaSortFor('shareholder_count')}>
+              <button type="button" onClick={() => handleSort('shareholder_count')} className="w-full inline-flex items-center gap-1 cursor-pointer hover:text-accent select-none focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/60 rounded" aria-label={`按户数${sortField === 'shareholder_count' ? (sortOrder === 'desc' ? '升序' : '降序') : '排序'}`}>
+                户数 <SortIcon field="shareholder_count" />
+              </button>
             </th>
-            <th
-              className="w-16 px-2 py-3 text-right text-[11px] font-semibold text-ink-strong uppercase tracking-wider cursor-pointer hover:text-accent select-none"
-              onClick={() => handleSort('roe')}
-              aria-sort={ariaSortFor('roe')}
-            >
-              ROE <SortIcon field="roe" />
+            <th className="w-16 px-2 py-3 text-right text-[11px] font-semibold text-ink-strong uppercase tracking-wider" aria-sort={ariaSortFor('roe')}>
+              <button type="button" onClick={() => handleSort('roe')} className="w-full inline-flex items-center justify-end gap-1 cursor-pointer hover:text-accent select-none focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/60 rounded" aria-label={`按ROE${sortField === 'roe' ? (sortOrder === 'desc' ? '升序' : '降序') : '排序'}`}>
+                ROE <SortIcon field="roe" />
+              </button>
             </th>
             <th className="w-20 px-2 py-3 text-right text-[11px] font-semibold text-ink-strong uppercase tracking-wider">
               扣非同比
             </th>
-            <th
-              className="w-20 px-2 py-3 text-right text-[11px] font-semibold text-ink-strong uppercase tracking-wider cursor-pointer hover:text-accent select-none"
-              onClick={() => handleSort('cagr_3y')}
-              aria-sort={ariaSortFor('cagr_3y')}
-            >
-              3年CAGR <SortIcon field="cagr_3y" />
+            <th className="w-20 px-2 py-3 text-right text-[11px] font-semibold text-ink-strong uppercase tracking-wider" aria-sort={ariaSortFor('cagr_3y')}>
+              <button type="button" onClick={() => handleSort('cagr_3y')} className="w-full inline-flex items-center justify-end gap-1 cursor-pointer hover:text-accent select-none focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/60 rounded" aria-label={`按3年CAGR${sortField === 'cagr_3y' ? (sortOrder === 'desc' ? '升序' : '降序') : '排序'}`}>
+                3年CAGR <SortIcon field="cagr_3y" />
+              </button>
             </th>
             <th className="w-16 px-2 py-3 text-right text-[11px] font-semibold text-ink-strong uppercase tracking-wider">
               分红比例
             </th>
             <th className="w-40 px-2 py-3 text-left text-[11px] font-semibold text-ink-strong whitespace-nowrap">
-              昨日/M120
+              偏离M120
             </th>
             {/* sticky 左缘软阴影：横滑时提示「左还有被钉住列盖住的内容」（冻结列标准暗示） */}
             <th className="w-64 px-2 py-3 text-center text-[11px] font-semibold text-ink-strong uppercase tracking-wider sticky right-0 z-20 bg-paper-deep border-l border-rule shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.28)]">

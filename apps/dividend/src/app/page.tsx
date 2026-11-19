@@ -1052,10 +1052,27 @@ function DividendPageContent() {
         </div>
       )}
 
-      {/* Tab 切换：全部 / 收藏跟踪 / 选股关注（只看收藏 toggle 在「全部」筛选面板行内，不属于视图切换） */}
-      <div className="flex border-b border-rule mb-4 items-center" role="tablist" aria-label="视图切换">
+      {/* Tab 切换：全部 / 收藏跟踪 / 选股关注（只看收藏 toggle 在「全部」筛选面板行内，不属于视图切换）
+          方向键切换：标准 tab pattern——ArrowLeft/ArrowRight/Up/Down 在三个 tab 间移动并激活 */}
+      <div
+        className="flex border-b border-rule mb-4 items-center"
+        role="tablist"
+        aria-label="视图切换"
+        onKeyDown={(e) => {
+          if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return;
+          const order = ['all', 'alerts', 'screening'] as const;
+          const idx = order.indexOf(activeTab);
+          const next = e.key === 'ArrowLeft' || e.key === 'ArrowUp'
+            ? order[(idx + order.length - 1) % order.length]
+            : order[(idx + 1) % order.length];
+          e.preventDefault();
+          handleTabChange(next);
+          document.querySelector<HTMLElement>(`[role="tab"][data-tab="${next}"]`)?.focus();
+        }}
+      >
         <button
           role="tab"
+          data-tab="all"
           aria-selected={activeTab === 'all'}
           onClick={() => handleTabChange('all')}
           className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
@@ -1069,6 +1086,7 @@ function DividendPageContent() {
         </button>
         <button
           role="tab"
+          data-tab="alerts"
           aria-selected={activeTab === 'alerts'}
           onClick={() => handleTabChange('alerts')}
           className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
@@ -1083,7 +1101,7 @@ function DividendPageContent() {
           收藏跟踪
           <span className="ml-1 text-xs bg-paper-deep text-ink px-1.5 py-0.5 rounded tabular-nums">{watchlist.total}</span>
         </button>
-        <button role="tab" aria-selected={activeTab === 'screening'} onClick={() => handleTabChange('screening')} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'screening' ? 'border-accent text-accent-deep' : 'border-transparent text-ink-muted hover:text-ink'}`}>选股关注</button>
+        <button role="tab" data-tab="screening" aria-selected={activeTab === 'screening'} onClick={() => handleTabChange('screening')} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'screening' ? 'border-accent text-accent-deep' : 'border-transparent text-ink-muted hover:text-ink'}`}>选股关注</button>
       </div>
 
       {/* 三个 tab 的面板区：flex-1 撑满首屏剩余高度，短内容 tab 页面高度一致 */}

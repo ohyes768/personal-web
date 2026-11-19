@@ -559,8 +559,10 @@ function TrackingRow({
     );
   })();
 
-  /** 评估类按钮：文案随「有没有评估过 / 失败没成」变化 */
+  /** 评估类按钮：文案随「有没有评估过 / 失败没成」变化。
+      后端未配置时不渲染——灰死按钮不占主操作位，状态由顶部提示条说明（让布局解释）。 */
   const evaluateButton = (() => {
+    if (!configured) return null;
     if (actions.evaluate === 'running') {
       // 评估中也是同一个按钮位，宽度跟着主按钮走（否则行一开跑按钮就缩一下）
       return <button type="button" className={`${ghostBtn} ${BTN_SLOT}`} disabled>评估中…</button>;
@@ -619,19 +621,23 @@ function TrackingRow({
         ) : qualityLive?.state === 'failed' ? (
           <span className="inline-flex items-center gap-2">
             <span className="text-xs text-red-700" title={qualityLive.error || '评级失败'}>失败</span>
-            <button type="button" className={ghostBtn} disabled={!qualityConfigured} title={qualityLive.error || '重新发起评级'} onClick={onAnalyzeQuality}>重试</button>
+            {/* 未配置时不渲染灰死「重试」按钮，状态由顶部提示条说明 */}
+            {qualityConfigured && (
+              <button type="button" className={ghostBtn} title="重新发起评级" onClick={onAnalyzeQuality}>重试</button>
+            )}
             {qualityLive.run_id && <SessionDownloadButton runId={qualityLive.run_id} download={dividendApi.downloadQualitySession} />}
           </span>
-        ) : (
+        ) : qualityConfigured ? (
           <button
             type="button"
             className={ghostBtn}
-            disabled={!qualityConfigured}
-            title={qualityConfigured ? '对这只股票调用 AI 五维基本面评级（约几分钟）' : '自动评级暂未启用（后端未完成配置）'}
+            title="对这只股票调用 AI 五维基本面评级（约几分钟）"
             onClick={onAnalyzeQuality}
           >
             分析
           </button>
+        ) : (
+          <span className="text-xs text-ink-muted">—</span>
         )}
       </td>
 
