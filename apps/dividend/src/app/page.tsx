@@ -741,13 +741,16 @@ function DividendPageContent() {
             </Link>
             <h1 className="text-4xl font-bold mt-4 text-ink">股息率</h1>
             <p className="text-ink-muted mt-1">
-              {activeTab === 'all' && totalCollected !== null
-                ? `共收集 ${totalCollected} 只股票，其中 ${total} 只 3年股息率 ≥ ${appliedFilter.min_yield}%${appliedFilter.exchange ? `（${appliedFilter.exchange}）` : ''}`
-                : activeTab === 'all'
-                  ? `共 ${total} 只股票 | 3年股息率 ≥ ${appliedFilter.min_yield}%`
-                  : activeTab === 'alerts'
-                    ? `已收藏 ${watchlist.total} 只，按估值挡位跟踪监控`
-                    : '按分红与经营质量筛选，收藏后持续关注'}
+              {/* 只看收藏态副标题读收藏事实（与表格同源 watchlist），不再宣读被绕过的股息率阈值 */}
+              {activeTab === 'all' && favOnly
+                ? `只看收藏：${watchlist.total} 只`
+                : activeTab === 'all' && totalCollected !== null
+                  ? `共收集 ${totalCollected} 只股票，其中 ${total} 只 3年股息率 ≥ ${appliedFilter.min_yield}%${appliedFilter.exchange ? `（${appliedFilter.exchange}）` : ''}`
+                  : activeTab === 'all'
+                    ? `共 ${total} 只股票 | 3年股息率 ≥ ${appliedFilter.min_yield}%`
+                    : activeTab === 'alerts'
+                      ? `已收藏 ${watchlist.total} 只，按估值挡位跟踪监控`
+                      : '按分红与经营质量筛选，收藏后持续关注'}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -1049,7 +1052,7 @@ function DividendPageContent() {
         </div>
       )}
 
-      {/* Tab 切换：全部 / 挡位监控；收藏过滤用右侧"只看收藏"按钮 */}
+      {/* Tab 切换：全部 / 收藏跟踪 / 选股关注（只看收藏 toggle 在「全部」筛选面板行内，不属于视图切换） */}
       <div className="flex border-b border-rule mb-4 items-center" role="tablist" aria-label="视图切换">
         <button
           role="tab"
@@ -1081,22 +1084,6 @@ function DividendPageContent() {
           <span className="ml-1 text-xs bg-paper-deep text-ink px-1.5 py-0.5 rounded tabular-nums">{watchlist.total}</span>
         </button>
         <button role="tab" aria-selected={activeTab === 'screening'} onClick={() => handleTabChange('screening')} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'screening' ? 'border-accent text-accent-deep' : 'border-transparent text-ink-muted hover:text-ink'}`}>选股关注</button>
-        {/* 只看收藏 toggle：仅 all tab 显示，过滤当前列表 */}
-        {activeTab === 'all' && (
-          <button
-            onClick={handleToggleFav}
-            className={`ml-auto mb-[-1px] px-3 py-1.5 text-sm rounded-md flex items-center gap-1.5 border transition-colors ${
-              favOnly
-                ? 'bg-yellow-500/15 text-warn-deep border-yellow-500/50'
-                : 'text-ink-muted hover:text-warn-deep border-transparent hover:border-yellow-500/40 hover:bg-yellow-500/10'
-            }`}
-            title={favOnly ? '当前仅显示收藏股，点击恢复全部' : '只看收藏的股票'}
-          >
-            <StarIconOutline className="w-4 h-4" />
-            只看收藏
-            <span className="text-xs bg-paper-deep text-ink px-1.5 py-0.5 rounded tabular-nums">{watchlist.total}</span>
-          </button>
-        )}
       </div>
 
       {/* 三个 tab 的面板区：flex-1 撑满首屏剩余高度，短内容 tab 页面高度一致 */}
@@ -1111,36 +1098,52 @@ function DividendPageContent() {
             loading={searchActive && searchLoading}
             status={searchStatus}
           />
-          {!favOnly && (
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-              <label htmlFor="filter-exchange" className="text-sm text-ink-muted">交易所</label>
-              <select
-                id="filter-exchange"
-                value={exchangeFilter}
-                onChange={(e) => setExchangeFilter(e.target.value)}
-                className="bg-paper text-ink border border-rule-strong rounded px-3 py-1.5 text-sm focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-colors"
-              >
-                <option value="">全部</option>
-                <option value="沪市主板">沪市主板</option>
-                <option value="深市主板">深市主板</option>
-              </select>
-              <label htmlFor="filter-min-yield" className="text-sm text-ink-muted ml-2">股息率≥</label>
-              <input
-                id="filter-min-yield"
-                type="number"
-                value={minYieldInput}
-                onChange={(e) => setMinYieldInput(e.target.value)}
-                className="bg-paper text-ink border border-rule-strong rounded px-3 py-1.5 text-sm w-20 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-colors"
-                placeholder="3.5"
-                min="0"
-                step="0.1"
-              />
-              <span className="text-sm text-ink-muted">%</span>
-              {loading && (
-                <span className="text-xs text-ink-muted">查询中…</span>
-              )}
-            </div>
-          )}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            {/* 只看收藏 toggle：放在筛选行而非 tablist（读屏不再读成第 4 个 tab） */}
+            <button
+              onClick={handleToggleFav}
+              aria-pressed={favOnly}
+              className={`px-3 py-1.5 text-sm rounded-md flex items-center gap-1.5 border transition-colors h-[34px] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 ${
+                favOnly
+                  ? 'bg-yellow-500/15 text-warn-deep border-yellow-500/50'
+                  : 'text-ink-muted hover:text-warn-deep border-transparent hover:border-yellow-500/40 hover:bg-yellow-500/10'
+              }`}
+            >
+              <StarIconOutline className="w-4 h-4" />
+              只看收藏
+              <span className="text-xs bg-paper-deep text-ink px-1.5 py-0.5 rounded tabular-nums">{watchlist.total}</span>
+            </button>
+            {!favOnly && (
+              <>
+                <label htmlFor="filter-exchange" className="text-sm text-ink-muted ml-1">交易所</label>
+                <select
+                  id="filter-exchange"
+                  value={exchangeFilter}
+                  onChange={(e) => setExchangeFilter(e.target.value)}
+                  className="bg-paper text-ink border border-rule-strong rounded px-3 py-1.5 text-sm focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-colors"
+                >
+                  <option value="">全部</option>
+                  <option value="沪市主板">沪市主板</option>
+                  <option value="深市主板">深市主板</option>
+                </select>
+                <label htmlFor="filter-min-yield" className="text-sm text-ink-muted ml-2">股息率≥</label>
+                <input
+                  id="filter-min-yield"
+                  type="number"
+                  value={minYieldInput}
+                  onChange={(e) => setMinYieldInput(e.target.value)}
+                  className="bg-paper text-ink border border-rule-strong rounded px-3 py-1.5 text-sm w-20 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-colors"
+                  placeholder="3.5"
+                  min="0"
+                  step="0.1"
+                />
+                <span className="text-sm text-ink-muted">%</span>
+                {loading && (
+                  <span className="text-xs text-ink-muted">查询中…</span>
+                )}
+              </>
+            )}
+          </div>
         </div>
       )}
       {activeTab === 'all' && favOnly && favoriteLoadError && <p role="alert" className="mb-3 text-red-600">收藏资料加载失败：{favoriteLoadError}，暂显示已有资料。</p>}

@@ -14,6 +14,8 @@ import { ScreeningStockDetailModal } from './ScreeningStockDetailModal';
 import { SessionDownloadButton } from './SessionDownloadButton';
 
 const pct = (value?: number | null) => value == null || !Number.isFinite(value) ? '待补' : `${value.toFixed(2)}%`;
+// 六字段全量序列化：防抖键，条件变化检测与持久化共用
+const keyOfScreening = (c: ScreeningConditions) => JSON.stringify([c.min_yield, c.min_roe, c.min_roe_avg_3y, c.max_quarter_profit_decline_pct, c.min_cagr_3y, c.exchange ?? '']);
 const formatTimestamp = (value?: string | null) => {
   if (!value) return '暂无记录';
   const d = new Date(value);
@@ -22,6 +24,7 @@ const formatTimestamp = (value?: string | null) => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 };
 const isDeclining = (value?: number | null) => value != null && Number.isFinite(value) && value < 0;
+const isScreeningValid = (c: ScreeningConditions) => [c.min_yield, c.min_roe, c.min_roe_avg_3y].every(value => Number.isFinite(value) && value >= 0 && value <= 100) && Number.isFinite(c.max_quarter_profit_decline_pct) && c.max_quarter_profit_decline_pct > 0 && c.max_quarter_profit_decline_pct <= 100 && Number.isFinite(c.min_cagr_3y) && c.min_cagr_3y >= -100 && c.min_cagr_3y <= 100;
 const statusNames: Record<ScreeningStatus, string> = { eligible: '符合条件', excluded: '未符合', insufficient_data: '待补数据' };
 const buttonClass = 'rounded border border-rule-strong px-3 py-2 text-sm text-ink hover:border-accent disabled:opacity-40';
 
@@ -47,13 +50,17 @@ export function ScreeningTab({ watchlist, refreshRevision = 0, sourceQuery = 'ta
   const requestId = useRef(0);
   const appliedConditions = useRef(DEFAULT_SCREENING);
   const previousRevision = useRef(refreshRevision);
+  // 防抖键：记录已查询的条件；防抖触发时与最新键比对，相同则不重复发
+  const conditionsKeyRef = useRef(keyOfScreening(conditions));
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 作废在途请求：序号 +1 后，先前发出的响应不再被采纳。
   // 抽成稳定回调，避免在 effect cleanup 里直接读 ref（cleanup 执行时 ref 可能已被改写）。
   const invalidateRequest = useCallback(() => { requestId.current++; }, []);
   const query = useCallback(async (next: ScreeningConditions) => {
     appliedConditions.current = next;
     const id = ++requestId.current;
-    setLoading(true); setError(''); setSelected(new Set()); setResult(null); setMessage(''); setFailedCodes([]);
+    setLoading(true); setError(''); setMessage(''); setFailedCodes([]);
+    // 自动重查（防抖）期间保留旧结果，避免整表闪烁消失；新响应到达后整体替换
     try {
       const response = await dividendApi.screenStocks(next);
       if (id === requestId.current) setResult(response);
@@ -64,14 +71,35 @@ export function ScreeningTab({ watchlist, refreshRevision = 0, sourceQuery = 'ta
     }
   }, []);
 
+  // 挂载只查一次：恢复本地条件（无则默认）并查询；防抖重查由 changeConditions 负责，挂载不经过它，天然无双发
   useEffect(() => {
     let next = { ...DEFAULT_SCREENING };
     try {
       next = restoreScreeningConditions(JSON.parse(localStorage.getItem(SCREENING_STORAGE_KEY) || 'null'));
     } catch { /* unavailable storage uses defaults */ }
+    conditionsKeyRef.current = keyOfScreening(next);
     setConditions(next); void query(next);
     return () => { invalidateRequest(); };
   }, [query, invalidateRequest]);
+
+  // 输入即生效：与「全部」tab 同一范式——条件变化停 350ms 后自动重查并持久化
+  // （替代手动「查询候选」按钮与「条件已修改」警告条）。
+  // 防抖闭包捕获显式 next 而非 state：挂载恢复 / 恢复默认都不经过它，不会误用首帧条件。
+  const changeConditions = useCallback((next: ScreeningConditions) => {
+    setConditions(next);
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    if (!isScreeningValid(next)) return; // 输入中途（如清空）不查询，也不动防抖键
+    const key = keyOfScreening(next);
+    debounceTimer.current = setTimeout(() => {
+      if (key === conditionsKeyRef.current) return; // 与上次查询同条件（如已是默认时点恢复默认）不重复发
+      conditionsKeyRef.current = key;
+      if (key === keyOfScreening(DEFAULT_SCREENING)) { try { localStorage.removeItem(SCREENING_STORAGE_KEY); } catch {} }
+      else { try { localStorage.setItem(SCREENING_STORAGE_KEY, JSON.stringify(next)); } catch {} }
+      void query(next);
+    }, 350);
+  }, [query]);
+  // 组件卸载时清掉未触发的防抖
+  useEffect(() => () => { if (debounceTimer.current) clearTimeout(debounceTimer.current); }, []);
 
   useEffect(() => {
     if (previousRevision.current !== refreshRevision) {
@@ -116,8 +144,8 @@ export function ScreeningTab({ watchlist, refreshRevision = 0, sourceQuery = 'ta
   const { priceMap } = useRealtimePrices(eligibleCodes);
   const activeView = view === 'insufficient_data' && result?.counts.insufficient_data === 0 ? 'eligible' : view;
   const rows = result?.items.filter(item => item.status === activeView) || [];
-  const valid = [conditions.min_yield, conditions.min_roe, conditions.min_roe_avg_3y].every(value => Number.isFinite(value) && value >= 0 && value <= 100) && Number.isFinite(conditions.max_quarter_profit_decline_pct) && conditions.max_quarter_profit_decline_pct > 0 && conditions.max_quarter_profit_decline_pct <= 100 && Number.isFinite(conditions.min_cagr_3y) && conditions.min_cagr_3y >= -100 && conditions.min_cagr_3y <= 100;
-  const changed = result && (['min_yield', 'min_roe', 'min_roe_avg_3y', 'max_quarter_profit_decline_pct'] as const).some(key => result.conditions[key] !== conditions[key]) || !!result && (result.conditions.exchange || '') !== (conditions.exchange || '');
+  const valid = isScreeningValid(conditions);
+
   const selectCode = (code: string) => setSelected(prev => { const next = new Set(prev); if (next.has(code)) next.delete(code); else next.add(code); return next; });
   // 未符合/待补视图多一列「原因」；符合条件视图为 8 列
   const showReason = activeView !== 'eligible';
@@ -140,23 +168,22 @@ export function ScreeningTab({ watchlist, refreshRevision = 0, sourceQuery = 'ta
   const openQuality = (code: string) => { setDetailItem(null); setQualityModalCode(code); };
 
   return <section aria-label="选股关注" className="space-y-4">
-    <form onSubmit={event => { event.preventDefault(); if (!valid) return; try { localStorage.setItem(SCREENING_STORAGE_KEY, JSON.stringify(conditions)); } catch {} void query(conditions); }} className="rounded-xl border border-rule bg-paper-card p-5">
+    <form onSubmit={event => { event.preventDefault(); }} className="rounded-xl border border-rule bg-paper-card p-5">
       <h2 className="text-lg font-semibold text-ink">选出值得持续关注的公司</h2>
       <div className="mt-4 flex flex-wrap items-end gap-4">
         {([['min_yield', '近三年平均股息率 ≥', '0'], ['min_roe_avg_3y', '近三年平均 ROE ≥', '0'], ['min_roe', '最近年度 ROE ≥', '0'], ['max_quarter_profit_decline_pct', '单季扣非利润最大降幅', '0.1'], ['min_cagr_3y', '扣非净利润3年复合增长率 ≥', '-100']] as const).map(([key, label, min]) => <label key={key} className="text-sm text-ink">
           <span className="block mb-1">{label}</span>
-          <input aria-label={label} type="number" min={min} max="100" step="0.1" required value={Number.isNaN(conditions[key]) ? '' : conditions[key]} onChange={event => setConditions(prev => ({ ...prev, [key]: event.target.value === '' ? NaN : Number(event.target.value) }))} className="w-24 rounded border border-rule-strong bg-paper px-3 py-2" /> %
+          <input aria-label={label} type="number" min={min} max="100" step="0.1" required value={Number.isNaN(conditions[key]) ? '' : conditions[key]} onChange={event => changeConditions({ ...conditions, [key]: event.target.value === '' ? NaN : Number(event.target.value) })} className="w-24 rounded border border-rule-strong bg-paper px-3 py-2" /> %
         </label>)}
-        <label className="text-sm text-ink"><span className="block mb-1">交易所</span><select aria-label="选股交易所" value={conditions.exchange || ''} onChange={event => setConditions(prev => ({ ...prev, exchange: event.target.value || undefined }))} className="rounded border border-rule-strong bg-paper px-3 py-2"><option value="">全部</option><option>沪市主板</option><option>深市主板</option></select></label>
-        <button className={`${buttonClass} bg-accent text-white hover:bg-accent-hover`} disabled={loading || saving || !valid}>{loading ? '筛选中…' : '查询候选'}</button>
-        <button type="button" className={buttonClass} disabled={loading || saving} onClick={() => { const next = { ...DEFAULT_SCREENING }; setConditions(next); try { localStorage.removeItem(SCREENING_STORAGE_KEY); } catch {} void query(next); }}>恢复默认</button>
+        <label className="text-sm text-ink"><span className="block mb-1">交易所</span><select aria-label="选股交易所" value={conditions.exchange || ''} onChange={event => changeConditions({ ...conditions, exchange: event.target.value || undefined })} className="rounded border border-rule-strong bg-paper px-3 py-2"><option value="">全部</option><option>沪市主板</option><option>深市主板</option></select></label>
+        <button type="button" className={buttonClass} disabled={loading || saving} onClick={() => changeConditions({ ...DEFAULT_SCREENING })}>恢复默认</button>
+        {loading && <span className="text-xs text-ink-muted self-end pb-2.5">筛选中…</span>}
       </div>
       <p className="mt-3 text-xs text-ink-muted">固定条件：近三年每年分红、最近年度扣非净利润 &gt; 0 且年度同比 ≥ 0、单季扣非同比不连续两季为负；单季降幅超过所设阈值时排除。</p>
     </form>
     {error && <p role="alert" className="text-red-600">{error}<button className={`${buttonClass} ml-3`} onClick={() => void query(conditions)} disabled={!valid}>重试筛选</button></p>}
     {result && <>
       <p className="text-sm text-ink-muted">已采集股票池 {result.total} 只 · 分红年度 {result.dividend_years.join(' / ')} · 分红数据更新 <span title={result.last_updated ?? undefined}>{formatTimestamp(result.last_updated)}</span> · 财务更新 <span title={result.financial_last_updated ?? undefined}>{formatTimestamp(result.financial_last_updated)}</span>（报告期见各行）</p>
-      {changed && <p className="text-sm text-amber-700">条件已修改，当前仍显示上次查询结果，请点击「查询候选」。</p>}
       <div className="flex flex-wrap items-center gap-2">
         {(Object.keys(statusNames) as ScreeningStatus[]).filter(status => status !== 'insufficient_data' || result.counts[status] > 0).map(status => <button key={status} className={`${buttonClass} ${activeView === status ? 'bg-paper-deep border-accent' : ''}`} onClick={() => setView(status)}>{statusNames[status]} {result.counts[status]}</button>)}
         <button className={`${buttonClass} md:ml-auto`} disabled={saving || selected.size === 0} onClick={() => void save([...selected])}>收藏所选 ({selected.size})</button>

@@ -282,7 +282,9 @@ export function DividendTable({
   return (
     <>
       <div className="border border-rule rounded-lg overflow-x-auto bg-paper-card">
-      <table className="w-full min-w-[1280px]">
+      {/* min-w 下限=各列内容最小宽之和：1440px 视口（容器 ~1150px）不横滑，
+          sticky 操作列自然失效、不盖住「昨日/M120」；更窄视口才横滑并启用 sticky+左缘阴影 */}
+      <table className="w-full min-w-[1120px]">
         <thead className="bg-paper-deep border-b-2 border-ink-strong">
           <tr>
             <th className="w-16 px-2 py-3 text-center text-[11px] font-semibold text-ink-strong uppercase tracking-wider" title="收藏 / 挡位监控">
@@ -291,10 +293,10 @@ export function DividendTable({
             <th className="w-16 px-2 py-3 text-left text-[11px] font-semibold text-ink-strong uppercase tracking-wider">
               代码
             </th>
-            <th className="w-28 px-2 py-3 text-left text-[11px] font-semibold text-ink-strong uppercase tracking-wider">
+            <th className="w-24 px-2 py-3 text-left text-[11px] font-semibold text-ink-strong uppercase tracking-wider">
               名称
             </th>
-            <th className="w-28 px-2 py-3 text-left text-[11px] font-semibold text-ink-strong uppercase tracking-wider">
+            <th className="w-24 px-2 py-3 text-left text-[11px] font-semibold text-ink-strong uppercase tracking-wider">
               行业
             </th>
             <th
@@ -326,7 +328,7 @@ export function DividendTable({
               户数 <SortIcon field="shareholder_count" />
             </th>
             <th
-              className="w-20 px-2 py-3 text-right text-[11px] font-semibold text-ink-strong uppercase tracking-wider cursor-pointer hover:text-accent select-none"
+              className="w-16 px-2 py-3 text-right text-[11px] font-semibold text-ink-strong uppercase tracking-wider cursor-pointer hover:text-accent select-none"
               onClick={() => handleSort('roe')}
               aria-sort={ariaSortFor('roe')}
             >
@@ -342,13 +344,14 @@ export function DividendTable({
             >
               3年CAGR <SortIcon field="cagr_3y" />
             </th>
-            <th className="w-20 px-2 py-3 text-right text-[11px] font-semibold text-ink-strong uppercase tracking-wider">
+            <th className="w-16 px-2 py-3 text-right text-[11px] font-semibold text-ink-strong uppercase tracking-wider">
               分红比例
             </th>
-            <th className="w-56 px-2 py-3 text-left text-[11px] font-semibold text-ink-strong whitespace-nowrap">
+            <th className="w-40 px-2 py-3 text-left text-[11px] font-semibold text-ink-strong whitespace-nowrap">
               昨日/M120
             </th>
-            <th className="w-64 px-2 py-3 text-center text-[11px] font-semibold text-ink-strong uppercase tracking-wider sticky right-0 z-20 bg-paper-deep border-l border-rule">
+            {/* sticky 左缘软阴影：横滑时提示「左还有被钉住列盖住的内容」（冻结列标准暗示） */}
+            <th className="w-64 px-2 py-3 text-center text-[11px] font-semibold text-ink-strong uppercase tracking-wider sticky right-0 z-20 bg-paper-deep border-l border-rule shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.28)]">
               操作
             </th>
           </tr>
@@ -409,10 +412,10 @@ export function DividendTable({
                 <td className="w-16 px-2 py-3 font-mono text-sm text-gray-300">
                   {stock.code}
                 </td>
-                <td className="w-28 px-2 py-3 text-sm font-semibold text-ink-strong whitespace-nowrap">
+                <td className="w-24 px-2 py-3 text-sm font-semibold text-ink-strong whitespace-nowrap">
                   {stock.name}
                 </td>
-                <td className="w-28 px-2 py-3 text-xs text-gray-300 leading-tight">
+                <td className="w-24 px-2 py-3 text-xs text-gray-300 leading-tight">
                   {(() => {
                     // 取最细一级有值的行业（此前固定三行，缺级时满屏「-」）
                     const levels = [stock.sw_level3, stock.sw_level2, stock.sw_level1]
@@ -484,7 +487,7 @@ export function DividendTable({
                 <td className="w-16 px-1.5 py-3 text-sm text-ink font-mono whitespace-nowrap">
                   {formatShareholderCount(stock.shareholder_count)}
                 </td>
-                <td className="w-20 px-1.5 py-3 text-sm text-right whitespace-nowrap">
+                <td className="w-16 px-1.5 py-3 text-sm text-right whitespace-nowrap">
                   {stock.roe !== null && stock.roe !== undefined
                     ? (
                       <span
@@ -542,7 +545,7 @@ export function DividendTable({
                     )
                     : <span className="text-ink-soft font-mono">无法计算</span>}
                 </td>
-                <td className="w-20 px-2 py-3 text-sm text-right">
+                <td className="w-16 px-2 py-3 text-sm text-right">
                   {stock.payout_ratio !== null && stock.payout_ratio !== undefined
                     ? (
                       <span
@@ -558,7 +561,7 @@ export function DividendTable({
                     )
                     : <span className="text-ink-soft font-mono">亏损/-</span>}
                 </td>
-                <td className="w-56 px-2 py-3 text-xs text-gray-300 leading-tight">
+                <td className="w-40 px-2 py-3 text-xs text-gray-300 leading-tight">
                   <div className="text-xs leading-tight">
                     <div dangerouslySetInnerHTML={{ __html: priceInfo.line1 }} />
                     <div className="flex items-center gap-1 mt-1">
@@ -566,7 +569,7 @@ export function DividendTable({
                     </div>
                   </div>
                 </td>
-                <td className={`w-64 px-2 py-3 text-center sticky right-0 z-10 border-l border-rule ${isSelected ? 'bg-info-tint' : 'bg-paper-card group-even:bg-paper-tint group-hover:bg-paper-deep'}`}>
+                <td className={`w-64 px-2 py-3 text-center sticky right-0 z-10 border-l border-rule shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.28)] ${isSelected ? 'bg-info-tint' : 'bg-paper-card group-even:bg-paper-tint group-hover:bg-paper-deep'}`}>
                   <div className="flex items-center justify-center gap-1">
                     <Button
                       variant={isSelected ? 'primary' : 'ghost'}
