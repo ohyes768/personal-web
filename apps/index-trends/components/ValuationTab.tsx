@@ -1,16 +1,16 @@
 "use client";
 
-/** 估值页：价格走势与 PB/PE 分位合并成一张图（双 y 轴、同一时间轴）。
+/** 估值页：指数点数走势 + 悬浮查 PB/PE 分位（不画分位走势）。
  *
  * 纯估值指数（创业板50）与通道指数共用这个视图；通道指数另有通道图，
  * 这里不画通道位置——价格是行情，分位是估值，通道是另一层拟合。
- * PB 为主、PE 用来交叉验证，选择器只换分位那条线，价格线始终在。
+ * PB / PE 两行读数并列展示，不做切换；分位只在悬浮时按日期就近查表。
  */
 import { useEffect, useState } from "react";
 import ValuationChart from "./ValuationChart";
 import { api } from "../lib/api";
+import { buildPercentileLookup } from "../lib/valuationCombinedOptions";
 import {
-  VALUATION_METRIC_LABELS,
   type Valuation,
   type ValuationMetric,
   type ValuationMetricSnapshot,
@@ -47,21 +47,26 @@ function metricSnapshot(
   };
 }
 
-function emptyHistory(code: string, metric: string): ValuationHistory {
-  return { index_code: code, metric, window: "y10", dates: [], values: [], percentiles: [] };
-}
-
-function rangeOf(history: ValuationHistory | null): string | null {
-  return history && history.dates.length > 0
-    ? `${history.dates[0]} – ${history.dates[history.dates.length - 1]}`
-    : null;
+/** 摘要行里一行指标的读数：标签 + 当前分位 + 指标值与数据日期。 */
+function MetricReadout({ snapshot, label }: { snapshot: ValuationMetricSnapshot | null; label: string }) {
+  const pct = snapshot?.percentile_pct;
+  const value = snapshot?.value;
+  return (
+    <span className="valuation-metric">
+      <small>{label}分位</small>
+      <b>{typeof pct === "number" ? `${pct.toFixed(1)}%` : "—"}</b>
+      <small>
+        {label} {typeof value === "number" ? value.toFixed(2) : "—"} ·{" "}
+        {snapshot?.as_of ?? "无数据"} · 理杏仁
+      </small>
+    </span>
+  );
 }
 
 export default function ValuationTab({ code, reloadKey, hasChannel = false }: Props) {
   const [valuation, setValuation] = useState<Valuation | null>(null);
   const [prices, setPrices] = useState<PriceSeries | null>(null);
   const [histories, setHistories] = useState<Partial<Record<ValuationMetric, ValuationHistory>>>({});
-  const [metric, setMetric] = useState<ValuationMetric>("pb_mcw");
   const [error, setError] = useState<string | null>(null);
   const [retryTick, setRetryTick] = useState(0);
 
@@ -88,13 +93,16 @@ export default function ValuationTab({ code, reloadKey, hasChannel = false }: Pr
     };
   }, [code, hasChannel, reloadKey, retryTick]);
 
-  const snapshot = metricSnapshot(valuation, metric);
-  const selectedHistory = histories[metric] ?? null;
+  const pbHistory = histories.pb_mcw ?? null;
+  const peHistory = histories.pe_ttm_mcw ?? null;
+  const pbSnapshot = metricSnapshot(valuation, "pb_mcw");
+  const peSnapshot = metricSnapshot(valuation, "pe_ttm_mcw");
   const priceRange =
     prices && prices.bars.length > 0
       ? `${prices.bars[0].date} – ${prices.bars[prices.bars.length - 1].date}`
       : null;
-  const metricLabel = metric === "pb_mcw" ? "PB" : "PE-TTM";
+  const lookup = pbHistory && peHistory ? buildPercentileLookup(pbHistory, peHistory) : null;
+  const pctRange = lookup?.range() ?? null;
 
   return (
     <section>
@@ -117,50 +125,35 @@ export default function ValuationTab({ code, reloadKey, hasChannel = false }: Pr
               <b>{prices.close?.toFixed(2) ?? "—"}</b>
               <small>收盘日 {prices.price_as_of ?? "—"}</small>
             </span>
-            <span className="valuation-metric">
-              <div className="picker" role="tablist" aria-label="估值指标">
-                {(Object.keys(VALUATION_METRIC_LABELS) as ValuationMetric[]).map((item) => (
-                  <button key={item} aria-current={metric === item} onClick={() => setMetric(item)}>
-                    {VALUATION_METRIC_LABELS[item]}
-                  </button>
-                ))}
-              </div>
-              <b>
-                {typeof snapshot?.percentile_pct === "number"
-                  ? `${snapshot.percentile_pct.toFixed(1)}%`
-                  : "—"}
-              </b>
-              <small>
-                {metricLabel}{" "}
-                {typeof snapshot?.value === "number" ? snapshot.value.toFixed(2) : "—"} ·{" "}
-                {snapshot?.as_of ?? "无数据"} · 理杏仁
-              </small>
-            </span>
+            <MetricReadout snapshot={pbSnapshot} label="PB" />
+            <MetricReadout snapshot={peSnapshot} label="PE" />
           </div>
 
-          {selectedHistory && selectedHistory.dates.length > 0 ? (
+          {prices.bars.length > 0 && pbHistory && peHistory ? (
             <ValuationChart
               prices={prices}
-              percentile={selectedHistory}
+              pbHistory={pbHistory}
+              peHistory={peHistory}
               reloadKey={reloadKey + retryTick}
             />
           ) : (
-            <div className="valuation-muted">暂无分位历史</div>
+            <div className="valuation-muted">暂无数据</div>
           )}
 
           <div className="range-note">
-            <span>周收盘 {priceRange ?? "—"}</span>
-            <span>分位 {rangeOf(selectedHistory) ?? "—"}</span>
-            <span>{hasChannel ? "价格与分位同图，两套口径" : "不拟合回归通道"}</span>
+            <span>点数 {priceRange ?? "—"}</span>
+            <span>分位 {pctRange ? `${pctRange[0]} – ${pctRange[1]}` : "—"}</span>
+            <span>{hasChannel ? "悬浮看每个点位的 PB / PE 分位" : "不拟合回归通道"}</span>
           </div>
         </div>
       )}
 
       <div className="notes">
         <div className="note-item">
-          {hasChannel
-            ? "一张图两个口径：左轴周收盘价是行情，右轴分位是相对自身历史估值的贵贱。价格走势与通道位置是两回事：通道位置还要叠加拟合出的轨道，分位只看估值。"
-            : "一张图两个口径：左轴周收盘价是行情，右轴分位是相对自身历史估值的贵贱。该指数不拟合回归通道，所以没有通道位置、轨道与趋势延伸。"}
+          图上只画指数点数（行情）；鼠标悬浮任意点位，会显示该日就近的 PB / PE
+          分位——分位是相对自身历史估值的贵贱，不画走势，避免把两条线的起伏
+          误读成因果。
+          {hasChannel ? "价格走势与通道位置是两回事：通道位置还要叠加拟合出的轨道。" : "该指数不拟合回归通道，所以没有通道位置、轨道与趋势延伸。"}
         </div>
         <div className="note-item">
           PB / PE-TTM 近10年分位来自理杏仁（总市值加权），是
