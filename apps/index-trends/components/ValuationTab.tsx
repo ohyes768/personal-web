@@ -19,14 +19,14 @@ interface Props {
 
 export default function ValuationTab({ code, reloadKey, hasChannel = false }: Props) {
   const [valuation, setValuation] = useState<Valuation | null>(null);
-  // 价格走势只在没有通道的指数上取：有通道时通道图已经表达了价格
+  // 价格走势：估值 tab 自己也要有图，不依赖通道 tab
   const [prices, setPrices] = useState<PriceSeries | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [retryTick, setRetryTick] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([api.valuation(code), hasChannel ? null : api.prices(code)])
+    Promise.all([api.valuation(code), api.prices(code)])
       .then(([data, series]) => {
         if (cancelled) return;
         setValuation(data);
@@ -54,7 +54,7 @@ export default function ValuationTab({ code, reloadKey, hasChannel = false }: Pr
         </div>
       )}
 
-      {!hasChannel && prices && prices.bars.length > 0 && (
+      {prices && prices.bars.length > 0 && (
         <div className="chart-card">
           <div className="close-line">
             <small style={{ color: "#8c6847" }}>最近收盘</small>
@@ -66,7 +66,7 @@ export default function ValuationTab({ code, reloadKey, hasChannel = false }: Pr
             <span>
               周收盘 {prices.bars[0]?.date} – {prices.bars[prices.bars.length - 1]?.date}
             </span>
-            <span>不拟合回归通道</span>
+            <span>{hasChannel ? "价格走势" : "不拟合回归通道"}</span>
           </div>
         </div>
       )}
@@ -80,7 +80,7 @@ export default function ValuationTab({ code, reloadKey, hasChannel = false }: Pr
       <div className="notes">
         <div className="note-item">
           {hasChannel
-            ? "估值与通道是两套口径：通道位置看相对趋势通道的高低，分位看相对自身历史估值的贵贱，两者不必同时便宜或昂贵。"
+            ? "上图是周收盘价格走势（腾讯行情），下面是 PB / PE 两套分位。价格走势与通道位置是两回事：通道位置还要叠加拟合出的轨道，分位只看相对自身历史的贵贱。"
             : "上图是周收盘价格走势（腾讯行情），下面两套是估值分位。该指数不拟合回归通道，所以没有通道位置、轨道与趋势延伸。"}
         </div>
         <div className="note-item">
