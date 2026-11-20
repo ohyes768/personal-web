@@ -116,6 +116,8 @@ export interface IndicesOverview {
     inception_week: string;
     available_model_kinds: ModelKind[];
     current_models: Partial<Record<CurrentModelKind, ModelInfo>>;
+    /** 该指数是否有回归通道。 */
+    has_channel?: boolean;
     /** 该指数自己的数据新鲜度（多指数后每个指数各一份）。 */
     data_status?: DataStatus;
   }>;
@@ -179,6 +181,29 @@ export interface CurrentStatus {
   snapshot_id?: string;
   /** 理杏仁估值（可选：旧后端不提供时按不可用展示）。 */
   valuation?: Valuation | null;
+  /** 该指数是否有回归通道；无通道时响应里不含 position_pct / upper / lower。 */
+  has_channel?: boolean;
+}
+
+/** 周价格序列（不依赖通道模型）。 */
+export interface PriceBar {
+  week_start: string;
+  date: string;
+  close: number;
+  high: number;
+  low: number;
+  partial: boolean;
+}
+
+export interface PriceSeries {
+  index_code: string;
+  name: string;
+  has_channel: boolean;
+  bars: PriceBar[];
+  close: number | null;
+  price_as_of: string | null;
+  data_status: DataStatus;
+  snapshot_id: string | null;
 }
 
 /** 估值状态：与行情状态独立，估值异常不阻断行情与图表。 */

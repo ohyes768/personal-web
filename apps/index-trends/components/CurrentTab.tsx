@@ -4,7 +4,6 @@
 import { useEffect, useState } from "react";
 import OccupancyPanel from "./OccupancyPanel";
 import TrendChart from "./TrendChart";
-import ValuationBlock from "./ValuationBlock";
 import { api } from "../lib/api";
 import {
   KIND_LABELS,
@@ -234,13 +233,6 @@ export default function CurrentTab({
               通道位置 = (收盘 − 下轨) ÷ (上轨 − 下轨) × 100。区域阈值 25/75
               仅为阅读分层，<span className="emphasis">不是买卖阈值</span>；
               「低位」不等于低估，上轨突破也不等于应当卖出。
-            </div>
-            <div className="note-item">
-              PB / PE-TTM 近10年分位来自理杏仁（总市值加权），是
-              <span className="emphasis">独立的估值口径</span>，与通道位置不同：
-              通道位置描述相对趋势通道的高低，分位描述相对自身历史估值的贵贱。
-              口径以 PB 为主：创业板盈利波动大，PE 的分母不稳；PE 用来交叉验证。
-              两个模型共享同一份估值；数据日期取最近已收盘交易日。
             </div>
           </div>
         </>

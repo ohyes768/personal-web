@@ -5,7 +5,7 @@
 | 指数 | 能力 |
 |---|---|
 | 沪深300（000300） | 周线通道 + PB/PE-TTM 近10年分位 |
-| 创业板50（399673） | **只有 PB/PE-TTM 近10年分位**（不采行情、不出通道；通道类接口返回 409） |
+| 创业板50（399673） | 周线**价格走势** + PB/PE-TTM 近10年分位（**不拟合回归通道**；通道类接口返回 409） |
 
 指数清单集中在 `src/core/indexes.py`（代码、腾讯 symbol、名称、起始边界），新增指数只改这一处。
 估值口径为**理杏仁 PB 与 PE-TTM 的近10年分位**：PB 为主（创业板盈利波动大、PE 分母不稳），PE 用于交叉验证。
@@ -79,8 +79,8 @@ curl --fail-with-body 'https://web.duomi77.cn:9443/api/index-trends/indices/0003
 `model` 必填：`trailing_10y_weekly` 为近10年周线模型，
 `since_inception_weekly` 为上市以来周线模型。两个模型共享同一份估值。
 指数代码为字符串，当前支持 `000300`（沪深300）与 `399673`（创业板50）；未注册代码返回 404 并列出支持列表。
-创业板50 没有走势通道：`/status` 返回 `available=false`、`reason=valuation_only`，
-`/chart` 与 `/history` 返回 409；它的估值请走下面这个不需要 `model` 参数的接口。
+创业板50 有行情但没有通道：`/status` 返回 `has_channel=false` 且**不含** `position_pct`/`upper`/`lower`，
+`/chart` 与 `/history` 返回 409（这两个是通道模型接口）；价格走势走 `GET /api/indices/{code}/prices`。
 
 | 响应字段 | 含义 |
 |---|---|
@@ -105,6 +105,8 @@ curl --fail-with-body 'https://web.duomi77.cn:9443/api/index-trends/indices/0003
 `error` 状态可以携带缓存估值，必须标注更新失败；`disabled` 表示未配置估值服务，不能当成零分位。
 
 接口沿用现有公开只读访问方式，不需要把理杏仁令牌传给调用端。
+价格走势（不依赖 `model`）：`GET /api/indices/{code}/prices?weeks=260`，返回周收盘序列与最近收盘。
+
 估值（不依赖 `model`）：`GET /api/indices/{code}/valuation`，返回与 `/status` 里的 `valuation` 同一对象。
 
 分位历史序列：`GET /api/indices/{code}/valuation/history?metric=pb_mcw`（或 `pe_ttm_mcw`），
@@ -119,7 +121,7 @@ HTTP 200仍需检查上述业务状态；这里的访问约定仅针对本查询
 cd backend/index-trends
 uv run pytest -q                    # 后端全量回归（脱网）
 cd ../../apps/index-trends
-node --experimental-strip-types --test lib/candleData.test.ts lib/channelStats.test.ts lib/chartOptions.test.ts
+node --experimental-strip-types --test lib/candleData.test.ts lib/channelStats.test.ts lib/chartOptions.test.ts lib/percentileOptions.test.ts
 ./node_modules/.bin/tsc --noEmit
 npm run build
 ```

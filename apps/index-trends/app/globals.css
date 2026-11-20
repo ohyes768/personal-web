@@ -406,8 +406,13 @@ h1 {
 }
 
 .percentile-canvas {
-  height: 200px;
+  height: 260px;
   width: 100%;
+}
+
+/* 没有分位历史时不留 260px 空白，只有一行说明 */
+.percentile-canvas.is-empty {
+  height: 0;
 }
 
 /* ---- 说明区 ---- */

@@ -49,9 +49,9 @@ def test_publishing_one_index_keeps_the_other(store, weekly_series, weekly_daily
 
     assert len(store.load_weekly_bars(index_code=DEFAULT_INDEX_CODE)) == baseline
     assert len(store.load_weekly_bars(index_code="399673")) == baseline
-    # 两个指数各有自己的模型版本，互不覆盖
+    # 有通道的指数出模型；没有通道的只落价格，不产模型
     assert store.latest_weekly_model(DEFAULT_INDEX_CODE, "since_inception_weekly")
-    assert store.latest_weekly_model("399673", "since_inception_weekly")
+    assert store.latest_weekly_model("399673", "since_inception_weekly") is None
     assert store.get_weekly_data_meta(DEFAULT_INDEX_CODE)["snapshot_id"]
     assert store.get_weekly_data_meta("399673")["snapshot_id"]
 
@@ -264,31 +264,50 @@ def test_valuation_history_rejects_unknown_metric(api_client):
 
 
 # ---- 只做估值的指数（没有通道）----
-def test_valuation_only_index_has_no_channel(api_client):
+def test_index_without_channel_still_collects_prices(api_client):
     client, _ = api_client
     entries = {i["index_code"]: i for i in client.get("/api/indices").json()["indices"]}
-    assert entries["000300"]["has_trend"] is True
+    assert entries["000300"]["has_channel"] is True
     assert entries["000300"]["available_model_kinds"]
-    assert entries["399673"]["has_trend"] is False
-    assert entries["399673"]["kind"] == "valuation_only"
+    # 没有通道 ≠ 没有行情：399673 照旧采价格，只是不出模型
+    assert entries["399673"]["has_channel"] is False
+    assert entries["399673"]["kind"] == "price_index"
     assert entries["399673"]["available_model_kinds"] == []
 
 
-def test_channel_endpoints_reject_valuation_only_index(api_client):
+def test_channel_endpoints_reject_index_without_channel(api_client):
     client, _ = api_client
     chart = client.get("/api/indices/399673/chart?model=kind:trailing_10y_weekly")
     history = client.get("/api/indices/399673/history")
     assert chart.status_code == 409
     assert history.status_code == 409
-    assert "分位" in chart.json()["detail"]
+    assert "通道" in chart.json()["detail"]
 
 
-def test_status_of_valuation_only_index_says_so(api_client):
+def test_prices_endpoint_works_without_channel(api_client, weekly_series, weekly_daily_bars):
+    client, store = api_client
+    trend = client.app.state.trend_service
+    models = trend.compute_models("399673", weekly_series)
+    assert models == []  # 无通道指数不产出模型
+    trend.publish("399673", weekly_series, weekly_daily_bars, models)
+    body = client.get("/api/indices/399673/prices?weeks=30").json()
+    assert body["has_channel"] is False
+    assert len(body["bars"]) == 30
+    assert body["close"] is not None
+
+
+def test_status_of_channel_less_index_has_no_channel_fields(
+    api_client, weekly_series, weekly_daily_bars
+):
     client, _ = api_client
+    trend = client.app.state.trend_service
+    trend.publish("399673", weekly_series, weekly_daily_bars, [])
     body = client.get("/api/indices/399673/status?model=trailing_10y_weekly").json()
-    assert body["available"] is False
-    assert body["reason"] == "valuation_only"
-    # 估值仍要照常给出来
+    assert body["has_channel"] is False
+    assert body["close"] is not None
+    # 通道字段一律不出现，避免调用方把价格读成通道位置
+    assert "position_pct" not in body
+    assert "upper" not in body
     assert set(body["valuation"]["metrics"]) == {"pe_ttm_mcw", "pb_mcw"}
 
 
@@ -302,8 +321,8 @@ def test_valuation_endpoint_needs_no_model(api_client):
     assert body["metrics"]["pb_mcw"]["state"] == "ok"
 
 
-def test_daily_market_job_skips_valuation_only_index(store, monkeypatch):
-    """行情刷新只遍历有通道的指数；创业板50 不该被拉K线。"""
+def test_daily_market_job_refreshes_every_index(store, monkeypatch):
+    """行情对每个指数都要采：没有通道的指数也要价格走势。"""
     import src.main as main_module
 
     refreshed: list[str] = []
@@ -316,4 +335,4 @@ def test_daily_market_job_skips_valuation_only_index(store, monkeypatch):
     with TestClient(main_module.create_app()) as client:
         scheduler = client.app.state.scheduler
         client.portal.call(scheduler._run_daily)
-    assert refreshed == ["000300"]
+    assert sorted(refreshed) == sorted(index_codes())

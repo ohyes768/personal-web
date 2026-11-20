@@ -5,6 +5,7 @@ import type {
   CurrentStatus,
   HistoryOverview,
   IndicesOverview,
+  PriceSeries,
   RefreshResult,
   ValuationHistory,
   ValuationMetric,
@@ -37,6 +38,8 @@ export const api = {
   status: (code: string, model: CurrentModelKind) =>
     fetchJSON<CurrentStatus>(`/indices/${code}/status?model=${model}`),
   valuation: (code: string) => fetchJSON<Valuation>(`/indices/${code}/valuation`),
+  prices: (code: string, weeks = 260) =>
+    fetchJSON<PriceSeries>(`/indices/${code}/prices?weeks=${weeks}`),
   valuationHistory: (code: string, metric: ValuationMetric) =>
     fetchJSON<ValuationHistory>(`/indices/${code}/valuation/history?metric=${metric}`),
   refresh: (code: string = DEFAULT_INDEX_CODE) =>

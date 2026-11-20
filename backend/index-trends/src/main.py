@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from src import __version__
 from src.api.routes import router
 from src.config import get_settings
-from src.core.indexes import index_codes, trend_index_codes
+from src.core.indexes import index_codes
 from src.services.scheduler import JOB_DAILY, JOB_VALUATION, RefreshScheduler
 from src.services.store import Store
 from src.services.trend_service import WeeklyTrendService
@@ -48,8 +48,8 @@ def create_app() -> FastAPI:
         # 行情失败也不改变估值的采集时机。
         # 按指数逐个刷新：一个指数的行情异常不阻断其他指数。
         results: dict[str, object] = {}
-        # 只遍历有通道的指数：估值型指数没有行情，不抓K线
-        for code in trend_index_codes():
+        # 行情对所有指数都采：没有通道的指数也要价格走势
+        for code in index_codes():
             try:
                 results[code] = await trend_service.refresh(code)
             except Exception:  # noqa: BLE001 — 单指数失败不影响其他指数

@@ -1,6 +1,6 @@
 "use client";
 
-/** 宽基趋势观察主页面：历史回溯 / 当前通道两个 Tab（周线口径）。
+/** 宽基趋势观察主页面：历史回溯 / 当前通道 / 估值分位三个 Tab（周线口径）。
  *
  * Tab、窗口、模型都编码在 URL 查询参数（tab/window/model），
  * 刷新和返回不换图；图表懒加载由 Tab 组件各自负责。
@@ -14,13 +14,13 @@ import { api } from "../lib/api";
 import {
   DEFAULT_INDEX_CODE,
   INDEX_OPTIONS,
-  hasTrend,
+  hasChannel,
   indexName,
   isIndexCode,
 } from "../lib/indexes";
 import type { DataStatus, HistoryOverview } from "../lib/types";
 
-type Tab = "history" | "current";
+type Tab = "history" | "current" | "valuation";
 
 /** 旧月线模型参数 → 周线模型参数；旧链接能恢复到同名时间窗口。 */
 const LEGACY_MODEL_MAP: Record<string, CurrentModel> = {
@@ -65,13 +65,15 @@ function DataStatusBar({ status }: { status: DataStatus | null }) {
 function PageInner() {
   const router = useRouter();
   const params = useSearchParams();
-  const tab: Tab = params.get("tab") === "current" ? "current" : "history";
+  const rawTab = params.get("tab");
+  const tab: Tab =
+    rawTab === "current" ? "current" : rawTab === "valuation" ? "valuation" : "history";
   const windowParam = params.get("window") ?? "";
   const rawModel = params.get("model");
   const modelParam: CurrentModel = resolveModel(rawModel);
   const rawIndex = params.get("index");
   const code = isIndexCode(rawIndex) ? rawIndex : DEFAULT_INDEX_CODE;
-  const trendEnabled = hasTrend(code);
+  const channelEnabled = hasChannel(code);
 
   const [overview, setOverview] = useState<HistoryOverview | null>(null);
   const [overviewError, setOverviewError] = useState<string | null>(null);
@@ -106,7 +108,7 @@ function PageInner() {
   }, [rawModel, setQuery]);
 
   useEffect(() => {
-    if (!trendEnabled) {
+    if (!channelEnabled) {
       setOverview(null);
       setOverviewError(null);
       return;
@@ -128,7 +130,7 @@ function PageInner() {
     return () => {
       cancelled = true;
     };
-  }, [code, trendEnabled, tick]);
+  }, [code, channelEnabled, tick]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -155,7 +157,7 @@ function PageInner() {
             <div className="eyebrow">宽基趋势观察 · INDEX TRENDS</div>
             <h1>
               {indexName(code)}
-              {trendEnabled ? " · 线性回归通道" : " · 估值分位"}
+              {channelEnabled && tab !== "valuation" ? " · 线性回归通道" : " · 估值分位"}
             </h1>
           </div>
           <button type="button" className="refresh" disabled={refreshing} onClick={onRefresh}>
@@ -163,7 +165,7 @@ function PageInner() {
           </button>
         </div>
         <p className="subtitle">
-          {trendEnabled
+          {channelEnabled && tab !== "valuation"
             ? "周收盘拟合的长期趋势通道，回看它在历史上的表现，观察当前指数位置。描述相对趋势的位置，不构成买卖建议。"
             : "PB / PE-TTM 近10年分位，看它相对自身历史估值处在什么位置。不构成买卖建议。"}
         </p>
@@ -184,7 +186,7 @@ function PageInner() {
         ))}
       </nav>
 
-      {trendEnabled && (
+      {channelEnabled && (
         <nav className="tabs" aria-label="页面切换">
           <button aria-current={tab === "history"} onClick={() => setQuery({ tab: "history", window: windowParam })}>
             历史回溯
@@ -192,10 +194,15 @@ function PageInner() {
           <button aria-current={tab === "current"} onClick={() => setQuery({ tab: "current", model: modelParam })}>
             当前通道
           </button>
+          <button aria-current={tab === "valuation"} onClick={() => setQuery({ tab: "valuation" })}>
+            估值分位
+          </button>
         </nav>
       )}
 
-      {trendEnabled && <DataStatusBar status={overview?.data_status ?? null} />}
+      {channelEnabled && tab !== "valuation" && (
+        <DataStatusBar status={overview?.data_status ?? null} />
+      )}
 
       {overviewError && (
         <div className="message error">
@@ -207,9 +214,9 @@ function PageInner() {
         </div>
       )}
 
-      {!trendEnabled && <ValuationTab code={code} reloadKey={tick} />}
+      {!channelEnabled && <ValuationTab code={code} reloadKey={tick} />}
 
-      {trendEnabled && tab === "history" &&
+      {channelEnabled && tab === "history" &&
         (overview ? (
           <HistoryTab
             code={code}
@@ -222,7 +229,7 @@ function PageInner() {
           !overviewError && <div className="message">加载中…</div>
         ))}
 
-      {trendEnabled && tab === "current" && (
+      {channelEnabled && tab === "current" && (
         <CurrentTab
           code={code}
           selected={modelParam}
@@ -230,6 +237,10 @@ function PageInner() {
           onSelect={(model) => setQuery({ tab: "current", model })}
           onGoHistory={() => setQuery({ tab: "history", window: "" })}
         />
+      )}
+
+      {channelEnabled && tab === "valuation" && (
+        <ValuationTab code={code} reloadKey={tick} hasChannel />
       )}
     </main>
   );

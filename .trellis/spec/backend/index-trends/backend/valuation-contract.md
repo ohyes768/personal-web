@@ -13,10 +13,10 @@
 
 - 指数来自注册表 `src/core/indexes.py`（当前 000300 沪深300、399673 创业板50）。
   **一个指数一次请求**，两条指标（PE-TTM 与 PB）一起取回。
-- `IndexDef.has_trend` 决定这个指数有没有走势通道：`False` 的指数（当前 399673）
-  **只采估值**，不进行情刷新、不算模型；`/chart` `/history` 对它返回 409，
-  `/status` 返回 `available=false` + `reason=valuation_only`，
-  估值走独立的 `GET /api/indices/{code}/valuation`（不需要 `model` 参数）。
+- `IndexDef.has_channel` 决定这个指数有没有回归通道（行情**对所有指数都采**）：
+  `False` 的指数（当前 399673）只落周K/日线、不产出模型；
+  `/chart` `/history` 对它返回 409，`/status` 返回 `has_channel=false` 且不含
+  `position_pct`/`upper`/`lower`；价格走势走 `GET /api/indices/{code}/prices`。
 - 指标注册表（`src/data/lixinger.py`）：
 
   | metric key | 数值字段 | 分位字段 |

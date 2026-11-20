@@ -560,8 +560,14 @@ class WeeklyTrendService:
 
     # ---- 2. 纯计算 ----
     def compute_models(self, index_code: str, series: WeeklySeries) -> list[Any]:
-        """在内存中算完该指数的所有周线模型（不落库）。"""
+        """在内存中算完该指数的所有周线模型（不落库）。
+
+        没有通道的指数（has_channel=False）只落周K与日线，不产出模型：
+        没有模型就没有轨道、位置与趋势延伸。
+        """
         index = BY_CODE[index_code]
+        if not index.has_channel:
+            return []
         builder = WeeklyModelBuilder(
             series,
             index_code,
@@ -764,19 +770,62 @@ class WeeklyTrendService:
             "snapshot_id": meta.get("snapshot_id") or None,
         }
 
+    def price_series(
+        self, index_code: str = DEFAULT_INDEX_CODE, weeks: int = 260
+    ) -> dict[str, Any]:
+        """最近 N 个自然周的收盘序列（含进行中周）。
+
+        不依赖通道模型：没有通道的指数也能出价格走势——价格是行情，
+        通道是从价格拟合出来的另一层东西，两者不绑在一起。
+        """
+        index = BY_CODE[index_code]
+        complete = self.store.load_weekly_bars(include_partial=False, index_code=index_code)
+        partial = self.store.load_partial_weekly_bars(index_code=index_code)
+        merged = {**complete, **partial}
+        keys = sorted(merged)[-weeks:]
+        bars = [
+            {
+                "week_start": week,
+                "date": merged[week].date,
+                "close": merged[week].close,
+                "high": merged[week].high,
+                "low": merged[week].low,
+                "partial": week in partial,
+            }
+            for week in keys
+        ]
+        dailies = self.store.load_daily_quotes(limit=400, index_code=index_code)
+        last = latest_completed_daily(dailies, self._now())
+        status = self.data_status(index_code)
+        return {
+            "index_code": index_code,
+            "name": index.name,
+            "has_channel": index.has_channel,
+            "bars": bars,
+            "close": last.close if last else None,
+            "price_as_of": last.date if last else None,
+            "data_status": status,
+            "snapshot_id": status.get("snapshot_id"),
+        }
+
     def current_status(self, index_code: str, model_kind: str) -> dict[str, Any]:
         """指定指数在某周线模型下的最新收盘、区域与位置。
 
         投影周是最近已完成交易日所在自然周；进行中周的点位不触发重拟合。
         切换模型时轨道、位置、样本周全部来自该模型。
         """
-        if not BY_CODE[index_code].has_trend:
-            # 只做估值的指数没有通道：明确表态，不让调用方去猜 available=false 的原因
+        if not BY_CODE[index_code].has_channel:
+            # 没有通道的指数：价格照常给，通道相关字段一律不出现
             status = self.data_status(index_code)
+            dailies = self.store.load_daily_quotes(limit=400, index_code=index_code)
+            last = latest_completed_daily(dailies, self._now())
             return {
-                "available": False,
-                "reason": "valuation_only",
+                "available": last is not None,
+                "has_channel": False,
+                "reason": None if last is not None else "no_daily_data",
                 "model_kind": model_kind,
+                "price_as_of": last.date if last else None,
+                "close": last.close if last else None,
                 "data_status": status,
                 "snapshot_id": status.get("snapshot_id"),
             }
@@ -930,7 +979,7 @@ class WeeklyTrendService:
         entries: list[dict[str, Any]] = []
         for index in INDEXES:
             current_models = {}
-            if index.has_trend:
+            if index.has_channel:
                 for kind in (KIND_TRAILING_WEEKLY, KIND_SINCE_INCEPTION_WEEKLY):
                     model = self.store.latest_weekly_model(index.code, kind)
                     if model:
@@ -940,8 +989,8 @@ class WeeklyTrendService:
                     "index_code": index.code,
                     "name": index.name,
                     "symbol": index.symbol,
-                    "kind": "price_index" if index.has_trend else "valuation_only",
-                    "has_trend": index.has_trend,
+                    "kind": "price_index",
+                    "has_channel": index.has_channel,
                     "inception_week": index.inception_week,
                     "available_model_kinds": (
                         [
@@ -949,7 +998,7 @@ class WeeklyTrendService:
                             KIND_SINCE_INCEPTION_WEEKLY,
                             KIND_FIXED_WEEKLY,
                         ]
-                        if index.has_trend
+                        if index.has_channel
                         else []
                     ),
                     "current_models": current_models,

@@ -80,13 +80,13 @@ def _require_supported_index(code: str) -> None:
         )
 
 
-def _require_trend_index(code: str) -> None:
-    """通道类接口只对有走势的指数开放；只做估值的指数明确 409。"""
+def _require_channel_index(code: str) -> None:
+    """通道类接口（模型窗口、通道图）只对有通道的指数开放。"""
     _require_supported_index(code)
-    if not BY_CODE[code].has_trend:
+    if not BY_CODE[code].has_channel:
         raise HTTPException(
             status_code=409,
-            detail=f"{BY_CODE[code].name}只提供 PB/PE 分位，没有走势通道",
+            detail=f"{BY_CODE[code].name}不提供回归通道，只有价格走势与估值分位",
         )
 
 
@@ -113,7 +113,7 @@ async def indices(request: Request) -> dict:
 
 @router.get("/indices/{code}/history")
 async def history(code: str, request: Request) -> dict:
-    _require_trend_index(code)
+    _require_channel_index(code)
     return get_service(request).history_overview(code)
 
 
@@ -124,7 +124,7 @@ async def chart(
     model: str = Query(..., description="模型ID，或 kind:<当前模型种类> 取最新版本"),
     scope: str = Query("current", pattern="^(history|current)$"),
 ) -> dict:
-    _require_trend_index(code)
+    _require_channel_index(code)
     service = get_service(request)
     if model.startswith("kind:"):
         kind = _resolve_current_kind(model.split(":", 1)[1])
@@ -150,6 +150,17 @@ async def status(
     # 估值与模型无关：同一指数的两个模型共享一份估值口径
     payload["valuation"] = valuation_status(request, code)
     return payload
+
+
+@router.get("/indices/{code}/prices")
+async def prices(
+    code: str,
+    request: Request,
+    weeks: int = Query(260, ge=20, le=1200, description="返回最近多少个完整周"),
+) -> dict:
+    """价格走势（周收盘序列）：任何指数都能取，不需要通道模型。"""
+    _require_supported_index(code)
+    return get_service(request).price_series(code, weeks)
 
 
 @router.get("/indices/{code}/valuation")
@@ -200,9 +211,9 @@ async def refresh(
     service = get_service(request)
     from src.data.provider import ProviderError
 
-    has_trend = BY_CODE[index_code].has_trend
+    has_channel = BY_CODE[index_code].has_channel
     result = None
-    if has_trend:
+    if has_channel:
         try:
             result = await service.refresh(index_code)
         except ProviderError as e:
@@ -221,7 +232,7 @@ async def refresh(
             valuation = valuation_status(request, index_code)
     return {
         "success": result.success if result else valuation.get("state") != "error",
-        "message": result.message if result else "仅刷新估值分位（该指数没有走势通道）",
+        "message": result.message if result else "已刷新行情与估值（该指数不拟合回归通道）",
         "index_code": index_code,
         "data_cutoff_week": result.data_cutoff_week if result else None,
         "new_models": result.new_models if result else None,
