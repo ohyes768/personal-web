@@ -5,7 +5,10 @@ import type {
   HistoryOverview,
   IndicesOverview,
   RefreshResult,
+  ValuationHistory,
+  ValuationMetric,
 } from "./types";
+import { DEFAULT_INDEX_CODE } from "./indexes";
 
 const BASE = "/api/index-trends";
 
@@ -24,12 +27,16 @@ async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   indices: () => fetchJSON<IndicesOverview>("/indices"),
-  history: () => fetchJSON<HistoryOverview>("/indices/000300/history"),
-  chart: (modelId: string, scope: "history" | "current") =>
+  history: (code: string = DEFAULT_INDEX_CODE) =>
+    fetchJSON<HistoryOverview>(`/indices/${code}/history`),
+  chart: (code: string, modelId: string, scope: "history" | "current") =>
     fetchJSON<ChartData>(
-      `/indices/000300/chart?model=${encodeURIComponent(modelId)}&scope=${scope}`,
+      `/indices/${code}/chart?model=${encodeURIComponent(modelId)}&scope=${scope}`,
     ),
-  status: (model: CurrentModelKind) =>
-    fetchJSON<CurrentStatus>(`/indices/000300/status?model=${model}`),
-  refresh: () => fetchJSON<RefreshResult>("/refresh", { method: "POST" }),
+  status: (code: string, model: CurrentModelKind) =>
+    fetchJSON<CurrentStatus>(`/indices/${code}/status?model=${model}`),
+  valuationHistory: (code: string, metric: ValuationMetric) =>
+    fetchJSON<ValuationHistory>(`/indices/${code}/valuation/history?metric=${metric}`),
+  refresh: (code: string = DEFAULT_INDEX_CODE) =>
+    fetchJSON<RefreshResult>(`/refresh?index_code=${code}`, { method: "POST" }),
 };

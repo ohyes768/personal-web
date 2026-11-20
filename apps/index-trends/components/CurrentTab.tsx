@@ -3,16 +3,20 @@
 /** 当前通道 Tab：近10年 / 成立以来模型切换 + 状态摘要 + 主图（含约 1 年趋势延伸）。 */
 import { useEffect, useState } from "react";
 import OccupancyPanel from "./OccupancyPanel";
+import PercentileChart from "./PercentileChart";
 import TrendChart from "./TrendChart";
 import { api } from "../lib/api";
 import {
   KIND_LABELS,
   REGION_LABELS,
+  VALUATION_METRIC_LABELS,
   type ChartData,
   type CurrentModelKind,
   type CurrentStatus,
   type ModelInfo,
   type Valuation,
+  type ValuationMetric,
+  type ValuationMetricSnapshot,
 } from "../lib/types";
 
 export type CurrentModel = CurrentModelKind;
@@ -20,6 +24,7 @@ export type CurrentModel = CurrentModelKind;
 const MODEL_KINDS: CurrentModelKind[] = ["trailing_10y_weekly", "since_inception_weekly"];
 
 interface CurrentTabProps {
+  code: string;
   selected: CurrentModel;
   onSelect: (model: CurrentModel) => void;
   onGoHistory: () => void;
@@ -34,15 +39,15 @@ interface TabState {
 }
 
 /** 摘要与图形必须来自同一份快照；版本不一致时重新取同一个模型，避免混画。 */
-async function loadConsistent(model: CurrentModel): Promise<{
+async function loadConsistent(code: string, model: CurrentModel): Promise<{
   status: CurrentStatus;
   chart: ChartData;
 }> {
   let last: { status: CurrentStatus; chart: ChartData } | null = null;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const [status, chart] = await Promise.all([
-      api.status(model),
-      api.chart(`kind:${model}`, "current"),
+      api.status(code, model),
+      api.chart(code, `kind:${model}`, "current"),
     ]);
     last = { status, chart };
     const s = status.snapshot_id;
@@ -53,80 +58,86 @@ async function loadConsistent(model: CurrentModel): Promise<{
   throw new Error("数据版本不一致：摘要与图表来自不同快照，请重试");
 }
 
-/** 估值区域：理杏仁沪深300 PE-TTM 近10年分位。
+/** 单条指标的读数：PB 为主、PE-TTM 为辅，各自独立判状态。
  *
  * 与通道位置严格区分：通道位置是相对趋势通道，分位是相对自身历史估值。
- * 异常状态各有明确文案；旧后端不提供该字段时按“暂不可用”降级，不影响主图。
+ * 旧后端只给顶层 PE 平铺字段时按 PE 降级，不影响主图。
  */
-function ValuationLine({ valuation }: { valuation: Valuation | null }) {
-  const label = <small style={{ color: "#8c6847" }}>PE-TTM 近10年分位</small>;
-  if (!valuation) {
-    return (
-      <div className="valuation-line">
-        {label}
-        <span className="valuation-muted">暂不可用</span>
-      </div>
-    );
-  }
-  const pct = valuation.percentile_pct;
-  const pe = valuation.pe_ttm;
-  const hasValue = typeof pct === "number";
-  const value = hasValue ? <b>{pct.toFixed(1)}%</b> : null;
-  const detail =
-    typeof pe === "number" ? `PE ${pe.toFixed(2)}` : null;
+function metricSnapshot(
+  valuation: Valuation | null,
+  metric: ValuationMetric,
+): ValuationMetricSnapshot | null {
+  if (!valuation) return null;
+  const explicit = valuation.metrics?.[metric];
+  if (explicit) return explicit;
+  if (metric !== "pe_ttm_mcw") return null;
+  return {
+    state: valuation.state,
+    reason: valuation.reason,
+    metric,
+    source: valuation.source,
+    window: valuation.window,
+    target_date: valuation.target_date,
+    as_of: valuation.as_of,
+    value: valuation.value ?? valuation.pe_ttm,
+    percentile_pct: valuation.percentile_pct,
+    captured_at: valuation.captured_at,
+  };
+}
 
-  if (valuation.state === "ok") {
-    return (
-      <div className="valuation-line">
-        {label}
-        {value}
-        <span>
-          {detail ? `${detail} · ` : ""}数据日期 {valuation.as_of} · 总市值加权 · 理杏仁
-        </span>
-      </div>
-    );
-  }
-  if (valuation.state === "stale") {
-    return (
-      <div className="valuation-line">
-        {label}
-        {value}
-        <span>
-          {detail ? `${detail} · ` : ""}数据日期 {valuation.as_of} · 未更新至{" "}
-          {valuation.target_date} · 理杏仁
-        </span>
-      </div>
-    );
-  }
-  if (valuation.state === "disabled") {
-    return (
-      <div className="valuation-line">
-        {label}
-        <span className="valuation-muted">未启用（未配置理杏仁访问令牌）</span>
-      </div>
-    );
-  }
-  if (valuation.state === "empty") {
-    return (
-      <div className="valuation-line">
-        {label}
-        <span className="valuation-muted">暂无估值数据</span>
-      </div>
-    );
-  }
+function ValuationBlock({
+  code,
+  valuation,
+  reloadKey,
+}: {
+  code: string;
+  valuation: Valuation | null;
+  reloadKey: number;
+}) {
+  const [metric, setMetric] = useState<ValuationMetric>("pb_mcw");
+  const snapshot = metricSnapshot(valuation, metric);
+  const pct = snapshot?.percentile_pct ?? null;
+  const value = snapshot?.value ?? null;
+  const metricLabel = metric === "pb_mcw" ? "PB" : "PE-TTM";
+
+  let stateNote: string | null = null;
+  if (!valuation) stateNote = "暂不可用";
+  else if (snapshot?.state === "disabled") stateNote = "未启用（未配置理杏仁访问令牌）";
+  else if (snapshot?.state === "empty") stateNote = "暂无估值数据";
+  else if (snapshot?.state === "error")
+    stateNote = `暂不可用${snapshot.reason ? `（${snapshot.reason}）` : ""}`;
+  else if (snapshot?.state === "stale")
+    stateNote = `未更新至 ${snapshot.target_date ?? "目标日"}`;
+
   return (
-    <div className="valuation-line">
-      {label}
-      {value}
-      <span className="valuation-muted">
-        {hasValue ? `缓存值（数据日期 ${valuation.as_of}）· ` : ""}
-        估值暂不可用{valuation.reason ? `（${valuation.reason}）` : ""}
-      </span>
+    <div className="valuation-block">
+      <div className="valuation-line">
+        <div className="picker" role="tablist" aria-label="估值指标">
+          {(Object.keys(VALUATION_METRIC_LABELS) as ValuationMetric[]).map((item) => (
+            <button key={item} aria-current={metric === item} onClick={() => setMetric(item)}>
+              {VALUATION_METRIC_LABELS[item]}
+            </button>
+          ))}
+        </div>
+        <b>{typeof pct === "number" ? `${pct.toFixed(1)}%` : "—"}</b>
+        <small>
+          {metricLabel} {typeof value === "number" ? value.toFixed(2) : "—"} ·{" "}
+          {snapshot?.as_of ?? "无数据"} · 理杏仁
+        </small>
+        {stateNote && <span className="valuation-muted">{stateNote}</span>}
+      </div>
+      <PercentileChart code={code} metric={metric} reloadKey={reloadKey} />
     </div>
   );
 }
 
-export default function CurrentTab({ selected, onSelect, onGoHistory, reloadKey }: CurrentTabProps) {
+export default function CurrentTab({
+  code,
+  selected,
+  onSelect,
+  onGoHistory,
+  reloadKey,
+}: CurrentTabProps) {
   const [state, setState] = useState<TabState>({
     status: null,
     chart: null,
@@ -141,7 +152,7 @@ export default function CurrentTab({ selected, onSelect, onGoHistory, reloadKey 
     // 切换模型后清空旧摘要，全部数值重新取自所选模型，不混用缓存
     setState({ status: null, chart: null, error: null, loading: true });
     // chart 用 kind: 简写由后端解析为该模型最新版本
-    loadConsistent(selected)
+    loadConsistent(code, selected)
       .then(({ status, chart }) => {
         if (!cancelled) setState({ status, chart, error: null, loading: false });
       })
@@ -158,7 +169,7 @@ export default function CurrentTab({ selected, onSelect, onGoHistory, reloadKey 
     return () => {
       cancelled = true;
     };
-  }, [selected, retryTick, reloadKey]);
+  }, [code, selected, retryTick, reloadKey]);
 
   const model: ModelInfo | null =
     state.chart?.model ?? state.status?.model ?? null;
@@ -248,7 +259,7 @@ export default function CurrentTab({ selected, onSelect, onGoHistory, reloadKey 
               <br />
               投影周 {state.status.projection_week}
             </div>
-            <ValuationLine valuation={valuation} />
+            <ValuationBlock code={code} valuation={valuation} reloadKey={reloadKey + retryTick} />
             <div className="model-line">
               模型：{KIND_LABELS[selected]}（{model.fit_start} – {model.fit_end}，{model.sample_count}
               个交易周）
@@ -304,9 +315,10 @@ export default function CurrentTab({ selected, onSelect, onGoHistory, reloadKey 
               「低位」不等于低估，上轨突破也不等于应当卖出。
             </div>
             <div className="note-item">
-              PE-TTM 近10年分位来自理杏仁（总市值加权），是
+              PB / PE-TTM 近10年分位来自理杏仁（总市值加权），是
               <span className="emphasis">独立的估值口径</span>，与通道位置不同：
               通道位置描述相对趋势通道的高低，分位描述相对自身历史估值的贵贱。
+              口径以 PB 为主：创业板盈利波动大，PE 的分母不稳；PE 用来交叉验证。
               两个模型共享同一份估值；数据日期取最近已收盘交易日。
             </div>
           </div>

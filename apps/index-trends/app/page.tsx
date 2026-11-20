@@ -10,6 +10,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import CurrentTab, { type CurrentModel } from "../components/CurrentTab";
 import HistoryTab from "../components/HistoryTab";
 import { api } from "../lib/api";
+import {
+  DEFAULT_INDEX_CODE,
+  INDEX_OPTIONS,
+  indexName,
+  isIndexCode,
+} from "../lib/indexes";
 import type { DataStatus, HistoryOverview } from "../lib/types";
 
 type Tab = "history" | "current";
@@ -61,6 +67,8 @@ function PageInner() {
   const windowParam = params.get("window") ?? "";
   const rawModel = params.get("model");
   const modelParam: CurrentModel = resolveModel(rawModel);
+  const rawIndex = params.get("index");
+  const code = isIndexCode(rawIndex) ? rawIndex : DEFAULT_INDEX_CODE;
 
   const [overview, setOverview] = useState<HistoryOverview | null>(null);
   const [overviewError, setOverviewError] = useState<string | null>(null);
@@ -97,7 +105,7 @@ function PageInner() {
   useEffect(() => {
     let cancelled = false;
     api
-      .history()
+      .history(code)
       .then((data) => {
         if (!cancelled) {
           setOverview(data);
@@ -112,14 +120,14 @@ function PageInner() {
     return () => {
       cancelled = true;
     };
-  }, [tick]);
+  }, [code, tick]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     setRefreshNote(null);
     setRefreshError(null);
     api
-      .refresh()
+      .refresh(code)
       .then((result) => {
         setRefreshNote(result.message);
         setTick((t) => t + 1);
@@ -128,7 +136,7 @@ function PageInner() {
         setRefreshError(err instanceof Error ? err.message : "获取失败");
       })
       .finally(() => setRefreshing(false));
-  }, []);
+  }, [code]);
 
   return (
     <main>
@@ -137,7 +145,7 @@ function PageInner() {
         <div className="site-top">
           <div>
             <div className="eyebrow">宽基趋势观察 · INDEX TRENDS</div>
-            <h1>沪深300 · 线性回归通道</h1>
+            <h1>{indexName(code)} · 线性回归通道</h1>
           </div>
           <button type="button" className="refresh" disabled={refreshing} onClick={onRefresh}>
             {refreshing ? "正在获取…" : "获取最新"}
@@ -151,6 +159,18 @@ function PageInner() {
 
       {refreshNote && <div className="message">{refreshNote}</div>}
       {refreshError && <div className="message error">获取失败：{refreshError}</div>}
+
+      <nav className="tabs" aria-label="指数切换">
+        {INDEX_OPTIONS.map((option) => (
+          <button
+            key={option.code}
+            aria-current={code === option.code}
+            onClick={() => setQuery({ index: option.code })}
+          >
+            {option.name}
+          </button>
+        ))}
+      </nav>
 
       <nav className="tabs" aria-label="页面切换">
         <button aria-current={tab === "history"} onClick={() => setQuery({ tab: "history", window: windowParam })}>
@@ -176,6 +196,7 @@ function PageInner() {
       {tab === "history" &&
         (overview ? (
           <HistoryTab
+            code={code}
             overview={overview}
             selected={selectedWindow}
             reloadKey={tick}
@@ -187,6 +208,7 @@ function PageInner() {
 
       {tab === "current" && (
         <CurrentTab
+          code={code}
           selected={modelParam}
           reloadKey={tick}
           onSelect={(model) => setQuery({ tab: "current", model })}

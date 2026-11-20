@@ -116,6 +116,8 @@ export interface IndicesOverview {
     inception_week: string;
     available_model_kinds: ModelKind[];
     current_models: Partial<Record<CurrentModelKind, ModelInfo>>;
+    /** 该指数自己的数据新鲜度（多指数后每个指数各一份）。 */
+    data_status?: DataStatus;
   }>;
   data_status: DataStatus;
 }
@@ -182,6 +184,39 @@ export interface CurrentStatus {
 /** 估值状态：与行情状态独立，估值异常不阻断行情与图表。 */
 export type ValuationState = "ok" | "stale" | "empty" | "error" | "disabled";
 
+/** 两条估值指标：PB 为主，PE-TTM 为辅（各自独立判状态）。 */
+export type ValuationMetric = "pb_mcw" | "pe_ttm_mcw";
+
+export const VALUATION_METRIC_LABELS: Record<ValuationMetric, string> = {
+  pb_mcw: "PB 分位",
+  pe_ttm_mcw: "PE 分位",
+};
+
+/** 单条指标的状态快照。 */
+export interface ValuationMetricSnapshot {
+  state: ValuationState;
+  reason: string | null;
+  metric: string;
+  source: string;
+  window: string;
+  target_date: string | null;
+  as_of: string | null;
+  /** 指标当前数值：PB 时是市净率，PE 时是市盈率。 */
+  value: number | null;
+  percentile_pct: number | null;
+  captured_at: string | null;
+}
+
+/** 分位历史序列（分位走势图数据源）。 */
+export interface ValuationHistory {
+  index_code: string;
+  metric: string;
+  window: string;
+  dates: string[];
+  values: number[];
+  percentiles: (number | null)[];
+}
+
 export interface Valuation {
   state: ValuationState;
   /** 固定错误码（不含供应商正文）。 */
@@ -194,11 +229,15 @@ export interface Valuation {
   target_date: string | null;
   /** 实际数据日期。 */
   as_of: string | null;
+  /** 当前指标数值（顶层按 PE-TTM 平铺，兼容既有调用）。 */
+  value?: number | null;
   /** PE-TTM（总市值加权）。 */
   pe_ttm: number | null;
   /** 近 N 年分位（0–100）。 */
   percentile_pct: number | null;
   captured_at: string | null;
+  /** 全部指标的完整状态；旧后端不提供时只有顶层 PE 字段。 */
+  metrics?: Partial<Record<ValuationMetric, ValuationMetricSnapshot>>;
 }
 
 /** 退役周报的历史存档；新简报由 Hermes 生成和投递。 */

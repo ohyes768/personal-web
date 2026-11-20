@@ -372,7 +372,13 @@ h1 {
   color: #8c6847;
 }
 
-/* ---- 估值（理杏仁 PE-TTM 近10年分位）---- */
+/* ---- 估值（理杏仁 PB / PE-TTM 近10年分位）---- */
+.valuation-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .valuation-line {
   display: flex;
   flex-wrap: wrap;
@@ -391,6 +397,17 @@ h1 {
 
 .valuation-line .valuation-muted {
   color: #8c6847;
+}
+
+.percentile-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.percentile-canvas {
+  height: 200px;
+  width: 100%;
 }
 
 /* ---- 说明区 ---- */

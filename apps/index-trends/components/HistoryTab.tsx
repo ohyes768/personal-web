@@ -8,6 +8,7 @@ import { api } from "../lib/api";
 import type { ChartData, HistoryOverview } from "../lib/types";
 
 interface HistoryTabProps {
+  code: string;
   overview: HistoryOverview;
   selected: string;
   onSelect: (stableId: string) => void;
@@ -20,7 +21,13 @@ interface LoadState {
   loading: boolean;
 }
 
-export default function HistoryTab({ overview, selected, onSelect, reloadKey }: HistoryTabProps) {
+export default function HistoryTab({
+  code,
+  overview,
+  selected,
+  onSelect,
+  reloadKey,
+}: HistoryTabProps) {
   const [state, setState] = useState<LoadState>({
     chart: null,
     error: null,
@@ -37,7 +44,7 @@ export default function HistoryTab({ overview, selected, onSelect, reloadKey }: 
     let cancelled = false;
     setState({ chart: null, error: null, loading: true });
     api
-      .chart(currentMeta.model_id, "history")
+      .chart(code, currentMeta.model_id, "history")
       .then((chart) => {
         if (!cancelled) setState({ chart, error: null, loading: false });
       })
