@@ -26,15 +26,25 @@ LIXINGER_FUNDAMENTAL_URL = "https://open.lixinger.com/api/cn/index/fundamental"
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) index-trends/0.1"
 REQUEST_TIMEOUT = 10.0
 
-# PE-TTM（总市值加权）
-METRIC_PE_TTM = "pe_ttm.mcw"
-# PE-TTM 近 10 年分位（0–1 的比例）
-METRIC_CVPOS = "pe_ttm.y10.mcw.cvpos"
-METRICS: tuple[str, ...] = (METRIC_PE_TTM, METRIC_CVPOS)
+# 指标注册：metric key -> (供应商值字段, 分位字段)。
+# 一次请求把这 4 个字段一起取回，解析出两条独立指标（PE-TTM 与 PB），
+# 每条都有自己的值与近 10 年分位——不共用一列。
+METRIC_SPECS: dict[str, tuple[str, str]] = {
+    "pe_ttm_mcw": ("pe_ttm.mcw", "pe_ttm.y10.mcw.cvpos"),
+    "pb_mcw": ("pb.mcw", "pb.y10.mcw.cvpos"),
+}
+VALUATION_METRIC_KEYS: tuple[str, ...] = tuple(METRIC_SPECS)
+# 兼容别名：PE-TTM 的供应商字段名（旧测试与旧文档按这两个名字引用）
+METRIC_PE_TTM = METRIC_SPECS["pe_ttm_mcw"][0]
+METRIC_CVPOS = METRIC_SPECS["pe_ttm_mcw"][1]
+# 默认请求的供应商字段（两条指标的 value + cvpos 一起取）
+METRICS: tuple[str, ...] = tuple(field for spec in METRIC_SPECS.values() for field in spec)
 
-# 分位窗口口径（展示用，供应商固定为近 10 年）
+# 分位窗口口径：近 10 年。理杏仁只提供 1/3/5/10/20 年与上市以来的现成分位，
+# 没有 6 年；10 年与沪深300 的既有口径一致，且基本覆盖创业板50 全部历史。
 VALUATION_WINDOW = "y10"
 VALUATION_SOURCE = "lixinger"
+# 兼容别名：旧接口的单指标口径（PE-TTM）
 VALUATION_METRIC = "pe_ttm_mcw"
 
 SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
@@ -57,14 +67,21 @@ class LixingerError(RuntimeError):
 
 @dataclass(frozen=True)
 class ValuationPoint:
-    """一条合格估值记录。
+    """一条合格估值记录（按指标）。
 
-    date 为北京时间自然日；percentile_ratio 为供应商原始比例（0–1）。
+    date 为北京时间自然日；percentile_ratio 为供应商原始比例（0–1）；
+    metric 是 METRIC_SPECS 的键（pe_ttm_mcw / pb_mcw），value 是该指标的当前值。
     """
 
+    metric: str
     date: str
-    pe_ttm: float
+    value: float
     percentile_ratio: float
+
+    @property
+    def pe_ttm(self) -> float:
+        """兼容旧调用方的别名：本指标的数值。"""
+        return self.value
 
 
 def new_client() -> httpx.Client:
@@ -149,11 +166,14 @@ def parse_fundamental(
         day = _beijing_date(row.get("date"))
         if day is None or day > end_date:
             continue  # 未来或不可解析的记录直接丢弃
-        pe = _positive_number(row.get(METRIC_PE_TTM))
-        ratio = _ratio(row.get(METRIC_CVPOS))
-        if pe is None or ratio is None:
-            continue
-        points.append(ValuationPoint(date=day, pe_ttm=pe, percentile_ratio=ratio))
+        for metric, (value_field, ratio_field) in METRIC_SPECS.items():
+            value = _positive_number(row.get(value_field))
+            ratio = _ratio(row.get(ratio_field))
+            if value is None or ratio is None:
+                continue  # 单个指标缺失不拖垮另一个指标
+            points.append(
+                ValuationPoint(metric=metric, date=day, value=value, percentile_ratio=ratio)
+            )
 
     if not points:
         raise LixingerError("invalid_data", "理杏仁响应没有合格记录")
@@ -199,9 +219,20 @@ def fetch_fundamental(
     return parse_fundamental(body, stock_code, end.isoformat())
 
 
-def latest_qualified(points: Sequence[ValuationPoint], end_date: str) -> ValuationPoint | None:
-    """挑选日期最新且不晚于 end_date 的合格记录（不假设供应商已排序）。"""
-    candidates = [p for p in points if p.date <= end_date]
+def latest_qualified(
+    points: Sequence[ValuationPoint],
+    end_date: str,
+    metric: str | None = None,
+) -> ValuationPoint | None:
+    """挑选日期最新且不晚于 end_date 的合格记录（不假设供应商已排序）。
+
+    metric 给定时只看该指标——两条指标可能不是同一天有值。
+    """
+    candidates = [
+        p
+        for p in points
+        if p.date <= end_date and (metric is None or p.metric == metric)
+    ]
     if not candidates:
         return None
     return max(candidates, key=lambda p: p.date)

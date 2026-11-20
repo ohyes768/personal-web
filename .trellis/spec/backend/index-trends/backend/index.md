@@ -8,6 +8,10 @@
 - Read [Valuation contract](./valuation-contract.md) before changing the lixinger
   provider, the valuation tables or the status payload.
   It defines the target date, the state machine and the credential boundary.
+- Indexes are data, not constants: the registry lives in `src/core/indexes.py`
+  (code / Tencent symbol / name / inception). Market and valuation tables are keyed
+  by `index_code` — never re-introduce a table whose primary key omits it, and never
+  clear or mark failures across indexes (`DELETE FROM weekly_bars` must stay scoped).
 - Keep the monthly pipeline (`TrendService`, `monthly_bars`, `models`) untouched:
   it is a legacy archive, not a fallback for the weekly path.
 - Never let a supplier failure change the market pipeline semantics: the trend

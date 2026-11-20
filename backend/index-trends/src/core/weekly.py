@@ -175,13 +175,16 @@ def build_since_inception_weekly_model(
     index_code: str,
     multiplier: float = DEFAULT_MULTIPLIER,
     calculated_at: str | None = None,
+    inception_week: str = INCEPTION_WEEK_START,
 ) -> WeeklyModelRecord:
     """成立以来模型：从首条有效周K（发布周）到最近完整有交易周。
 
     全历史回溯图与当前页"成立以来"共用该模型。
+    inception_week 是所观察指数自己的发布周（沪深300 是 2005-04-04，
+    创业板50 是 2014-06-16）——不能套用别人的起点。
     """
     cutoff = _cutoff_week(series)
-    inception = date.fromisoformat(INCEPTION_WEEK_START)
+    inception = date.fromisoformat(inception_week)
     end_exclusive = week_end_of(date.fromisoformat(cutoff)) + date.resolution
     picked = [s for s in series.samples if date.fromisoformat(s.week_start) >= inception]
     fitted = _fit(
@@ -197,14 +200,20 @@ def build_fixed_weekly_models(
     as_of: date,
     multiplier: float = DEFAULT_MULTIPLIER,
     calculated_at: str | None = None,
+    inception_month: str = "2005-04",
 ) -> list[WeeklyModelRecord]:
     """固定历史窗口模型：10 年训练、3 年步进、最多 3 年观察。
 
     窗口按名义日历区间归属；区间结束边界尚未到达时不提前发布完整窗口。
     观察期数据不参与拟合（选样只看名义训练区间）。
+    窗口起点早于指数发布月的直接跳过：用 5 年数据冒充"10 年窗口"会把
+    短样本的拟合斜率当成历史证据。
     """
     records: list[WeeklyModelRecord] = []
+    inception_start = date.fromisoformat(f"{inception_month}-01")
     for window in fixed_windows(as_of):
+        if window.start_inclusive < inception_start:
+            continue
         picked = _samples_in_window(series, window.start_inclusive, window.end_exclusive)
         if not picked:
             continue
@@ -244,12 +253,16 @@ class WeeklyModelBuilder:
         as_of: date,
         multiplier: float = DEFAULT_MULTIPLIER,
         calculated_at: str | None = None,
+        inception_week: str = INCEPTION_WEEK_START,
+        inception_month: str = "2005-04",
     ):
         self.series = series
         self.index_code = index_code
         self.as_of = as_of
         self.multiplier = multiplier
         self.calculated_at = calculated_at
+        self.inception_week = inception_week
+        self.inception_month = inception_month
 
     def build_all(self) -> list[WeeklyModelRecord]:
         records = [
@@ -257,12 +270,21 @@ class WeeklyModelBuilder:
                 self.series, self.index_code, self.multiplier, self.calculated_at
             ),
             build_since_inception_weekly_model(
-                self.series, self.index_code, self.multiplier, self.calculated_at
+                self.series,
+                self.index_code,
+                self.multiplier,
+                self.calculated_at,
+                inception_week=self.inception_week,
             ),
         ]
         records.extend(
             build_fixed_weekly_models(
-                self.series, self.index_code, self.as_of, self.multiplier, self.calculated_at
+                self.series,
+                self.index_code,
+                self.as_of,
+                self.multiplier,
+                self.calculated_at,
+                inception_month=self.inception_month,
             )
         )
         return records

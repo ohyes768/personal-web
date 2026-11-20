@@ -62,7 +62,7 @@ def valuation_client():
 @pytest.fixture()
 def api_app(store, weekly_series, weekly_daily_bars, valuation_client):
     service = WeeklyTrendService(store, now_fn=lambda: WEEKLY_FIXED_NOW)
-    service.publish(weekly_series, weekly_daily_bars, service.compute_models(weekly_series))
+    service.publish("000300", weekly_series, weekly_daily_bars, service.compute_models("000300", weekly_series))
     valuation = ValuationService(
         store,
         token="token",
@@ -117,7 +117,7 @@ def test_status_never_leaks_token(client):
 
 def test_status_without_valuation_service_degrades(store, weekly_series, weekly_daily_bars):
     service = WeeklyTrendService(store, now_fn=lambda: WEEKLY_FIXED_NOW)
-    service.publish(weekly_series, weekly_daily_bars, service.compute_models(weekly_series))
+    service.publish("000300", weekly_series, weekly_daily_bars, service.compute_models("000300", weekly_series))
     app = FastAPI()
     app.include_router(router)
     app.state.trend_service = service
@@ -129,7 +129,7 @@ def test_status_without_valuation_service_degrades(store, weekly_series, weekly_
 
 def test_status_with_disabled_valuation_service(store, weekly_series, weekly_daily_bars):
     service = WeeklyTrendService(store, now_fn=lambda: WEEKLY_FIXED_NOW)
-    service.publish(weekly_series, weekly_daily_bars, service.compute_models(weekly_series))
+    service.publish("000300", weekly_series, weekly_daily_bars, service.compute_models("000300", weekly_series))
     valuation = ValuationService(store, token="", calendar=service.trading_calendar)
     app = FastAPI()
     app.include_router(router)

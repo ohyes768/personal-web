@@ -5,6 +5,7 @@ import asyncio
 import importlib
 import sys
 import threading
+import time
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -13,6 +14,7 @@ from fastapi.testclient import TestClient
 
 from src.api.routes import router
 from src.services import scheduler as scheduler_module
+from src.core.indexes import index_codes
 from src.services.store import Store
 
 
@@ -36,7 +38,7 @@ def test_daily_scheduler_registers_only_refresh_and_runs_it():
         scheduler.start()
         try:
             jobs = scheduler._scheduler.get_jobs()
-            assert [job.id for job in jobs] == ["daily_refresh"]
+            assert sorted(job.id for job in jobs) == ["daily_refresh"]
             assert str(jobs[0].trigger.timezone) == "Asia/Shanghai"
             assert str(jobs[0].trigger.fields[-2]) == "15"
             await jobs[0].func()
@@ -89,7 +91,7 @@ def test_application_keeps_daily_market_and_valuation_refresh(main_module, monke
     market = AsyncMock(side_effect=RuntimeError("market unavailable") if market_error else None)
     valuation_done = threading.Event()
 
-    def collect_valuation():
+    def collect_valuation(**kwargs):
         valuation_done.set()
         if valuation_error:
             raise RuntimeError("valuation unavailable")
@@ -100,15 +102,21 @@ def test_application_keeps_daily_market_and_valuation_refresh(main_module, monke
     monkeypatch.setattr(main_module.ValuationService, "refresh_scheduled", valuation)
     with TestClient(main_module.create_app()) as client:
         assert valuation_done.wait(2)  # startup valuation initialization stays enabled
+        # 启动采集按指数逐个执行：等它全部走完再重置计数，
+        # 否则后台任务的第二次调用会落进下面的"不该被调用"断言里（竞态）。
+        deadline = time.time() + 2
+        while valuation.call_count < len(index_codes()) and time.time() < deadline:
+            time.sleep(0.005)
         valuation.reset_mock()
         scheduler = client.app.state.scheduler
         # 行情与估值是两个独立任务：行情失败不影响估值采集
-        assert [job["id"] for job in scheduler.jobs_info()] == ["daily_refresh", "valuation_refresh"]
+        assert sorted(job["id"] for job in scheduler.jobs_info()) == ["daily_refresh", "valuation_refresh"]
         client.portal.call(scheduler._run_daily)
-        market.assert_awaited_once()
+        # 行情现在按指数逐个刷新：每个注册指数一次
+        assert market.await_count == len(index_codes())
         valuation.assert_not_called()  # 16:30 只刷行情，不联动估值
         client.portal.call(scheduler._run_valuation)
-        valuation.assert_called_once()
+        assert valuation.call_count == len(index_codes())
         assert client.get("/api/reports").json()["reports"] == []
 
 

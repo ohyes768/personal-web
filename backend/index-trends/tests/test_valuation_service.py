@@ -121,7 +121,7 @@ def test_refresh_publishes_values(store):
     assert snapshot["state"] == STATE_OK
     assert snapshot["target_date"] == "2026-10-30"
     assert snapshot["as_of"] == "2026-10-30"
-    assert snapshot["pe_ttm"] == 12.35
+    assert snapshot["value"] == 12.35
     assert snapshot["percentile_pct"] == 56.6
     assert client.calls == 1
 
@@ -161,7 +161,7 @@ def test_failure_reports_error_and_keeps_previous_data(store):
     assert snapshot["reason"] == "network_error"
     # 旧数据仍在，但状态不冒充 ok
     assert snapshot["as_of"] == "2026-10-29"
-    assert snapshot["pe_ttm"] == 12.35
+    assert snapshot["value"] == 12.35
 
 
 def test_failure_triggers_cooldown(store):
@@ -222,7 +222,7 @@ def test_state_is_empty_without_data(store):
     snapshot = service.refresh()
     assert snapshot["state"] == STATE_EMPTY
     assert snapshot["percentile_pct"] is None
-    assert snapshot["pe_ttm"] is None
+    assert snapshot["value"] is None
 
 
 def test_missing_values_are_null_not_zero(store):
@@ -232,7 +232,7 @@ def test_missing_values_are_null_not_zero(store):
     row = store.latest_valuation("000300", lx.VALUATION_SOURCE, lx.VALUATION_METRIC, lx.VALUATION_WINDOW)
     assert row is not None
     snapshot = ValuationService(store, token="token").status("2026-10-30")
-    assert snapshot["pe_ttm"] is not None and snapshot["pe_ttm"] != 0
+    assert snapshot["value"] is not None and snapshot["value"] != 0
 
 
 # ---- 每日目标日 ----

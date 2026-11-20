@@ -1,6 +1,10 @@
 # index-trends（宽基趋势观察）
 
-沪深300 线性回归通道与估值数据服务。模型拟合使用**完整周线**：
+宽基指数线性回归通道与估值数据服务，当前覆盖**沪深300（000300）**与**创业板50（399673）**。
+指数清单集中在 `src/core/indexes.py`（代码、腾讯 symbol、名称、起始边界），新增指数只改这一处。
+估值口径为**理杏仁 PB 与 PE-TTM 的近10年分位**：PB 为主（创业板盈利波动大、PE 分母不稳），PE 用于交叉验证。
+
+模型拟合使用**完整周线**：
 周主键是周一（YYYY-MM-DD），行情的 date 是该周实际最后交易日。
 
 - 后端：`backend/index-trends`（FastAPI，端口 8100，API 前缀 `/api`）
@@ -25,7 +29,7 @@ Hermes 通过查询 API 获取缓存，负责简报生成、定时与钉钉/RSS�
 | `INDEX_TRENDS_SERVICE_HOST` / `_SERVICE_PORT` | `0.0.0.0` / `8100` | 监听地址 |
 | `INDEX_TRENDS_DAILY_REFRESH_CRON` | `30 16 * * mon-fri` | Web 后端每日行情刷新 |
 | `INDEX_TRENDS_VALUATION_REFRESH_CRON` | `30 18 * * mon-fri` | 每日估值采集（与行情刷新独立） |
-| `INDEX_TRENDS_LIXINGER_TOKEN` | 空 | 理杏仁访问令牌（沪深300 PE-TTM 近10年分位） |
+| `INDEX_TRENDS_LIXINGER_TOKEN` | 空 | 理杏仁访问令牌（各指数 PB / PE-TTM 近10年分位） |
 
 ### 理杏仁估值（可选）
 
@@ -33,8 +37,9 @@ Hermes 通过查询 API 获取缓存，负责简报生成、定时与钉钉/RSS�
 且**不会发起任何理杏仁请求**。配置后：
 
 - 令牌只由后端读取（`SecretStr`），不进入前端响应、日志、数据库与版本库；
-- 供应商返回的 PE-TTM（`pe_ttm.mcw`，总市值加权）与近 10 年分位
-  （`pe_ttm.y10.mcw.cvpos`，0–1 比例）直接采用，**不在本地重算分位**；
+- 一次请求取回两条指标：PE-TTM（`pe_ttm.mcw`）与 PB（`pb.mcw`），各自的近 10 年分位
+  （`*.y10.mcw.cvpos`，0–1 比例）直接采用，**不在本地重算分位**；
+  两条指标各自记账、各自判状态，一条缺失不会把另一条判成失败；
 - 数据日期取**最近一个已收盘交易日**（每日口径）：以 Asia/Shanghai 15:05 收盘阈值为界，
   阈值之前取上一个交易日，之后可取当日；周末与节假日沿用最近一个已收盘交易日，
   绝不引用未来数据；
@@ -57,17 +62,17 @@ NAS 部署：在 `.env` 里加 `INDEX_TRENDS_LIXINGER_TOKEN=...`，compose 会�
 
 ## 对外查询 API（Hermes / 脚本）
 
-一次 GET 即可获取沪深300 当前周线通道位置和 PE-TTM 近10年分位，复用网页的状态接口。
+一次 GET 即可获取指定指数的当前周线通道位置，以及 PB / PE-TTM 近10年分位，复用网页的状态接口。
 GET 只读本地缓存，不触发供应商采集、模型重算或消息发送。
 
 ```bash
 curl --fail-with-body 'https://web.duomi77.cn:9443/api/index-trends/indices/000300/status?model=trailing_10y_weekly'
 ```
 
-本地后端使用 `http://localhost:8100/api/indices/000300/status?model=trailing_10y_weekly`。
+本地后端使用 `http://localhost:8100/api/indices/399673/status?model=trailing_10y_weekly`。
 `model` 必填：`trailing_10y_weekly` 为近10年周线模型，
 `since_inception_weekly` 为上市以来周线模型。两个模型共享同一份估值。
-指数代码为字符串，当前仅支持 `000300`。
+指数代码为字符串，当前支持 `000300`（沪深300）与 `399673`（创业板50）；未注册代码返回 404 并列出支持列表。
 
 | 响应字段 | 含义 |
 |---|---|
@@ -80,8 +85,9 @@ curl --fail-with-body 'https://web.duomi77.cn:9443/api/index-trends/indices/0003
 | `region` | `below_channel` / `lower` / `middle` / `upper` / `above_channel`，依次表示通道下方、低位、中部、高位、通道上方 |
 | `data_status` / `snapshot_id` | 行情新鲜度、异常原因与快照标识；`available=true` 不代表数据一定新鲜 |
 | `valuation.state` / `valuation.reason` | 估值状态：`ok` / `stale` / `empty` / `error` / `disabled` 及原因 |
-| `valuation.pe_ttm` | 总市值加权 PE-TTM，缺失为 `null` |
-| `valuation.percentile_pct` | 理杏仁近10年 PE-TTM 分位，0—100（不是0—1比例），缺失为 `null` |
+| `valuation.metrics` | 按指标的状态：`{"pb_mcw": {…}, "pe_ttm_mcw": {…}}`，各自带 `state`/`value`/`percentile_pct`/`as_of` |
+| `valuation.value` / `valuation.pe_ttm` | 指标数值；顶层取自 PE-TTM（总市值加权），`pe_ttm` 是 `value` 的历史别名 |
+| `valuation.percentile_pct` | 顶层（PE-TTM）近10年分位，0—100（不是0—1比例），缺失为 `null` |
 | `valuation.target_date` / `valuation.as_of` | 估值期望日期与实际数据日期 |
 | `valuation.source` / `valuation.metric` / `valuation.window` | 供应商与统计口径 |
 
@@ -91,6 +97,9 @@ curl --fail-with-body 'https://web.duomi77.cn:9443/api/index-trends/indices/0003
 `error` 状态可以携带缓存估值，必须标注更新失败；`disabled` 表示未配置估值服务，不能当成零分位。
 
 接口沿用现有公开只读访问方式，不需要把理杏仁令牌传给调用端。
+分位历史序列：`GET /api/indices/{code}/valuation/history?metric=pb_mcw`（或 `pe_ttm_mcw`），
+返回 `{dates, values, percentiles}`；指标不在注册表内返回 400。
+
 不支持的指数返回404，非法模型返回400，缺少必填参数返回422，趋势服务未初始化返回503。
 HTTP 200仍需检查上述业务状态；这里的访问约定仅针对本查询接口。
 

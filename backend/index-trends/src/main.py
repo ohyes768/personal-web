@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from src import __version__
 from src.api.routes import router
 from src.config import get_settings
+from src.core.indexes import index_codes
 from src.services.scheduler import JOB_DAILY, JOB_VALUATION, RefreshScheduler
 from src.services.store import Store
 from src.services.trend_service import WeeklyTrendService
@@ -45,14 +46,31 @@ def create_app() -> FastAPI:
     async def daily_job() -> object:
         # 行情刷新与估值采集解耦：估值由独立的 18:30 任务负责，
         # 行情失败也不改变估值的采集时机。
-        return await trend_service.refresh()
+        # 按指数逐个刷新：一个指数的行情异常不阻断其他指数。
+        results: dict[str, object] = {}
+        for code in index_codes():
+            try:
+                results[code] = await trend_service.refresh(code)
+            except Exception:  # noqa: BLE001 — 单指数失败不影响其他指数
+                logger.exception("行情刷新失败: %s", code)
+                results[code] = {"index_code": code, "success": False}
+        return results
 
     async def valuation_job() -> object:
         # 每日估值采集：休市日跳过（不发请求），日历不可用时抛错。
-        result = await asyncio.to_thread(valuation_service.refresh_scheduled)
-        if isinstance(result, dict) and result.get("skipped"):
-            logger.info("估值采集跳过：%s", result.get("reason"))
-        return result
+        results = []
+        for code in index_codes():
+            # 按指数隔离：一个指数采集失败不得中断其余指数的采集
+            try:
+                result = await asyncio.to_thread(valuation_service.refresh_scheduled, code)
+            except Exception:  # noqa: BLE001 — 单指数失败不影响其他指数
+                logger.exception("估值采集失败: %s", code)
+                results.append({"index_code": code, "state": "error"})
+                continue
+            if isinstance(result, dict) and result.get("skipped"):
+                logger.info("估值采集跳过：%s %s", code, result.get("reason"))
+            results.append(result)
+        return results
 
     jobs = build_jobs(daily_job, valuation_job)
     scheduler = RefreshScheduler(
@@ -87,11 +105,12 @@ def create_app() -> FastAPI:
 
 
 async def _refresh_valuation(valuation_service: ValuationService) -> None:
-    """采集估值（尽力而为）：异常只记录，不影响行情。"""
-    try:
-        await asyncio.to_thread(valuation_service.refresh)
-    except Exception as exc:  # noqa: BLE001 — 估值问题不阻断其他链路
-        logger.warning("估值采集失败: %s", exc)
+    """采集全部指数的估值（尽力而为）：异常只记录，不影响行情。"""
+    for code in index_codes():
+        try:
+            await asyncio.to_thread(valuation_service.refresh, index_code=code)
+        except Exception as exc:  # noqa: BLE001 — 估值问题不阻断其他链路
+            logger.warning("估值采集失败 %s: %s", code, exc)
 
 
 app = create_app()

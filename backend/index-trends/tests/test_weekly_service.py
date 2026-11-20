@@ -41,7 +41,7 @@ def weekly_service(store: Store) -> WeeklyTrendService:
 
 def test_refresh_publishes_snapshot(weekly_service, store, weekly_bars, weekly_daily_bars):
     client = _mock_client(_rows(weekly_bars), _rows(weekly_daily_bars))
-    result = weekly_service.refresh_sync(client)
+    result = weekly_service.refresh_sync("000300", client)
     assert result.success is True
     assert result.data_cutoff_week == "2026-10-26"
     assert result.data_cutoff_trade_date == "2026-10-30"
@@ -66,9 +66,9 @@ def test_refresh_publishes_snapshot(weekly_service, store, weekly_bars, weekly_d
 def test_refresh_is_idempotent(weekly_service, store, weekly_bars, weekly_daily_bars):
     """重复刷新不产生新模型版本（旧模型不被覆盖）。"""
     client = _mock_client(_rows(weekly_bars), _rows(weekly_daily_bars))
-    first = weekly_service.refresh_sync(client)
+    first = weekly_service.refresh_sync("000300", client)
     count_after_first = len(store.list_weekly_models("000300"))
-    second = weekly_service.refresh_sync(client)
+    second = weekly_service.refresh_sync("000300", client)
     assert second.new_models == []
     assert len(store.list_weekly_models("000300")) == count_after_first
     assert first.snapshot_id == second.snapshot_id
@@ -78,7 +78,7 @@ def test_publish_failure_keeps_old_snapshot(store, weekly_bars, weekly_daily_bar
     """发布失败 → 旧快照仍可读，元数据不变。"""
     service = WeeklyTrendService(store, now_fn=lambda: WEEKLY_FIXED_NOW)
     client = _mock_client(_rows(weekly_bars), _rows(weekly_daily_bars))
-    first = service.refresh_sync(client)
+    first = service.refresh_sync("000300", client)
     assert first.success
 
     # 制造一次校验失败（篡改日线使收盘对不上）
@@ -87,7 +87,7 @@ def test_publish_failure_keeps_old_snapshot(store, weekly_bars, weekly_daily_bar
     ]
     bad_client = _mock_client(_rows(weekly_bars), _rows(bad_daily))
     with pytest.raises(ValueError):
-        service.refresh_sync(bad_client)
+        service.refresh_sync("000300", bad_client)
 
     meta = store.get_weekly_data_meta()
     assert meta["snapshot_id"] == first.snapshot_id
@@ -98,7 +98,7 @@ def test_incomplete_week_not_published(store, weekly_bars, weekly_daily_bars):
     """进行中的周落库但标记为 partial，不参与拟合（可展示）。"""
     service = WeeklyTrendService(store, now_fn=lambda: WEEKLY_FIXED_NOW)
     client = _mock_client(_rows(weekly_bars), _rows(weekly_daily_bars))
-    service.refresh_sync(client)
+    service.refresh_sync("000300", client)
     complete = store.load_weekly_bars(include_partial=False)
     partial = store.load_partial_weekly_bars()
     assert "2026-11-02" not in complete
@@ -113,7 +113,7 @@ def test_daily_quotes_published_with_snapshot(store, weekly_bars, weekly_daily_b
     """日线与周K/模型在同一事务发布（供最近收盘定位与交叉校验使用）。"""
     service = WeeklyTrendService(store, now_fn=lambda: WEEKLY_FIXED_NOW)
     client = _mock_client(_rows(weekly_bars), _rows(weekly_daily_bars))
-    service.refresh_sync(client)
+    service.refresh_sync("000300", client)
     dailies = store.load_daily_quotes(limit=500)
     assert dailies
     assert max(d.date for d in dailies) == "2026-11-02"
@@ -133,5 +133,5 @@ def test_fetch_rejects_insufficient_history(store, weekly_bars, weekly_daily_bar
     short_weekly = [b for b in weekly_bars if b.date >= "2020-01-01"]
     client = _mock_client(_rows(short_weekly), _rows(weekly_daily_bars))
     with pytest.raises(ValueError) as exc:
-        service.fetch_and_validate(client)
+        service.fetch_and_validate("000300", client)
     assert "2005-04" in str(exc.value)

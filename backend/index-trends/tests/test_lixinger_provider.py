@@ -141,7 +141,7 @@ def test_fetch_sends_explicit_range_and_token():
     lx.fetch_fundamental(client, "secret-token", "000300", "2026-10-30")
     payload = client.calls[0]["json"]
     assert payload["stockCodes"] == ["000300"]
-    assert payload["metricsList"] == [lx.METRIC_PE_TTM, lx.METRIC_CVPOS]
+    assert payload["metricsList"] == list(lx.METRICS)
     assert payload["endDate"] == "2026-10-30"
     assert payload["startDate"] == "2026-09-30"   # 回看 30 个日历日
     assert payload["token"] == "secret-token"
@@ -181,14 +181,14 @@ def test_fetch_rejects_non_json_response():
 # ---- 选取 ----
 def test_latest_qualified_picks_newest_ignoring_order():
     points = [
-        lx.ValuationPoint(date="2026-10-28", pe_ttm=1.0, percentile_ratio=0.1),
-        lx.ValuationPoint(date="2026-10-30", pe_ttm=2.0, percentile_ratio=0.2),
-        lx.ValuationPoint(date="2026-10-29", pe_ttm=3.0, percentile_ratio=0.3),
+        lx.ValuationPoint(date="2026-10-28", metric="pe_ttm_mcw", value=1.0, percentile_ratio=0.1),
+        lx.ValuationPoint(date="2026-10-30", metric="pe_ttm_mcw", value=2.0, percentile_ratio=0.2),
+        lx.ValuationPoint(date="2026-10-29", metric="pe_ttm_mcw", value=3.0, percentile_ratio=0.3),
     ]
     picked = lx.latest_qualified(points, "2026-10-30")
     assert picked is not None and picked.date == "2026-10-30"
 
 
 def test_latest_qualified_excludes_future():
-    points = [lx.ValuationPoint(date="2026-11-02", pe_ttm=1.0, percentile_ratio=0.1)]
+    points = [lx.ValuationPoint(date="2026-11-02", metric="pe_ttm_mcw", value=1.0, percentile_ratio=0.1)]
     assert lx.latest_qualified(points, "2026-10-30") is None

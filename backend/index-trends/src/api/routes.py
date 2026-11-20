@@ -1,7 +1,8 @@
 """REST API。
 
 内部统一 /api 前缀；外部经 Nginx /api/index-trends/* 剥前缀转发（新服务接入契约）。
-指数代码全链路字符串（code-type-guidelines）。
+指数代码全链路字符串（code-type-guidelines）：每个指数接口都按 {code} 取自己的
+行情、模型与估值，未知代码返回 404 并列出支持列表。
 """
 from __future__ import annotations
 
@@ -10,11 +11,13 @@ import asyncio
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from src import __version__
+from src.core.indexes import BY_CODE, DEFAULT_INDEX_CODE, index_codes
 from src.core.models import (
     CURRENT_WEEKLY_MODEL_KINDS,
     LEGACY_KIND_TO_WEEKLY,
 )
-from src.services.trend_service import INDEX_CODE, WeeklyTrendService
+from src.data import lixinger as lx
+from src.services.trend_service import WeeklyTrendService
 from src.services.valuation_service import ValuationService
 
 router = APIRouter(prefix="/api")
@@ -32,28 +35,49 @@ def get_valuation_service(request: Request) -> ValuationService | None:
     return getattr(request.app.state, "valuation_service", None)
 
 
-def valuation_status(request: Request) -> dict:
+def valuation_status(request: Request, index_code: str = DEFAULT_INDEX_CODE) -> dict:
     """只读本地缓存的估值状态（不在 GET 内请求供应商）。"""
     service = get_valuation_service(request)
     if service is None:
+        metrics = {
+            metric: {
+                "state": "disabled",
+                "reason": "service_not_initialized",
+                "metric": metric,
+                "source": lx.VALUATION_SOURCE,
+                "window": lx.VALUATION_WINDOW,
+                "target_date": None,
+                "as_of": None,
+                "value": None,
+                "percentile_pct": None,
+                "captured_at": None,
+            }
+            for metric in lx.VALUATION_METRIC_KEYS
+        }
+        legacy = metrics[lx.VALUATION_METRIC]
         return {
+            "index_code": index_code,
             "state": "disabled",
             "reason": "service_not_initialized",
-            "source": "lixinger",
-            "metric": "pe_ttm_mcw",
-            "window": "y10",
+            "source": lx.VALUATION_SOURCE,
+            "metric": lx.VALUATION_METRIC,
+            "window": lx.VALUATION_WINDOW,
             "target_date": None,
             "as_of": None,
             "pe_ttm": None,
             "percentile_pct": None,
             "captured_at": None,
+            "metrics": metrics,
         }
-    return service.status()
+    return service.status(index_code=index_code)
 
 
 def _require_supported_index(code: str) -> None:
-    if code != INDEX_CODE:
-        raise HTTPException(status_code=404, detail=f"暂不支持指数: {code}（首版仅支持 {INDEX_CODE}）")
+    if code not in BY_CODE:
+        supported = "、".join(index_codes())
+        raise HTTPException(
+            status_code=404, detail=f"暂不支持指数: {code}（支持 {supported}）"
+        )
 
 
 def _resolve_current_kind(kind: str) -> str:
@@ -80,7 +104,7 @@ async def indices(request: Request) -> dict:
 @router.get("/indices/{code}/history")
 async def history(code: str, request: Request) -> dict:
     _require_supported_index(code)
-    return get_service(request).history_overview()
+    return get_service(request).history_overview(code)
 
 
 @router.get("/indices/{code}/chart")
@@ -96,7 +120,7 @@ async def chart(
         kind = _resolve_current_kind(model.split(":", 1)[1])
         target = service.store.latest_weekly_model(code, kind)
     else:
-        target = service.weekly_model_by_id(model)
+        target = service.weekly_model_by_id(code, model)
         if target is None and service.monthly_model_by_id(model) is not None:
             raise HTTPException(status_code=409, detail=_MONTHLY_MODEL_DETAIL)
     if target is None:
@@ -112,10 +136,28 @@ async def status(
 ) -> dict:
     _require_supported_index(code)
     kind = _resolve_current_kind(model)
-    payload = get_service(request).current_status(kind)
-    # 估值与模型无关：两个模型共享同一份估值口径
-    payload["valuation"] = valuation_status(request)
+    payload = get_service(request).current_status(code, kind)
+    # 估值与模型无关：同一指数的两个模型共享一份估值口径
+    payload["valuation"] = valuation_status(request, code)
     return payload
+
+
+@router.get("/indices/{code}/valuation/history")
+async def valuation_history(
+    code: str,
+    request: Request,
+    metric: str = Query(..., description="指标：pb_mcw（主）| pe_ttm_mcw"),
+    start_date: str | None = Query(None, description="起始日期（YYYY-MM-DD，可选）"),
+) -> dict:
+    """分位历史序列（分位走势图数据源）。"""
+    _require_supported_index(code)
+    if metric not in lx.VALUATION_METRIC_KEYS:
+        supported = "、".join(lx.VALUATION_METRIC_KEYS)
+        raise HTTPException(status_code=400, detail=f"不支持的指标: {metric}（支持 {supported}）")
+    service = get_valuation_service(request)
+    if service is None:
+        raise HTTPException(status_code=503, detail="估值服务未初始化")
+    return service.history(code, metric, start_date)
 
 
 @router.get("/reports")
@@ -129,27 +171,35 @@ async def list_reports(
 
 
 @router.post("/refresh")
-async def refresh(request: Request) -> dict:
+async def refresh(
+    request: Request,
+    index_code: str = Query(DEFAULT_INDEX_CODE, description="要刷新的指数代码"),
+) -> dict:
+    """手动刷新：行情按指数互不影响，估值尽力而为。"""
+    _require_supported_index(index_code)
     service = get_service(request)
     from src.data.provider import ProviderError
 
     try:
-        result = await service.refresh()
+        result = await service.refresh(index_code)
     except ProviderError as e:
         raise HTTPException(status_code=502, detail=str(e))  # noqa: B904
     except ValueError as e:
         raise HTTPException(status_code=502, detail=f"数据校验失败: {e}")  # noqa: B904
     # 估值采集尽力而为：失败不改行情的成功/失败语义，只在响应里给出估值状态
     valuation_service = get_valuation_service(request)
-    valuation = valuation_status(request)
+    valuation = valuation_status(request, index_code)
     if valuation_service is not None:
         try:
-            valuation = await asyncio.to_thread(valuation_service.refresh)
+            valuation = await asyncio.to_thread(
+                valuation_service.refresh, index_code=index_code
+            )
         except Exception:  # noqa: BLE001 — 估值异常不改变行情结果
-            valuation = valuation_status(request)
+            valuation = valuation_status(request, index_code)
     return {
         "success": result.success,
         "message": result.message,
+        "index_code": index_code,
         "data_cutoff_week": result.data_cutoff_week,
         "new_models": result.new_models,
         "weekly_count": result.weekly_count,

@@ -63,7 +63,7 @@ def test_publish_and_read_latest(tmp_path: Path):
         "000300", lx.VALUATION_SOURCE, lx.VALUATION_METRIC, lx.VALUATION_WINDOW
     )
     assert row is not None and row["date"] == "2026-10-30"
-    assert row["pe_ttm"] == 12.3456
+    assert row["value"] == 12.3456
     assert row["percentile_ratio"] == 0.565952
     store.close()
 
@@ -86,7 +86,7 @@ def test_latest_respects_on_or_before(tmp_path: Path):
 def test_publish_updates_fetch_meta(tmp_path: Path):
     store = Store(tmp_path / "db.sqlite")
     _publish(store)
-    meta = store.get_valuation_meta()
+    meta = store.get_valuation_meta("000300", "pe_ttm_mcw")
     assert meta["target_date"] == "2026-10-30"
     assert meta["last_error"] is None
     assert meta["last_success_at"]
@@ -96,8 +96,8 @@ def test_publish_updates_fetch_meta(tmp_path: Path):
 def test_failure_keeps_data_and_records_error(tmp_path: Path):
     store = Store(tmp_path / "db.sqlite")
     _publish(store)
-    store.record_valuation_failure("000300", "2026-11-06", "network_error")
-    meta = store.get_valuation_meta()
+    store.record_valuation_failure("000300", "pe_ttm_mcw", "2026-11-06", "network_error")
+    meta = store.get_valuation_meta("000300", "pe_ttm_mcw")
     assert meta["last_error"] == "network_error"
     assert meta["target_date"] == "2026-11-06"
     row = store.latest_valuation(

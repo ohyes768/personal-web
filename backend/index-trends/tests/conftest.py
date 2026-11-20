@@ -126,9 +126,11 @@ def service(store: Store, now_fn) -> TrendService:
 @pytest.fixture()
 def weekly_published(store: Store, weekly_series, weekly_daily_bars):
     """把脱网周K fixture 发布成一份周线快照（不触网）。"""
+    from src.core.indexes import DEFAULT_INDEX_CODE
+
     service = WeeklyTrendService(store, now_fn=lambda: FRIDAY_CLOSE)
-    models = service.compute_models(weekly_series)
-    result = service.publish(weekly_series, weekly_daily_bars, models)
+    models = service.compute_models(DEFAULT_INDEX_CODE, weekly_series)
+    result = service.publish(DEFAULT_INDEX_CODE, weekly_series, weekly_daily_bars, models)
     return service, result
 
 

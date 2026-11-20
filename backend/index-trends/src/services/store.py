@@ -17,27 +17,33 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from src.core.indexes import DEFAULT_INDEX_CODE, index_codes
 from src.core.models import LEGACY_KIND_TO_WEEKLY, ModelRecord, WeeklyModelRecord
+from src.data.lixinger import VALUATION_METRIC_KEYS
 from src.data.provider import KlineBar
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS monthly_bars (
-    month TEXT PRIMARY KEY,
+    index_code TEXT NOT NULL,
+    month TEXT NOT NULL,
     date TEXT NOT NULL,
     open REAL NOT NULL,
     close REAL NOT NULL,
     high REAL NOT NULL,
-    low REAL NOT NULL
+    low REAL NOT NULL,
+    PRIMARY KEY (index_code, month)
 );
 CREATE TABLE IF NOT EXISTS daily_quotes (
-    date TEXT PRIMARY KEY,
+    index_code TEXT NOT NULL,
+    date TEXT NOT NULL,
     open REAL NOT NULL,
     close REAL NOT NULL,
     high REAL NOT NULL,
-    low REAL NOT NULL
+    low REAL NOT NULL,
+    PRIMARY KEY (index_code, date)
 );
 CREATE TABLE IF NOT EXISTS data_meta (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
+    index_code TEXT PRIMARY KEY,
     provider TEXT NOT NULL,
     captured_at TEXT NOT NULL,
     monthly_cutoff_month TEXT,
@@ -91,13 +97,15 @@ CREATE TABLE IF NOT EXISTS reports (
 # 周线相关表（与月线表隔离）
 WEEKLY_SCHEMA = """
 CREATE TABLE IF NOT EXISTS weekly_bars (
-    week_start TEXT PRIMARY KEY,
+    index_code TEXT NOT NULL,
+    week_start TEXT NOT NULL,
     date TEXT NOT NULL,
     open REAL NOT NULL,
     close REAL NOT NULL,
     high REAL NOT NULL,
     low REAL NOT NULL,
-    is_partial INTEGER NOT NULL DEFAULT 0
+    is_partial INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (index_code, week_start)
 );
 CREATE TABLE IF NOT EXISTS weekly_models (
     model_id TEXT PRIMARY KEY,
@@ -120,7 +128,7 @@ CREATE TABLE IF NOT EXISTS weekly_models (
     calculated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS weekly_data_meta (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
+    index_code TEXT PRIMARY KEY,
     provider TEXT NOT NULL,
     captured_at TEXT NOT NULL,
     data_cutoff_week TEXT,
@@ -150,7 +158,11 @@ CREATE INDEX IF NOT EXISTS idx_report_attempts_key
     ON report_attempts (idempotency_key);
 """
 
-# 估值相关表（理杏仁 PE-TTM 近10年分位；与行情/模型表隔离）
+# 估值相关表（理杏仁 PE-TTM / PB 近10年分位；与行情/模型表隔离）
+#
+# index_valuations 是旧版「单指标最新快照」表，保留为历史档案、不再写入；
+# 现行写入目标是 index_valuation_history：带 value 列（不把 PB 值塞进 pe_ttm），
+# 且按日期存整条序列，分位走势图与当前分位都从它读。
 VALUATION_SCHEMA = """
 CREATE TABLE IF NOT EXISTS index_valuations (
     index_code TEXT NOT NULL,
@@ -163,18 +175,139 @@ CREATE TABLE IF NOT EXISTS index_valuations (
     captured_at TEXT NOT NULL,
     PRIMARY KEY (index_code, source, metric, window, date)
 );
+CREATE TABLE IF NOT EXISTS index_valuation_history (
+    index_code TEXT NOT NULL,
+    source TEXT NOT NULL,
+    metric TEXT NOT NULL,
+    window TEXT NOT NULL,
+    date TEXT NOT NULL,
+    value REAL NOT NULL,
+    percentile_ratio REAL NOT NULL,
+    captured_at TEXT NOT NULL,
+    PRIMARY KEY (index_code, source, metric, window, date)
+);
 CREATE TABLE IF NOT EXISTS valuation_fetch_meta (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    index_code TEXT NOT NULL DEFAULT '000300',
+    index_code TEXT NOT NULL,
+    metric TEXT NOT NULL,
     target_date TEXT,
     last_attempt_at TEXT,
     last_success_at TEXT,
-    last_error TEXT
+    last_error TEXT,
+    PRIMARY KEY (index_code, metric)
 );
 """
 
 # 迁移版本：每次结构/数据变更追加一行，已应用的版本不重复执行
 MIGRATION_VERSIONS = ("001_weekly_tables", "002_report_settings_weekly_kind")
+
+# 006_multi_index：把「单指数」表重建为带 index_code 维度的结构。
+# 每项 = (表名, 用于判断是否已是新结构的守卫列, 建新表 SQL, 旧数据搬运 SQL)。
+# 旧库的行全部归到 000300——迁移执行时服务只采过沪深300，这是事实而非猜测。
+_MULTI_INDEX_REBUILDS: tuple[tuple[str, str, str, str], ...] = (
+    (
+        "monthly_bars",
+        "index_code",
+        """CREATE TABLE monthly_bars__new (
+            index_code TEXT NOT NULL,
+            month TEXT NOT NULL,
+            date TEXT NOT NULL,
+            open REAL NOT NULL,
+            close REAL NOT NULL,
+            high REAL NOT NULL,
+            low REAL NOT NULL,
+            PRIMARY KEY (index_code, month)
+        )""",
+        """INSERT INTO monthly_bars__new (index_code, month, date, open, close, high, low)
+           SELECT '000300', month, date, open, close, high, low FROM monthly_bars""",
+    ),
+    (
+        "daily_quotes",
+        "index_code",
+        """CREATE TABLE daily_quotes__new (
+            index_code TEXT NOT NULL,
+            date TEXT NOT NULL,
+            open REAL NOT NULL,
+            close REAL NOT NULL,
+            high REAL NOT NULL,
+            low REAL NOT NULL,
+            PRIMARY KEY (index_code, date)
+        )""",
+        """INSERT INTO daily_quotes__new (index_code, date, open, close, high, low)
+           SELECT '000300', date, open, close, high, low FROM daily_quotes""",
+    ),
+    (
+        "data_meta",
+        "index_code",
+        """CREATE TABLE data_meta__new (
+            index_code TEXT PRIMARY KEY,
+            provider TEXT NOT NULL,
+            captured_at TEXT NOT NULL,
+            monthly_cutoff_month TEXT,
+            monthly_hash TEXT
+        )""",
+        """INSERT INTO data_meta__new
+               (index_code, provider, captured_at, monthly_cutoff_month, monthly_hash)
+           SELECT '000300', provider, captured_at, monthly_cutoff_month, monthly_hash
+           FROM data_meta WHERE id = 1""",
+    ),
+    (
+        "weekly_bars",
+        "index_code",
+        """CREATE TABLE weekly_bars__new (
+            index_code TEXT NOT NULL,
+            week_start TEXT NOT NULL,
+            date TEXT NOT NULL,
+            open REAL NOT NULL,
+            close REAL NOT NULL,
+            high REAL NOT NULL,
+            low REAL NOT NULL,
+            is_partial INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (index_code, week_start)
+        )""",
+        """INSERT INTO weekly_bars__new
+               (index_code, week_start, date, open, close, high, low, is_partial)
+           SELECT '000300', week_start, date, open, close, high, low, is_partial FROM weekly_bars""",
+    ),
+    (
+        "weekly_data_meta",
+        "index_code",
+        """CREATE TABLE weekly_data_meta__new (
+            index_code TEXT PRIMARY KEY,
+            provider TEXT NOT NULL,
+            captured_at TEXT NOT NULL,
+            data_cutoff_week TEXT,
+            data_cutoff_trade_date TEXT,
+            weekly_hash TEXT,
+            snapshot_id TEXT,
+            last_error TEXT,
+            last_error_at TEXT
+        )""",
+        """INSERT INTO weekly_data_meta__new
+               (index_code, provider, captured_at, data_cutoff_week, data_cutoff_trade_date,
+                weekly_hash, snapshot_id, last_error, last_error_at)
+           SELECT '000300', provider, captured_at, data_cutoff_week,
+                  data_cutoff_trade_date, weekly_hash, snapshot_id, last_error, last_error_at
+           FROM weekly_data_meta WHERE id = 1""",
+    ),
+    (
+        "valuation_fetch_meta",
+        "metric",
+        """CREATE TABLE valuation_fetch_meta__new (
+            index_code TEXT NOT NULL,
+            metric TEXT NOT NULL,
+            target_date TEXT,
+            last_attempt_at TEXT,
+            last_success_at TEXT,
+            last_error TEXT,
+            PRIMARY KEY (index_code, metric)
+        )""",
+        """INSERT INTO valuation_fetch_meta__new
+               (index_code, metric, target_date, last_attempt_at, last_success_at, last_error)
+           SELECT COALESCE(index_code, '000300'), 'pe_ttm_mcw', target_date,
+                  last_attempt_at, last_success_at, last_error
+           FROM valuation_fetch_meta WHERE id = 1""",
+    ),
+)
 
 
 def now_iso() -> str:
@@ -192,9 +325,6 @@ class Store:
             "INSERT OR IGNORE INTO report_settings (id, updated_at) VALUES (1, ?)",
             (now_iso(),),
         )
-        self._conn.execute(
-            "INSERT OR IGNORE INTO data_meta (id, provider, captured_at) VALUES (1, '', '')"
-        )
         self._conn.commit()
         self._migrate()
 
@@ -206,20 +336,85 @@ class Store:
         旧库（月线模型 / 旧周报 / 自定义配置）重复迁移不丢数据。
         """
         self._conn.executescript(WEEKLY_SCHEMA)
-        self._conn.execute(
-            "INSERT OR IGNORE INTO weekly_data_meta (id, provider, captured_at) VALUES (1, '', '')"
-        )
+        # 估值表无条件建（005 在旧库里已记账，但新表可能尚未创建）
+        self._conn.executescript(VALUATION_SCHEMA)
         self._conn.commit()
         self._apply_migration("001_weekly_tables", lambda: None)
         self._apply_migration("003_reports_snapshot_json", self._add_snapshot_json_column)
         self._apply_migration("004_weekly_bars_is_partial", self._add_is_partial_column)
         self._apply_migration("005_valuation_tables", self._add_valuation_tables)
+        self._apply_migration("006_multi_index", self._migrate_multi_index)
+        self._seed_index_rows()
         if self._has_weekly_models():
             # 已切到周线管线的库（周线快照已发布过）：补做 kind 映射
             self._apply_migration(
                 "002_report_settings_weekly_kind", self._migrate_report_settings
             )
         self._conn.commit()
+
+    def _table_columns(self, table: str) -> set[str]:
+        """表的列名集合；表不存在时返回空集。"""
+        return {row["name"] for row in self._conn.execute(f"PRAGMA table_info({table})")}
+
+    def _migrate_multi_index(self) -> None:
+        """006：把「单指数」行情/元数据表重建为带 index_code 维度的结构。
+
+        单事务完成（显式 BEGIN/COMMIT）：任何一张表重建失败都整体回滚，
+        不留半张新表。新库（结构已是 index_code）直接跳过。
+
+        同时把旧 index_valuations 的 PE 行回填进 index_valuation_history，
+        历史分位不会因为换表而消失。
+        """
+        if (
+            "index_code" in self._table_columns("data_meta")
+            and "metric" in self._table_columns("valuation_fetch_meta")
+        ):
+            return
+        self._conn.commit()
+        self._conn.execute("BEGIN IMMEDIATE")
+        try:
+            for table, guard, ddl, copy_sql in _MULTI_INDEX_REBUILDS:
+                if guard in self._table_columns(table):
+                    continue
+                self._conn.execute(f"DROP TABLE IF EXISTS {table}__new")
+                self._conn.execute(ddl)
+                self._conn.execute(copy_sql)
+                self._conn.execute(f"DROP TABLE {table}")
+                self._conn.execute(f"ALTER TABLE {table}__new RENAME TO {table}")
+            self._conn.execute(
+                "INSERT OR IGNORE INTO index_valuation_history "
+                "(index_code, source, metric, window, date, value, percentile_ratio, captured_at) "
+                "SELECT index_code, source, metric, window, date, pe_ttm, percentile_ratio, "
+                "captured_at FROM index_valuations"
+            )
+            self._conn.execute("COMMIT")
+        except Exception:
+            self._conn.execute("ROLLBACK")
+            raise
+
+    def _seed_index_rows(self) -> None:
+        """为每个注册指数补齐元数据行（幂等）。
+
+        缺行会让状态查询读不到 meta；这里统一补空行，而不是让每个读路径
+        自己处理「没有这一行」。
+        """
+        for code in index_codes():
+            self._conn.execute(
+                "INSERT OR IGNORE INTO data_meta (index_code, provider, captured_at) "
+                "VALUES (?, '', '')",
+                (code,),
+            )
+            self._conn.execute(
+                "INSERT OR IGNORE INTO weekly_data_meta (index_code, provider, captured_at) "
+                "VALUES (?, '', '')",
+                (code,),
+            )
+            for metric in VALUATION_METRIC_KEYS:
+                self._conn.execute(
+                    "INSERT OR IGNORE INTO valuation_fetch_meta (index_code, metric) "
+                    "VALUES (?, ?)",
+                    (code, metric),
+                )
 
     def migrate_report_settings_to_weekly(self) -> None:
         """把周报配置的月线 kind 映射为周线 kind（周线管线接管时调用）。
@@ -258,9 +453,6 @@ class Store:
     def _add_valuation_tables(self) -> None:
         """新增估值表（只加表，不动行情/模型/报告；幂等）。"""
         self._conn.executescript(VALUATION_SCHEMA)
-        self._conn.execute(
-            "INSERT OR IGNORE INTO valuation_fetch_meta (id, index_code) VALUES (1, '000300')"
-        )
 
     def _apply_migration(self, version: str, action: Any) -> None:
         row = self._conn.execute(
@@ -296,55 +488,76 @@ class Store:
         self._conn.close()
 
     # ---- 行情 ----
-    def upsert_monthly_bars(self, bars: dict[str, KlineBar]) -> None:
+    def upsert_monthly_bars(
+        self, bars: dict[str, KlineBar], index_code: str = DEFAULT_INDEX_CODE
+    ) -> None:
         with self._conn:
             self._conn.executemany(
-                "INSERT INTO monthly_bars (month, date, open, close, high, low) "
-                "VALUES (?, ?, ?, ?, ?, ?) "
-                "ON CONFLICT(month) DO UPDATE SET date=excluded.date, open=excluded.open, "
-                "close=excluded.close, high=excluded.high, low=excluded.low",
+                "INSERT INTO monthly_bars (index_code, month, date, open, close, high, low) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(index_code, month) DO UPDATE SET date=excluded.date, "
+                "open=excluded.open, close=excluded.close, high=excluded.high, low=excluded.low",
                 [
-                    (m, b.date, b.open, b.close, b.high, b.low)
+                    (index_code, m, b.date, b.open, b.close, b.high, b.low)
                     for m, b in sorted(bars.items())
                 ],
             )
 
-    def load_monthly_bars(self) -> dict[str, KlineBar]:
+    def load_monthly_bars(self, index_code: str = DEFAULT_INDEX_CODE) -> dict[str, KlineBar]:
         rows = self._conn.execute(
-            "SELECT month, date, open, close, high, low FROM monthly_bars ORDER BY month"
+            "SELECT month, date, open, close, high, low FROM monthly_bars "
+            "WHERE index_code=? ORDER BY month",
+            (index_code,),
         ).fetchall()
         return {
             r["month"]: KlineBar(r["date"], r["open"], r["close"], r["high"], r["low"])
             for r in rows
         }
 
-    def upsert_daily_quotes(self, bars: list[KlineBar]) -> None:
+    def upsert_daily_quotes(
+        self, bars: list[KlineBar], index_code: str = DEFAULT_INDEX_CODE
+    ) -> None:
         with self._conn:
             self._conn.executemany(
-                "INSERT INTO daily_quotes (date, open, close, high, low) "
-                "VALUES (?, ?, ?, ?, ?) "
-                "ON CONFLICT(date) DO UPDATE SET open=excluded.open, close=excluded.close, "
-                "high=excluded.high, low=excluded.low",
-                [(b.date, b.open, b.close, b.high, b.low) for b in bars],
+                "INSERT INTO daily_quotes (index_code, date, open, close, high, low) "
+                "VALUES (?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(index_code, date) DO UPDATE SET open=excluded.open, "
+                "close=excluded.close, high=excluded.high, low=excluded.low",
+                [(index_code, b.date, b.open, b.close, b.high, b.low) for b in bars],
             )
 
-    def load_daily_quotes(self, limit: int = 500) -> list[KlineBar]:
+    def load_daily_quotes(
+        self, limit: int = 500, index_code: str = DEFAULT_INDEX_CODE
+    ) -> list[KlineBar]:
         rows = self._conn.execute(
-            "SELECT date, open, close, high, low FROM daily_quotes "
-            "ORDER BY date DESC LIMIT ?", (limit,)
+            "SELECT date, open, close, high, low FROM daily_quotes WHERE index_code=? "
+            "ORDER BY date DESC LIMIT ?", (index_code, limit)
         ).fetchall()
         return [KlineBar(r["date"], r["open"], r["close"], r["high"], r["low"]) for r in rows]
 
-    def set_data_meta(self, provider: str, monthly_cutoff: str | None, monthly_hash: str | None) -> None:
+    def set_data_meta(
+        self,
+        provider: str,
+        monthly_cutoff: str | None,
+        monthly_hash: str | None,
+        index_code: str = DEFAULT_INDEX_CODE,
+    ) -> None:
         with self._conn:
             self._conn.execute(
-                "UPDATE data_meta SET provider=?, captured_at=?, monthly_cutoff_month=?, monthly_hash=? WHERE id=1",
-                (provider, now_iso(), monthly_cutoff, monthly_hash),
+                "INSERT INTO data_meta (index_code, provider, captured_at, "
+                "monthly_cutoff_month, monthly_hash) VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(index_code) DO UPDATE SET provider=excluded.provider, "
+                "captured_at=excluded.captured_at, "
+                "monthly_cutoff_month=excluded.monthly_cutoff_month, "
+                "monthly_hash=excluded.monthly_hash",
+                (index_code, provider, now_iso(), monthly_cutoff, monthly_hash),
             )
 
-    def get_data_meta(self) -> dict[str, Any]:
+    def get_data_meta(self, index_code: str = DEFAULT_INDEX_CODE) -> dict[str, Any]:
         row = self._conn.execute(
-            "SELECT provider, captured_at, monthly_cutoff_month, monthly_hash FROM data_meta WHERE id=1"
+            "SELECT provider, captured_at, monthly_cutoff_month, monthly_hash "
+            "FROM data_meta WHERE index_code=?",
+            (index_code,),
         ).fetchone()
         return dict(row) if row else {}
 
@@ -421,43 +634,56 @@ class Store:
 
     # ---- 周线行情与模型 ----
     def upsert_weekly_bars(
-        self, bars: dict[str, KlineBar], partial: set[str] | None = None
+        self,
+        bars: dict[str, KlineBar],
+        partial: set[str] | None = None,
+        index_code: str = DEFAULT_INDEX_CODE,
     ) -> None:
-        """写入周K（week_start 为周一主键）。
+        """写入周K（(index_code, week_start) 为主键）。
 
         partial 中的周标记为进行中（可展示，不参与拟合）。
         """
         partial = partial or set()
         with self._conn:
             self._conn.executemany(
-                "INSERT INTO weekly_bars (week_start, date, open, close, high, low, is_partial) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?) "
-                "ON CONFLICT(week_start) DO UPDATE SET date=excluded.date, open=excluded.open, "
-                "close=excluded.close, high=excluded.high, low=excluded.low, "
-                "is_partial=excluded.is_partial",
+                "INSERT INTO weekly_bars "
+                "(index_code, week_start, date, open, close, high, low, is_partial) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(index_code, week_start) DO UPDATE SET date=excluded.date, "
+                "open=excluded.open, close=excluded.close, high=excluded.high, "
+                "low=excluded.low, is_partial=excluded.is_partial",
                 [
-                    (w, b.date, b.open, b.close, b.high, b.low, 1 if w in partial else 0)
+                    (index_code, w, b.date, b.open, b.close, b.high, b.low,
+                     1 if w in partial else 0)
                     for w, b in sorted(bars.items())
                 ],
             )
 
-    def load_weekly_bars(self, include_partial: bool = True) -> dict[str, KlineBar]:
-        """读周K。include_partial=False 时只返回完整周（参与拟合的那些）。"""
-        sql = "SELECT week_start, date, open, close, high, low FROM weekly_bars"
+    def load_weekly_bars(
+        self, include_partial: bool = True, index_code: str = DEFAULT_INDEX_CODE
+    ) -> dict[str, KlineBar]:
+        """读某指数的周K。include_partial=False 时只返回完整周（参与拟合的那些）。"""
+        sql = (
+            "SELECT week_start, date, open, close, high, low FROM weekly_bars "
+            "WHERE index_code=?"
+        )
         if not include_partial:
-            sql += " WHERE is_partial = 0"
+            sql += " AND is_partial = 0"
         sql += " ORDER BY week_start"
-        rows = self._conn.execute(sql).fetchall()
+        rows = self._conn.execute(sql, (index_code,)).fetchall()
         return {
             r["week_start"]: KlineBar(r["date"], r["open"], r["close"], r["high"], r["low"])
             for r in rows
         }
 
-    def load_partial_weekly_bars(self) -> dict[str, KlineBar]:
+    def load_partial_weekly_bars(
+        self, index_code: str = DEFAULT_INDEX_CODE
+    ) -> dict[str, KlineBar]:
         """进行中的周（可展示，不参与拟合）。"""
         rows = self._conn.execute(
             "SELECT week_start, date, open, close, high, low FROM weekly_bars "
-            "WHERE is_partial = 1 ORDER BY week_start"
+            "WHERE index_code=? AND is_partial = 1 ORDER BY week_start",
+            (index_code,),
         ).fetchall()
         return {
             r["week_start"]: KlineBar(r["date"], r["open"], r["close"], r["high"], r["low"])
@@ -554,42 +780,55 @@ class Store:
         data_cutoff_trade_date: str | None,
         weekly_hash: str | None,
         snapshot_id: str | None,
+        index_code: str = DEFAULT_INDEX_CODE,
     ) -> None:
         with self._conn:
             self._conn.execute(
-                "UPDATE weekly_data_meta SET provider=?, captured_at=?, data_cutoff_week=?, "
-                "data_cutoff_trade_date=?, weekly_hash=?, snapshot_id=? WHERE id=1",
-                (provider, now_iso(), data_cutoff_week, data_cutoff_trade_date,
-                 weekly_hash, snapshot_id),
+                "INSERT INTO weekly_data_meta (index_code, provider, captured_at, "
+                "data_cutoff_week, data_cutoff_trade_date, weekly_hash, snapshot_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(index_code) DO UPDATE SET provider=excluded.provider, "
+                "captured_at=excluded.captured_at, "
+                "data_cutoff_week=excluded.data_cutoff_week, "
+                "data_cutoff_trade_date=excluded.data_cutoff_trade_date, "
+                "weekly_hash=excluded.weekly_hash, snapshot_id=excluded.snapshot_id",
+                (index_code, provider, now_iso(), data_cutoff_week,
+                 data_cutoff_trade_date, weekly_hash, snapshot_id),
             )
 
-    def get_weekly_data_meta(self) -> dict[str, Any]:
+    def get_weekly_data_meta(self, index_code: str = DEFAULT_INDEX_CODE) -> dict[str, Any]:
         row = self._conn.execute(
             "SELECT provider, captured_at, data_cutoff_week, data_cutoff_trade_date, "
             "weekly_hash, snapshot_id, last_error, last_error_at FROM weekly_data_meta "
-            "WHERE id=1"
+            "WHERE index_code=?",
+            (index_code,),
         ).fetchone()
         return dict(row) if row else {}
 
-    def record_weekly_failure(self, error: str) -> None:
+    def record_weekly_failure(
+        self, error: str, index_code: str = DEFAULT_INDEX_CODE
+    ) -> None:
         """记录一次周线刷新失败（不改动已发布的快照与截止周）。
 
         失败状态可见，但旧成功快照仍可读（captured_at / data_cutoff_week 不变）。
+        失败标记按指数隔离：399673 采集失败不影响 000300 的可读状态。
         """
         with self._conn:
             self._conn.execute(
-                "UPDATE weekly_data_meta SET last_error=?, last_error_at=? WHERE id=1",
-                (error, now_iso()),
+                "UPDATE weekly_data_meta SET last_error=?, last_error_at=? WHERE index_code=?",
+                (error, now_iso(), index_code),
             )
 
-    def clear_weekly_failure(self) -> None:
-        """发布成功后清除失败标记。"""
+    def clear_weekly_failure(self, index_code: str = DEFAULT_INDEX_CODE) -> None:
+        """发布成功后清除该指数的失败标记。"""
         with self._conn:
             self._conn.execute(
-                "UPDATE weekly_data_meta SET last_error=NULL, last_error_at=NULL WHERE id=1"
+                "UPDATE weekly_data_meta SET last_error=NULL, last_error_at=NULL "
+                "WHERE index_code=?",
+                (index_code,),
             )
 
-    # ---- 估值（理杏仁 PE-TTM 近10年分位）----
+    # ---- 估值（理杏仁 PE-TTM / PB 近10年分位）----
     def publish_valuation(
         self,
         index_code: str,
@@ -600,9 +839,9 @@ class Store:
         target_date: str,
         at: str | None = None,
     ) -> None:
-        """在单个事务里写入估值记录并更新采集元数据。
+        """在单个事务里写入估值序列并更新该指标自己的采集元数据。
 
-        points 为 (date, pe_ttm, percentile_ratio) 列表。失败时不调用本方法，
+        points 为 (date, value, percentile_ratio) 列表。失败时不调用本方法，
         旧的成功数据保持可读。
 
         at 为采集时间戳（ISO）；不传则用当前时间。调用方（估值服务）传自己的
@@ -611,36 +850,49 @@ class Store:
         stamp = at or now_iso()
         with self._conn:
             self._conn.executemany(
-                "INSERT INTO index_valuations (index_code, source, metric, window, date, "
-                "pe_ttm, percentile_ratio, captured_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+                "INSERT INTO index_valuation_history "
+                "(index_code, source, metric, window, date, value, percentile_ratio, captured_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(index_code, source, metric, window, date) DO UPDATE SET "
-                "pe_ttm=excluded.pe_ttm, percentile_ratio=excluded.percentile_ratio, "
+                "value=excluded.value, percentile_ratio=excluded.percentile_ratio, "
                 "captured_at=excluded.captured_at",
                 [
-                    (index_code, source, metric, window, day, pe, ratio, stamp)
-                    for day, pe, ratio in points
+                    (index_code, source, metric, window, day, value, ratio, stamp)
+                    for day, value, ratio in points
                 ],
             )
             self._conn.execute(
-                "UPDATE valuation_fetch_meta SET index_code=?, target_date=?, "
-                "last_attempt_at=?, last_success_at=?, last_error=NULL WHERE id=1",
-                (index_code, target_date, stamp, stamp),
+                "INSERT INTO valuation_fetch_meta "
+                "(index_code, metric, target_date, last_attempt_at, last_success_at, last_error) "
+                "VALUES (?, ?, ?, ?, ?, NULL) "
+                "ON CONFLICT(index_code, metric) DO UPDATE SET "
+                "target_date=excluded.target_date, last_attempt_at=excluded.last_attempt_at, "
+                "last_success_at=excluded.last_success_at, last_error=NULL",
+                (index_code, metric, target_date, stamp, stamp),
             )
 
     def record_valuation_failure(
         self,
         index_code: str,
+        metric: str,
         target_date: str,
         error: str,
         at: str | None = None,
     ) -> None:
-        """记录一次估值采集失败（不改动已存的成功数据）。"""
+        """记录一次估值采集失败（不改动已存的成功数据）。
+
+        失败按 (指数, 指标) 记账：PB 采集失败不会把 PE 的成功状态抹掉。
+        """
         stamp = at or now_iso()
         with self._conn:
             self._conn.execute(
-                "UPDATE valuation_fetch_meta SET index_code=?, target_date=?, "
-                "last_attempt_at=?, last_error=? WHERE id=1",
-                (index_code, target_date, stamp, error),
+                "INSERT INTO valuation_fetch_meta "
+                "(index_code, metric, target_date, last_attempt_at, last_error) "
+                "VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(index_code, metric) DO UPDATE SET "
+                "target_date=excluded.target_date, last_attempt_at=excluded.last_attempt_at, "
+                "last_error=excluded.last_error",
+                (index_code, metric, target_date, stamp, error),
             )
 
     def latest_valuation(
@@ -653,7 +905,7 @@ class Store:
     ) -> dict[str, Any] | None:
         """取最新一条估值记录（可选：只取不晚于 on_or_before 的）。"""
         sql = (
-            "SELECT date, pe_ttm, percentile_ratio, captured_at FROM index_valuations "
+            "SELECT date, value, percentile_ratio, captured_at FROM index_valuation_history "
             "WHERE index_code=? AND source=? AND metric=? AND window=?"
         )
         params: list[Any] = [index_code, source, metric, window]
@@ -664,10 +916,31 @@ class Store:
         row = self._conn.execute(sql, params).fetchone()
         return dict(row) if row else None
 
-    def get_valuation_meta(self) -> dict[str, Any]:
+    def list_valuation_history(
+        self,
+        index_code: str,
+        source: str,
+        metric: str,
+        window: str,
+        start_date: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """按日期升序返回一条分位序列（分位走势图数据源）。"""
+        sql = (
+            "SELECT date, value, percentile_ratio FROM index_valuation_history "
+            "WHERE index_code=? AND source=? AND metric=? AND window=?"
+        )
+        params: list[Any] = [index_code, source, metric, window]
+        if start_date:
+            sql += " AND date>=?"
+            params.append(start_date)
+        sql += " ORDER BY date"
+        return [dict(r) for r in self._conn.execute(sql, params).fetchall()]
+
+    def get_valuation_meta(self, index_code: str, metric: str) -> dict[str, Any]:
         row = self._conn.execute(
-            "SELECT index_code, target_date, last_attempt_at, last_success_at, last_error "
-            "FROM valuation_fetch_meta WHERE id=1"
+            "SELECT index_code, metric, target_date, last_attempt_at, last_success_at, "
+            "last_error FROM valuation_fetch_meta WHERE index_code=? AND metric=?",
+            (index_code, metric),
         ).fetchone()
         return dict(row) if row else {}
 
@@ -682,20 +955,22 @@ class Store:
         snapshot_id: str,
         partial_bars: dict[str, KlineBar] | None = None,
         daily_bars: list[KlineBar] | None = None,
+        index_code: str = DEFAULT_INDEX_CODE,
     ) -> dict[str, Any]:
-        """在单个事务里发布周K、日线、模型与元数据。
+        """在单个事务里发布某指数的周K、日线、模型与元数据。
 
         任一步失败整体回滚，旧成功快照保持可读。
         模型按 model_id 只插入不覆盖（已存在的版本保持不变）。
+        清理周K 只清本指数的行：另一个指数的快照不受影响。
         """
         new_model_ids: list[str] = []
         partial_bars = partial_bars or {}
         partial_keys = set(partial_bars)
         all_bars = {**bars, **partial_bars}
         with self._conn:
-            # 本次快照是周K的完整集合。先清掉旧行，避免上一轮的进行中周
+            # 本次快照是本指数周K的完整集合。先清掉旧行，避免上一轮的进行中周
             # 或已丢弃的休市周 K 线留在库里，刷新后仍被画成真实价格。
-            self._conn.execute("DELETE FROM weekly_bars")
+            self._conn.execute("DELETE FROM weekly_bars WHERE index_code=?", (index_code,))
             # 周线管线接管：周报配置的月线 kind 映射为周线 kind（幂等，保留
             # enabled / channel / send_cron）。与快照同事务，避免半迁移状态。
             if not self._has_weekly_models():
@@ -706,23 +981,25 @@ class Store:
                     ("002_report_settings_weekly_kind", now_iso()),
                 )
             self._conn.executemany(
-                "INSERT INTO weekly_bars (week_start, date, open, close, high, low, is_partial) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?) "
-                "ON CONFLICT(week_start) DO UPDATE SET date=excluded.date, open=excluded.open, "
-                "close=excluded.close, high=excluded.high, low=excluded.low, "
-                "is_partial=excluded.is_partial",
+                "INSERT INTO weekly_bars "
+                "(index_code, week_start, date, open, close, high, low, is_partial) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(index_code, week_start) DO UPDATE SET date=excluded.date, "
+                "open=excluded.open, close=excluded.close, high=excluded.high, "
+                "low=excluded.low, is_partial=excluded.is_partial",
                 [
-                    (w, b.date, b.open, b.close, b.high, b.low, 1 if w in partial_keys else 0)
+                    (index_code, w, b.date, b.open, b.close, b.high, b.low,
+                     1 if w in partial_keys else 0)
                     for w, b in sorted(all_bars.items())
                 ],
             )
             if daily_bars:
                 self._conn.executemany(
-                    "INSERT INTO daily_quotes (date, open, close, high, low) "
-                    "VALUES (?, ?, ?, ?, ?) "
-                    "ON CONFLICT(date) DO UPDATE SET open=excluded.open, "
+                    "INSERT INTO daily_quotes (index_code, date, open, close, high, low) "
+                    "VALUES (?, ?, ?, ?, ?, ?) "
+                    "ON CONFLICT(index_code, date) DO UPDATE SET open=excluded.open, "
                     "close=excluded.close, high=excluded.high, low=excluded.low",
-                    [(b.date, b.open, b.close, b.high, b.low) for b in daily_bars],
+                    [(index_code, b.date, b.open, b.close, b.high, b.low) for b in daily_bars],
                 )
             for record in models:
                 cur = self._conn.execute(
@@ -748,10 +1025,16 @@ class Store:
                 )
                 new_model_ids.append(record.model_id)
             self._conn.execute(
-                "UPDATE weekly_data_meta SET provider=?, captured_at=?, data_cutoff_week=?, "
-                "data_cutoff_trade_date=?, weekly_hash=?, snapshot_id=? WHERE id=1",
-                (provider, now_iso(), data_cutoff_week, data_cutoff_trade_date,
-                 weekly_hash, snapshot_id),
+                "INSERT INTO weekly_data_meta (index_code, provider, captured_at, "
+                "data_cutoff_week, data_cutoff_trade_date, weekly_hash, snapshot_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(index_code) DO UPDATE SET provider=excluded.provider, "
+                "captured_at=excluded.captured_at, "
+                "data_cutoff_week=excluded.data_cutoff_week, "
+                "data_cutoff_trade_date=excluded.data_cutoff_trade_date, "
+                "weekly_hash=excluded.weekly_hash, snapshot_id=excluded.snapshot_id",
+                (index_code, provider, now_iso(), data_cutoff_week,
+                 data_cutoff_trade_date, weekly_hash, snapshot_id),
             )
         return {"new_model_ids": new_model_ids, "snapshot_id": snapshot_id}
 

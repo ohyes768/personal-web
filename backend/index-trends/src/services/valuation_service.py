@@ -1,35 +1,36 @@
-"""估值服务：理杏仁沪深300 PE-TTM 近 10 年分位。
+"""估值服务：理杏仁指数估值（PB 主、PE-TTM 辅）的近 10 年分位。
 
 职责边界：
 - 本服务决定**目标日**（页面与每日采集：最近一个已收盘交易日）、采集状态与缓存；
-不把估值混进趋势模型算法。
+  不把估值混进趋势模型算法。
 - 分位直接采用供应商统计值（0–1 的比例 → 0–100%），不在本地重新计算。
+- 一个指数一次请求取回 PE-TTM 与 PB 两条指标；两条指标各自记账、各自判状态，
+  一条失败不把另一条抹成失败。
 - 没有 Token 时正常启动并返回 disabled 状态；估值问题不阻断行情、图表与查询。
 
-对外统一对象：
+对外统一对象（按指标）：
     state: ok / stale / empty / error / disabled
     reason: 固定错误码（不含供应商正文与 Token）
-    source / metric / window: 口径标识
+    metric / source / window: 口径标识
     target_date: 期望的数据日期
     as_of: 实际数据日期
-    pe_ttm / percentile_pct: 数值（缺失用 null，不用 0）
+    value / percentile_pct: 数值（缺失用 null，不用 0）
     captured_at: 采集时间
 """
 from __future__ import annotations
 
 import threading
 from datetime import date, datetime, timedelta
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 from zoneinfo import ZoneInfo
 
+from src.core.indexes import BY_CODE, DEFAULT_INDEX_CODE, index_codes
 from src.data import lixinger as lx
 from src.data.trading_calendar import CalendarUnavailableError, TradingCalendar
 from src.data.validate import expected_last_session
 from src.services.store import Store
 
 SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
-
-INDEX_CODE = "000300"
 
 STATE_OK = "ok"
 STATE_STALE = "stale"
@@ -40,9 +41,15 @@ STATE_DISABLED = "disabled"
 # 失败后的最小重试间隔（同一目标日）
 RETRY_COOLDOWN = timedelta(minutes=15)
 
+# 首次采集回填的历史长度：分位走势图要能画出整段 10 年窗口
+INITIAL_BACKFILL_DAYS = 3653
+
+# 供应商正常应答但没有合格记录：这是"空数据"，不是"采集失败"
+NO_DATA_REASON = "no_data"
+
 
 class ValuationService:
-    """理杏仁估值采集与读取。"""
+    """理杏仁估值采集与读取（多指数 × 多指标）。"""
 
     def __init__(
         self,
@@ -150,119 +157,190 @@ class ValuationService:
         return sessions[-1].isoformat() if sessions else None
 
     # ---- 状态快照 ----
-    def _latest_row(self, target_date: str | None) -> dict[str, Any] | None:
+    def _latest_row(self, index_code: str, metric: str, target_date: str | None) -> dict[str, Any] | None:
         return self.store.latest_valuation(
-            INDEX_CODE,
+            index_code,
             lx.VALUATION_SOURCE,
-            lx.VALUATION_METRIC,
+            metric,
             lx.VALUATION_WINDOW,
             on_or_before=target_date,
         )
 
-    def _snapshot(
+    def _metric_snapshot(
         self,
         state: str,
         reason: str | None,
+        metric: str,
         target_date: str | None,
         row: dict[str, Any] | None,
     ) -> dict[str, Any]:
         ratio = row.get("percentile_ratio") if row else None
-        pe = row.get("pe_ttm") if row else None
+        value = row.get("value") if row else None
         return {
             "state": state,
             "reason": reason,
+            "metric": metric,
             "source": lx.VALUATION_SOURCE,
-            "metric": lx.VALUATION_METRIC,
             "window": lx.VALUATION_WINDOW,
             "target_date": target_date,
             "as_of": row.get("date") if row else None,
-            "pe_ttm": round(float(pe), 2) if isinstance(pe, (int, float)) else None,
-            "percentile_pct": round(float(ratio) * 100, 1) if isinstance(ratio, (int, float)) else None,
+            "value": round(float(value), 2) if isinstance(value, (int, float)) else None,
+            "percentile_pct": (
+                round(float(ratio) * 100, 1) if isinstance(ratio, (int, float)) else None
+            ),
             "captured_at": row.get("captured_at") if row else None,
         }
 
-    def status(self, target_date: str | None = None) -> dict[str, Any]:
-        """只读本地缓存的状态（不请求供应商）。"""
+    def _metric_state(
+        self,
+        index_code: str,
+        metric: str,
+        target_date: str | None,
+    ) -> tuple[str, str | None, dict[str, Any] | None]:
+        """单个指标的状态判定。"""
+        row = self._latest_row(index_code, metric, target_date)
+        if not self.enabled:
+            return STATE_DISABLED, "token_not_configured", row
+        if target_date is None:
+            return STATE_ERROR, "calendar_unavailable", row
+        error = self._failed_for_target(index_code, metric, target_date)
+        if error == NO_DATA_REASON:
+            # 空数据不是错误：供应商照常应答，只是这条指标还没有值。
+            # 若报成 error，页面会把"没有数据"误读成"采集坏了"。
+            return STATE_EMPTY, NO_DATA_REASON, row
+        if error:
+            return STATE_ERROR, error, row
+        if row is None:
+            return STATE_EMPTY, None, row
+        if row["date"] < target_date:
+            return STATE_STALE, "not_updated_to_target", row
+        return STATE_OK, None, row
+
+    def status(
+        self,
+        target_date: str | None = None,
+        *,
+        index_code: str = DEFAULT_INDEX_CODE,
+    ) -> dict[str, Any]:
+        """只读本地缓存的状态（不请求供应商）。
+
+        顶层保留 PE-TTM 的平铺字段（兼容既有页面），`metrics` 给出全部指标的完整状态。
+        """
         if target_date is None:
             target_date = self.resolve_daily_target_date()
-        row = self._latest_row(target_date)
-        meta = self.store.get_valuation_meta()
-        error = self._failed_for_target(meta, target_date)
-        if not self.enabled:
-            return self._snapshot(STATE_DISABLED, "token_not_configured", target_date, row)
-        if target_date is None:
-            # 日历不可用：无法确定应该对齐哪个交易日，不把旧值当成当日的新值
-            return self._snapshot(STATE_ERROR, "calendar_unavailable", None, row)
-        if error:
-            return self._snapshot(STATE_ERROR, error, target_date, row)
-        if row is None:
-            return self._snapshot(STATE_EMPTY, None, target_date, None)
-        if row["date"] < target_date:
-            return self._snapshot(STATE_STALE, "not_updated_to_target", target_date, row)
-        return self._snapshot(STATE_OK, None, target_date, row)
+        metrics: dict[str, Any] = {}
+        for metric in lx.VALUATION_METRIC_KEYS:
+            state, reason, row = self._metric_state(index_code, metric, target_date)
+            metrics[metric] = self._metric_snapshot(state, reason, metric, target_date, row)
+        legacy = metrics[lx.VALUATION_METRIC]
+        return {
+            "index_code": index_code,
+            "name": BY_CODE[index_code].name if index_code in BY_CODE else index_code,
+            "state": legacy["state"],
+            "reason": legacy["reason"],
+            "source": legacy["source"],
+            "metric": legacy["metric"],
+            "window": legacy["window"],
+            "target_date": target_date,
+            "as_of": legacy["as_of"],
+            "value": legacy["value"],
+            # 兼容别名：旧页面与简报按 PE-TTM 的名字读这个数
+            "pe_ttm": legacy["value"],
+            "percentile_pct": legacy["percentile_pct"],
+            "captured_at": legacy["captured_at"],
+            "metrics": metrics,
+        }
 
     # ---- 采集 ----
-    def refresh(self, target_date: str | None = None) -> dict[str, Any]:
-        """尝试采集估值并返回状态快照。
+    def _fetch_start(self, index_code: str, metric: str, end_date: str) -> str:
+        """本次请求的起点。
+
+        已有数据时只补最近一段（30 天）并顺带补齐空档；一条都没有时回填
+        整段 10 年，让分位走势图一开始就有历史。
+        """
+        end = date.fromisoformat(end_date)
+        lookback_start = (end - timedelta(days=lx.LOOKBACK_DAYS)).isoformat()
+        row = self.store.latest_valuation(
+            index_code, lx.VALUATION_SOURCE, metric, lx.VALUATION_WINDOW
+        )
+        if row is None:
+            return (end - timedelta(days=INITIAL_BACKFILL_DAYS)).isoformat()
+        return min(row["date"], lookback_start)
+
+    def refresh(
+        self,
+        target_date: str | None = None,
+        *,
+        index_code: str = DEFAULT_INDEX_CODE,
+    ) -> dict[str, Any]:
+        """尝试采集该指数的估值并返回状态快照。
 
         - 无 Token：不发请求，返回 disabled。
-        - 同一目标日已有成功记录且无失败标记：跳过网络请求。
+        - 所有指标同一目标日已有成功记录且无失败标记：跳过网络请求。
         - 失败后同一目标日进入冷却期（默认 15 分钟）；目标日变化不受旧冷却影响。
         - 失败保留既有合格数据，但状态不冒充 ok。
         - 采集全程串行：锁内重新查缓存，避免重叠执行重复请求或重复发布。
         """
         if not self.enabled:
-            return self.status(target_date)
+            return self.status(target_date, index_code=index_code)
         if target_date is None:
             target_date = self.resolve_daily_target_date()
         if target_date is None:
-            return self._snapshot(STATE_ERROR, "calendar_unavailable", None, None)
+            return self.status(None, index_code=index_code)
 
         with self._collect_lock:
-            return self._refresh_locked(target_date)
+            return self._refresh_locked(index_code, target_date)
 
-    def _refresh_locked(self, target_date: str) -> dict[str, Any]:
+    def _refresh_locked(self, index_code: str, target_date: str) -> dict[str, Any]:
         """锁内采集：查缓存 → 请求 → 发布（重入时缓存可能已被别的入口写好）。"""
-        row = self._latest_row(target_date)
-        meta = self.store.get_valuation_meta()
-        failed = self._failed_for_target(meta, target_date)
-        if row and row["date"] == target_date and not failed:
-            return self._snapshot(STATE_OK, None, target_date, row)
-        if failed and self._in_cooldown(meta):
-            return self._snapshot(STATE_ERROR, failed, target_date, row)
+        pending: list[str] = []
+        for metric in lx.VALUATION_METRIC_KEYS:
+            row = self._latest_row(index_code, metric, target_date)
+            failed = self._failed_for_target(index_code, metric, target_date)
+            if row and row["date"] == target_date and not failed:
+                continue
+            if failed and self._in_cooldown(index_code, metric):
+                continue
+            pending.append(metric)
+        if not pending:
+            return self.status(target_date, index_code=index_code)
 
+        start_date = min(self._fetch_start(index_code, metric, target_date) for metric in pending)
         client = self._client_factory()
         try:
-            points = lx.fetch_fundamental(client, self._token, INDEX_CODE, target_date)
-        except lx.LixingerError as exc:
-            self.store.record_valuation_failure(
-                INDEX_CODE, target_date, exc.reason, at=self._stamp()
+            points = lx.fetch_fundamental(
+                client, self._token, index_code, target_date, start_date=start_date
             )
-            return self._snapshot(STATE_ERROR, exc.reason, target_date, row)
+        except lx.LixingerError as exc:
+            for metric in pending:
+                self.store.record_valuation_failure(
+                    index_code, metric, target_date, exc.reason, at=self._stamp()
+                )
+            return self.status(target_date, index_code=index_code)
         finally:
             close = getattr(client, "close", None)
             if callable(close):
                 close()
 
-        selected = lx.latest_qualified(points, target_date)
-        if selected is None:
-            self.store.record_valuation_failure(
-                INDEX_CODE, target_date, "no_data", at=self._stamp()
+        for metric in pending:
+            series = [p for p in points if p.metric == metric]
+            if not series:
+                self.store.record_valuation_failure(
+                    index_code, metric, target_date, "no_data", at=self._stamp()
+                )
+                continue
+            self.store.publish_valuation(
+                index_code,
+                lx.VALUATION_SOURCE,
+                metric,
+                lx.VALUATION_WINDOW,
+                [(p.date, p.value, p.percentile_ratio) for p in series],
+                target_date,
+                at=self._stamp(),
             )
-            return self._snapshot(STATE_EMPTY, "no_data", target_date, row)
+        return self.status(target_date, index_code=index_code)
 
-        self.store.publish_valuation(
-            INDEX_CODE,
-            lx.VALUATION_SOURCE,
-            lx.VALUATION_METRIC,
-            lx.VALUATION_WINDOW,
-            [(p.date, p.pe_ttm, p.percentile_ratio) for p in points],
-            target_date,
-            at=self._stamp(),
-        )
-        return self.status(target_date)
-
-    def refresh_scheduled(self) -> dict[str, Any]:
+    def refresh_scheduled(self, index_code: str = DEFAULT_INDEX_CODE) -> dict[str, Any]:
         """定时采集入口（每日 18:30）。
 
         - 日历确认当日休市：跳过，不发任何请求。
@@ -275,27 +353,65 @@ class ValuationService:
                 "skipped": True,
                 "reason": "not_trading_day",
                 "date": today.isoformat(),
+                "index_code": index_code,
             }
         target_date = self.resolve_daily_target_date()
         if target_date is None:
             raise CalendarUnavailableError(
                 f"无法确定 {today.isoformat()} 之前最近一个已收盘交易日"
             )
-        return self.refresh(target_date)
+        return self.refresh(target_date, index_code=index_code)
 
-    def _failed_for_target(self, meta: dict[str, Any], target_date: str | None) -> str | None:
-        """最近一次采集失败的原因——只属于它自己的目标日。
+    def refresh_all(self) -> list[dict[str, Any]]:
+        """按注册表顺序采集全部指数；单个指数失败不影响其他指数。"""
+        results: list[dict[str, Any]] = []
+        for code in index_codes():
+            try:
+                results.append(self.refresh(index_code=code))
+            except Exception as exc:  # noqa: BLE001 — 单指数异常不阻断其他指数
+                results.append({"index_code": code, "state": STATE_ERROR, "reason": str(exc)})
+        return results
+
+    # ---- 历史序列（分位走势图） ----
+    def history(
+        self,
+        index_code: str,
+        metric: str,
+        start_date: str | None = None,
+    ) -> dict[str, Any]:
+        """一条指标的分位历史（日期升序），供分位走势图使用。"""
+        rows = self.store.list_valuation_history(
+            index_code, lx.VALUATION_SOURCE, metric, lx.VALUATION_WINDOW, start_date
+        )
+        return {
+            "index_code": index_code,
+            "metric": metric,
+            "window": lx.VALUATION_WINDOW,
+            "dates": [r["date"] for r in rows],
+            "values": [r["value"] for r in rows],
+            "percentiles": [
+                None if r["percentile_ratio"] is None else round(r["percentile_ratio"] * 100, 1)
+                for r in rows
+            ],
+        }
+
+    def _failed_for_target(
+        self, index_code: str, metric: str, target_date: str | None
+    ) -> str | None:
+        """最近一次采集失败的原因——只属于它自己的目标日与指标。
 
         失败只影响它被记录的那个目标日：别的目标日（更早的历史周报、
         更晚的页面目标日）按自己的数据判定状态，不拿旧失败说失败，
         也不拿新失败抹掉历史数据。
         """
+        meta = self.store.get_valuation_meta(index_code, metric)
         error = meta.get("last_error") or None
         if not error or target_date is None:
             return None
         return error if meta.get("target_date") == target_date else None
 
-    def _in_cooldown(self, meta: dict[str, Any]) -> bool:
+    def _in_cooldown(self, index_code: str, metric: str) -> bool:
+        meta = self.store.get_valuation_meta(index_code, metric)
         last_attempt = meta.get("last_attempt_at")
         if not last_attempt:
             return False

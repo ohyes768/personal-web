@@ -116,7 +116,7 @@ def test_scheduler_registers_daily_and_valuation_jobs():
         finally:
             await scheduler.shutdown()
 
-    assert asyncio.run(scenario()) == [JOB_DAILY, JOB_VALUATION]
+    assert sorted(asyncio.run(scenario())) == [JOB_DAILY, JOB_VALUATION]
 
 
 def test_scheduler_without_valuation_callback_registers_only_daily():

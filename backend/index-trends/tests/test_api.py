@@ -24,7 +24,7 @@ from tests.conftest import WEEKLY_FIXED_NOW
 @pytest.fixture()
 def api_app(store, weekly_series, weekly_daily_bars):
     service = WeeklyTrendService(store, now_fn=lambda: WEEKLY_FIXED_NOW)
-    service.publish(weekly_series, weekly_daily_bars, service.compute_models(weekly_series))
+    service.publish("000300", weekly_series, weekly_daily_bars, service.compute_models("000300", weekly_series))
     app = FastAPI()
     app.include_router(router)
     app.state.trend_service = service
@@ -207,7 +207,7 @@ def test_empty_library_is_visible(empty_client):
 def test_stale_and_error_keep_last_snapshot_readable(client, api_app):
     store = api_app.state.store
     store._conn.execute(
-        "UPDATE weekly_data_meta SET data_cutoff_week = ? WHERE id = 1",
+        "UPDATE weekly_data_meta SET data_cutoff_week = ? WHERE index_code = '000300'",
         ("2020-01-06",),
     )
     store._conn.commit()

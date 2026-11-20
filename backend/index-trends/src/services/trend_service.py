@@ -26,6 +26,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from src.core import months as mutils
+from src.core.indexes import BY_CODE, DEFAULT_INDEX_CODE, INDEXES
 from src.core.models import (
     CURRENT_MODEL_KINDS,
     CURRENT_WEEKLY_MODEL_KINDS,
@@ -65,7 +66,8 @@ from src.data.validate import (
 from src.services.store import Store, now_iso
 
 SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
-INDEX_CODE = "000300"
+# 月线归档（TrendService）仍是单指数历史档案，固定沪深300；周线管线走指数注册表。
+INDEX_CODE = DEFAULT_INDEX_CODE
 SYMBOL = "sh000300"
 INDEX_NAME = "沪深300"
 TRAILING_MONTHS = 120
@@ -505,18 +507,24 @@ class WeeklyTrendService:
 
     # ---- 1. 取数与校验 ----
     def fetch_and_validate(
-        self, client: httpx.Client | None = None
+        self, index_code: str, client: httpx.Client | None = None
     ) -> tuple[WeeklySeries, list[Any]]:
-        """拉取周K与日线并按交易日历校验。
+        """拉取该指数的周K与日线并按交易日历校验。
 
         校验失败抛异常（缺失行情 / 日历越界 / 最后交易日不一致），
         由调用方转为可见状态，不静默降级。
+
+        起点断言用该指数自己的发布边界：创业板50 的周K 不可能覆盖 2005-04，
+        套用别人的起点会把合法的数据判成缺数据。
         """
+        index = BY_CODE[index_code]
         own_client = client is None
         client = client or pv.new_client()
         try:
-            weekly_bars = pv.fetch_kline(SYMBOL, "week", WEEKLY_REQUEST_COUNT, client)
-            daily_bars = pv.fetch_kline(SYMBOL, "day", WEEKLY_DAILY_REQUEST_COUNT, client)
+            weekly_bars = pv.fetch_kline(index.symbol, "week", WEEKLY_REQUEST_COUNT, client)
+            daily_bars = pv.fetch_kline(
+                index.symbol, "day", WEEKLY_DAILY_REQUEST_COUNT, client
+            )
         finally:
             if own_client:
                 client.close()
@@ -524,8 +532,10 @@ class WeeklyTrendService:
         if not weekly_bars:
             raise ValueError("周K数据为空")
         earliest = min(b.date for b in weekly_bars)
-        if earliest > "2005-04-30":
-            raise ValueError(f"周K未覆盖 2005-04 起点（最早 {earliest}）")
+        if earliest > index.earliest_weekly:
+            raise ValueError(
+                f"{index.name} 周K未覆盖 {index.earliest_weekly} 起点（最早 {earliest}）"
+            )
 
         calendar = self.trading_calendar()
         series = build_weekly_series(weekly_bars, calendar, self._now())
@@ -549,21 +559,29 @@ class WeeklyTrendService:
         return series, daily_bars
 
     # ---- 2. 纯计算 ----
-    def compute_models(self, series: WeeklySeries) -> list[Any]:
-        """在内存中算完所有周线模型（不落库）。"""
+    def compute_models(self, index_code: str, series: WeeklySeries) -> list[Any]:
+        """在内存中算完该指数的所有周线模型（不落库）。"""
+        index = BY_CODE[index_code]
         builder = WeeklyModelBuilder(
-            series, INDEX_CODE, self._today(), DEFAULT_MULTIPLIER, now_iso()
+            series,
+            index_code,
+            self._today(),
+            DEFAULT_MULTIPLIER,
+            now_iso(),
+            inception_week=index.inception_week,
+            inception_month=index.inception_month,
         )
         return builder.build_all()
 
     # ---- 3. 事务发布 ----
     def publish(
         self,
+        index_code: str,
         series: WeeklySeries,
         daily_bars: list[Any],
         models: list[Any],
     ) -> WeeklyRefreshResult:
-        """单个事务发布周K、日线、模型与元数据；失败整体回滚。"""
+        """单个事务发布该指数的周K、日线、模型与元数据；失败整体回滚。"""
         cutoff_week = series.samples[-1].week_start
         cutoff_trade_date = series.samples[-1].trade_date
         # 快照哈希必须带周坐标。只散列收盘会把“同一批价格、不同周位置”
@@ -601,8 +619,9 @@ class WeeklyTrendService:
                 for week, bar in series.partial_bars.items()
             },
             daily_bars=daily_bars,
+            index_code=index_code,
         )
-        self.store.clear_weekly_failure()
+        self.store.clear_weekly_failure(index_code)
         return WeeklyRefreshResult(
             success=True,
             message=f"已刷新至 {cutoff_week}，共 {len(series.samples)} 个完整周",
@@ -614,24 +633,26 @@ class WeeklyTrendService:
         )
 
     # ---- 编排 ----
-    def refresh_sync(self, client: httpx.Client | None = None) -> WeeklyRefreshResult:
+    def refresh_sync(
+        self, index_code: str, client: httpx.Client | None = None
+    ) -> WeeklyRefreshResult:
         """取数校验 → 纯计算 → 事务发布（同步，供线程池与测试调用）。
 
         失败时记录失败状态（旧成功快照仍可读），异常继续上抛由调用方决定
         如何呈现——不静默降级成"正常但数据旧"。
         """
         try:
-            series, daily_bars = self.fetch_and_validate(client)
-            models = self.compute_models(series)
-            return self.publish(series, daily_bars, models)
+            series, daily_bars = self.fetch_and_validate(index_code, client)
+            models = self.compute_models(index_code, series)
+            return self.publish(index_code, series, daily_bars, models)
         except Exception as e:  # noqa: BLE001 — 失败状态要落库，异常继续上抛
-            self.store.record_weekly_failure(str(e))
+            self.store.record_weekly_failure(str(e), index_code)
             raise
 
-    async def refresh(self) -> WeeklyRefreshResult:
+    async def refresh(self, index_code: str) -> WeeklyRefreshResult:
         """互斥刷新：手动 API 与调度任务共用同一把锁。"""
         async with self.refresh_lock:
-            return await asyncio.to_thread(self.refresh_sync)
+            return await asyncio.to_thread(self.refresh_sync, index_code)
 
     def trading_calendar(self) -> TradingCalendar:
         """进程内缓存日历。未注入时用 SSE；测试可传入显式会话集。"""
@@ -646,9 +667,15 @@ class WeeklyTrendService:
             raise ValueError(kind)
         return mapped
 
-    def weekly_model_by_id(self, model_id: str) -> WeeklyModelRecord | None:
+    def weekly_model_by_id(
+        self, index_code: str, model_id: str
+    ) -> WeeklyModelRecord | None:
         return next(
-            (item for item in self.store.list_weekly_models(INDEX_CODE) if item.model_id == model_id),
+            (
+                item
+                for item in self.store.list_weekly_models(index_code)
+                if item.model_id == model_id
+            ),
             None,
         )
 
@@ -688,8 +715,8 @@ class WeeklyTrendService:
         )
         display_end = ext_weeks[-1] if ext_weeks else model.fit_end
 
-        complete = self.store.load_weekly_bars(include_partial=False)
-        partial = self.store.load_partial_weekly_bars()
+        complete = self.store.load_weekly_bars(include_partial=False, index_code=model.index_code)
+        partial = self.store.load_partial_weekly_bars(index_code=model.index_code)
         merged = {**complete, **partial}
         bars_out = []
         for week in sorted(merged):
@@ -737,14 +764,14 @@ class WeeklyTrendService:
             "snapshot_id": meta.get("snapshot_id") or None,
         }
 
-    def current_status(self, model_kind: str) -> dict[str, Any]:
-        """指定当前周线模型的最新收盘、区域与位置。
+    def current_status(self, index_code: str, model_kind: str) -> dict[str, Any]:
+        """指定指数在某周线模型下的最新收盘、区域与位置。
 
         投影周是最近已完成交易日所在自然周；进行中周的点位不触发重拟合。
         切换模型时轨道、位置、样本周全部来自该模型。
         """
-        model = self.store.latest_weekly_model(INDEX_CODE, model_kind)
-        status = self.data_status()
+        model = self.store.latest_weekly_model(index_code, model_kind)
+        status = self.data_status(index_code)
         if model is None:
             return {
                 "available": False,
@@ -753,7 +780,7 @@ class WeeklyTrendService:
                 "data_status": status,
                 "snapshot_id": status.get("snapshot_id"),
             }
-        dailies = self.store.load_daily_quotes(limit=400)
+        dailies = self.store.load_daily_quotes(limit=400, index_code=index_code)
         last = latest_completed_daily(dailies, self._now())
         if last is None:
             return {
@@ -797,13 +824,16 @@ class WeeklyTrendService:
             "snapshot_id": status.get("snapshot_id"),
         }
 
-    def data_status(self) -> dict[str, Any]:
-        """周线新鲜度。过期仍可读；失败、日历越界与空库分开标记。"""
-        meta = self.store.get_weekly_data_meta()
+    def data_status(self, index_code: str = DEFAULT_INDEX_CODE) -> dict[str, Any]:
+        """周线新鲜度。过期仍可读；失败、日历越界与空库分开标记。
+
+        失败标记按指数隔离：另一个指数采集失败不影响本指数的可读状态。
+        """
+        meta = self.store.get_weekly_data_meta(index_code)
         cutoff = meta.get("data_cutoff_week") or None
         snapshot_id = meta.get("snapshot_id") or None
         last_error = meta.get("last_error") or None
-        dailies = self.store.load_daily_quotes(limit=1)
+        dailies = self.store.load_daily_quotes(limit=1, index_code=index_code)
         daily_last = dailies[0].date if dailies else None
 
         expected_week: str | None = None
@@ -842,16 +872,17 @@ class WeeklyTrendService:
             "provider": meta.get("provider") or None,
         }
 
-    def history_overview(self) -> dict[str, Any]:
+    def history_overview(self, index_code: str = DEFAULT_INDEX_CODE) -> dict[str, Any]:
         """历史回溯：固定 10 年窗口 + 全历史（与成立以来共用模型）。"""
+        index = BY_CODE[index_code]
         windows = []
-        for index, model in enumerate(
-            self.store.list_weekly_models(INDEX_CODE, KIND_FIXED_WEEKLY), start=1
+        for order, model in enumerate(
+            self.store.list_weekly_models(index_code, KIND_FIXED_WEEKLY), start=1
         ):
             windows.append(
                 {
                     "stable_id": model.stable_id,
-                    "window": index,
+                    "window": order,
                     "calendar_window_start": model.calendar_window_start,
                     "calendar_window_end": model.calendar_window_end,
                     "fit_start": model.fit_start,
@@ -861,10 +892,10 @@ class WeeklyTrendService:
                     "model_id": model.model_id,
                 }
             )
-        since = self.store.latest_weekly_model(INDEX_CODE, KIND_SINCE_INCEPTION_WEEKLY)
+        since = self.store.latest_weekly_model(index_code, KIND_SINCE_INCEPTION_WEEKLY)
         return {
-            "index_code": INDEX_CODE,
-            "name": INDEX_NAME,
+            "index_code": index_code,
+            "name": index.name,
             "windows": windows,
             "all_history": (
                 {
@@ -881,28 +912,37 @@ class WeeklyTrendService:
                 if since
                 else None
             ),
-            "data_status": self.data_status(),
+            "data_status": self.data_status(index_code),
         }
 
     def indices_overview(self) -> dict[str, Any]:
-        current_models = {}
-        for kind in (KIND_TRAILING_WEEKLY, KIND_SINCE_INCEPTION_WEEKLY):
-            model = self.store.latest_weekly_model(INDEX_CODE, kind)
-            if model:
-                current_models[kind] = weekly_model_to_dict(model)
-        return {
-            "indices": [
+        """全部注册指数及其当前模型；每个指数带自己的数据状态。"""
+        entries: list[dict[str, Any]] = []
+        for index in INDEXES:
+            current_models = {}
+            for kind in (KIND_TRAILING_WEEKLY, KIND_SINCE_INCEPTION_WEEKLY):
+                model = self.store.latest_weekly_model(index.code, kind)
+                if model:
+                    current_models[kind] = weekly_model_to_dict(model)
+            entries.append(
                 {
-                    "index_code": INDEX_CODE,
-                    "name": INDEX_NAME,
-                    "symbol": SYMBOL,
+                    "index_code": index.code,
+                    "name": index.name,
+                    "symbol": index.symbol,
                     "kind": "price_index",
-                    "inception_week": WEEKLY_INCEPTION_WEEK,
-                    "available_model_kinds": [KIND_TRAILING_WEEKLY, KIND_SINCE_INCEPTION_WEEKLY, KIND_FIXED_WEEKLY],
+                    "inception_week": index.inception_week,
+                    "available_model_kinds": [
+                        KIND_TRAILING_WEEKLY,
+                        KIND_SINCE_INCEPTION_WEEKLY,
+                        KIND_FIXED_WEEKLY,
+                    ],
                     "current_models": current_models,
+                    "data_status": self.data_status(index.code),
                 }
-            ],
-            "data_status": self.data_status(),
+            )
+        return {
+            "indices": entries,
+            "data_status": self.data_status(DEFAULT_INDEX_CODE),
         }
 
     def _observation_end_week(self, model: WeeklyModelRecord) -> str | None:
@@ -911,7 +951,9 @@ class WeeklyTrendService:
             return None
         start = date.fromisoformat(model.calendar_window_end)
         end = shift_years(start, FIXED_WINDOW_OBSERVATION_YEARS)
-        bars = self.store.load_weekly_bars(include_partial=False)
+        bars = self.store.load_weekly_bars(
+            include_partial=False, index_code=model.index_code
+        )
         candidates = [week for week in bars if start <= date.fromisoformat(week) < end]
         return max(candidates) if candidates else None
 
