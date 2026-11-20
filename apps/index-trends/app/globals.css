@@ -372,47 +372,44 @@ h1 {
   color: #8c6847;
 }
 
-/* ---- 估值（理杏仁 PB / PE-TTM 近10年分位）---- */
-.valuation-block {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+/* ---- 估值合并图（价格走势 + PB/PE 分位同图）---- */
+.valuation-combined {
+  /* 合并图卡片：摘要行、图、区间注脚自上而下排（覆盖通道图的左右分栏） */
+  grid-template-columns: minmax(0, 1fr);
 }
 
-.valuation-line {
+.valuation-combined .close-line {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 6px 10px;
+  gap: 6px 24px;
+}
+
+.valuation-metric {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 8px;
   font-family: system-ui, sans-serif;
   font-size: 14px;
-  color: #5b4a3a;
+  color: #6b614f;
   font-variant-numeric: tabular-nums;
 }
 
-.valuation-line b {
-  font-size: 22px;
-  color: #2f4858;
+.valuation-metric b {
+  font-size: 26px;
+  color: #263329;
 }
 
-.valuation-line .valuation-muted {
-  color: #8c6847;
-}
-
-.percentile-chart {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.percentile-canvas {
-  height: 260px;
+.valuation-combined .valuation-canvas {
+  height: 360px; /* 一张图装两个口径，比退役前的 260px 单图高一些 */
   width: 100%;
 }
 
-/* 没有分位历史时不留 260px 空白，只有一行说明 */
-.percentile-canvas.is-empty {
-  height: 0;
+.valuation-muted {
+  color: #8c6847;
+  font-size: 14px;
+  padding: 12px 4px;
 }
 
 /* ---- 说明区 ---- */
