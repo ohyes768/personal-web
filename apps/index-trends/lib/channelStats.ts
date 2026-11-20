@@ -85,11 +85,11 @@ export function weeklyPositions(
     });
 }
 
-/** 单条线的统计：线下周数、占比、最长连续段、当前段。 */
-export function occupancyOf(
+/** 线下的所有连续段，按时间先后。图上分段着色也用它。 */
+export function runsBelow(
   positions: WeeklyPosition[],
   threshold: number,
-): OccupancyStat {
+): OccupancyRun[] {
   const runs: OccupancyRun[] = [];
   let runStart = -1;
 
@@ -106,7 +106,15 @@ export function occupancyOf(
       runStart = -1;
     }
   }
+  return runs;
+}
 
+/** 单条线的统计：线下周数、占比、最长连续段、当前段。 */
+export function occupancyOf(
+  positions: WeeklyPosition[],
+  threshold: number,
+): OccupancyStat {
+  const runs = runsBelow(positions, threshold);
   const last = positions[positions.length - 1];
 
   const longest = runs.reduce<OccupancyRun | null>(
@@ -123,6 +131,13 @@ export function occupancyOf(
     longest,
     current: runs.length > 0 && runs[runs.length - 1].end === last?.week ? runs[runs.length - 1] : null,
   };
+}
+
+/** 通道内某个位置对应的价格：下轨 0、上轨 100 的线性插值。
+ * 图上画 40%/30% 参考线用——它们在价格空间里是与轨道平行的直线。
+ */
+export function priceAtPosition(lower: number, upper: number, position: number): number {
+  return lower + ((upper - lower) * position) / 100;
 }
 
 /** 一次算齐页面展示的三条线，外加统计区间与最新位置。 */

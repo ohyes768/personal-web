@@ -109,7 +109,7 @@ HTTP 200仍需检查上述业务状态；这里的访问约定仅针对本查询
 cd backend/index-trends
 uv run pytest -q                    # 后端全量回归（脱网）
 cd ../../apps/index-trends
-node --experimental-strip-types --test lib/candleData.test.ts
+node --experimental-strip-types --test lib/candleData.test.ts lib/channelStats.test.ts lib/chartOptions.test.ts
 ./node_modules/.bin/tsc --noEmit
 npm run build
 ```

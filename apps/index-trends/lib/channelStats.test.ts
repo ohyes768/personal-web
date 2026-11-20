@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { channelOccupancy, occupancyOf, weeklyPositions } from "./channelStats.ts";
+import { channelOccupancy, occupancyOf, priceAtPosition, runsBelow, weeklyPositions } from "./channelStats.ts";
 import type { ChartBar, ChannelSeries } from "./types.ts";
 
 function bar(weekStart: string, close: number): ChartBar {
@@ -123,6 +123,26 @@ test("一次算齐 50/40/30 三条线，并给出统计区间与最新位置", (
     result.stats.map((s) => s.belowWeeks),
     [2, 2, 2],
   );
+});
+
+test("线下连续段按时间先后全部给出，图上分段着色用它", () => {
+  const weeks = ["w1", "w2", "w3", "w4", "w5", "w6"];
+  const closes = [110, 120, 260, 280, 130, 110]; // 位置 5,10,80,90,15,5
+  const positions = weeklyPositions(
+    weeks.map((w, i) => bar(w, closes[i])),
+    flat(weeks),
+    null,
+  );
+  assert.deepEqual(runsBelow(positions, 40), [
+    { start: "w1", end: "w2", weeks: 2 },
+    { start: "w5", end: "w6", weeks: 2 },
+  ]);
+});
+
+test("位置线换算成价格：下轨 0、上轨 100 线性插值", () => {
+  assert.equal(priceAtPosition(100, 300, 0), 100);
+  assert.equal(priceAtPosition(100, 300, 50), 200);
+  assert.equal(priceAtPosition(100, 300, 30), 160);
 });
 
 test("空数据不产生统计", () => {
