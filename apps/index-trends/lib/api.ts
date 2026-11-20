@@ -1,5 +1,6 @@
 import type {
   ChartData,
+  Valuation,
   CurrentModelKind,
   CurrentStatus,
   HistoryOverview,
@@ -35,6 +36,7 @@ export const api = {
     ),
   status: (code: string, model: CurrentModelKind) =>
     fetchJSON<CurrentStatus>(`/indices/${code}/status?model=${model}`),
+  valuation: (code: string) => fetchJSON<Valuation>(`/indices/${code}/valuation`),
   valuationHistory: (code: string, metric: ValuationMetric) =>
     fetchJSON<ValuationHistory>(`/indices/${code}/valuation/history?metric=${metric}`),
   refresh: (code: string = DEFAULT_INDEX_CODE) =>

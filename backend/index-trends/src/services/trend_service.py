@@ -770,6 +770,16 @@ class WeeklyTrendService:
         投影周是最近已完成交易日所在自然周；进行中周的点位不触发重拟合。
         切换模型时轨道、位置、样本周全部来自该模型。
         """
+        if not BY_CODE[index_code].has_trend:
+            # 只做估值的指数没有通道：明确表态，不让调用方去猜 available=false 的原因
+            status = self.data_status(index_code)
+            return {
+                "available": False,
+                "reason": "valuation_only",
+                "model_kind": model_kind,
+                "data_status": status,
+                "snapshot_id": status.get("snapshot_id"),
+            }
         model = self.store.latest_weekly_model(index_code, model_kind)
         status = self.data_status(index_code)
         if model is None:
@@ -920,22 +930,28 @@ class WeeklyTrendService:
         entries: list[dict[str, Any]] = []
         for index in INDEXES:
             current_models = {}
-            for kind in (KIND_TRAILING_WEEKLY, KIND_SINCE_INCEPTION_WEEKLY):
-                model = self.store.latest_weekly_model(index.code, kind)
-                if model:
-                    current_models[kind] = weekly_model_to_dict(model)
+            if index.has_trend:
+                for kind in (KIND_TRAILING_WEEKLY, KIND_SINCE_INCEPTION_WEEKLY):
+                    model = self.store.latest_weekly_model(index.code, kind)
+                    if model:
+                        current_models[kind] = weekly_model_to_dict(model)
             entries.append(
                 {
                     "index_code": index.code,
                     "name": index.name,
                     "symbol": index.symbol,
-                    "kind": "price_index",
+                    "kind": "price_index" if index.has_trend else "valuation_only",
+                    "has_trend": index.has_trend,
                     "inception_week": index.inception_week,
-                    "available_model_kinds": [
-                        KIND_TRAILING_WEEKLY,
-                        KIND_SINCE_INCEPTION_WEEKLY,
-                        KIND_FIXED_WEEKLY,
-                    ],
+                    "available_model_kinds": (
+                        [
+                            KIND_TRAILING_WEEKLY,
+                            KIND_SINCE_INCEPTION_WEEKLY,
+                            KIND_FIXED_WEEKLY,
+                        ]
+                        if index.has_trend
+                        else []
+                    ),
                     "current_models": current_models,
                     "data_status": self.data_status(index.code),
                 }

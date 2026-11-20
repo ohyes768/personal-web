@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 
 from src.api.routes import router
 from src.services import scheduler as scheduler_module
-from src.core.indexes import index_codes
+from src.core.indexes import index_codes, trend_index_codes
 from src.services.store import Store
 
 
@@ -113,7 +113,8 @@ def test_application_keeps_daily_market_and_valuation_refresh(main_module, monke
         assert sorted(job["id"] for job in scheduler.jobs_info()) == ["daily_refresh", "valuation_refresh"]
         client.portal.call(scheduler._run_daily)
         # 行情现在按指数逐个刷新：每个注册指数一次
-        assert market.await_count == len(index_codes())
+        # 行情只遍历有通道的指数（创业板50 只有估值，不抓K线）
+        assert market.await_count == len(trend_index_codes())
         valuation.assert_not_called()  # 16:30 只刷行情，不联动估值
         client.portal.call(scheduler._run_valuation)
         assert valuation.call_count == len(index_codes())

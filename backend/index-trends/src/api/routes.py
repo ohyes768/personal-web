@@ -80,6 +80,16 @@ def _require_supported_index(code: str) -> None:
         )
 
 
+def _require_trend_index(code: str) -> None:
+    """通道类接口只对有走势的指数开放；只做估值的指数明确 409。"""
+    _require_supported_index(code)
+    if not BY_CODE[code].has_trend:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{BY_CODE[code].name}只提供 PB/PE 分位，没有走势通道",
+        )
+
+
 def _resolve_current_kind(kind: str) -> str:
     """旧月线 kind 只作为别名解析到周线，响应里的 timeframe 仍是 week。"""
     mapped = LEGACY_KIND_TO_WEEKLY.get(kind, kind)
@@ -103,7 +113,7 @@ async def indices(request: Request) -> dict:
 
 @router.get("/indices/{code}/history")
 async def history(code: str, request: Request) -> dict:
-    _require_supported_index(code)
+    _require_trend_index(code)
     return get_service(request).history_overview(code)
 
 
@@ -114,7 +124,7 @@ async def chart(
     model: str = Query(..., description="模型ID，或 kind:<当前模型种类> 取最新版本"),
     scope: str = Query("current", pattern="^(history|current)$"),
 ) -> dict:
-    _require_supported_index(code)
+    _require_trend_index(code)
     service = get_service(request)
     if model.startswith("kind:"):
         kind = _resolve_current_kind(model.split(":", 1)[1])
@@ -140,6 +150,16 @@ async def status(
     # 估值与模型无关：同一指数的两个模型共享一份估值口径
     payload["valuation"] = valuation_status(request, code)
     return payload
+
+
+@router.get("/indices/{code}/valuation")
+async def valuation(code: str, request: Request) -> dict:
+    """某指数的估值状态（PB 与 PE-TTM 两条分位）。
+
+    与通道解耦：只做估值的指数走这里，不需要 model 参数。
+    """
+    _require_supported_index(code)
+    return valuation_status(request, code)
 
 
 @router.get("/indices/{code}/valuation/history")
@@ -180,12 +200,15 @@ async def refresh(
     service = get_service(request)
     from src.data.provider import ProviderError
 
-    try:
-        result = await service.refresh(index_code)
-    except ProviderError as e:
-        raise HTTPException(status_code=502, detail=str(e))  # noqa: B904
-    except ValueError as e:
-        raise HTTPException(status_code=502, detail=f"数据校验失败: {e}")  # noqa: B904
+    has_trend = BY_CODE[index_code].has_trend
+    result = None
+    if has_trend:
+        try:
+            result = await service.refresh(index_code)
+        except ProviderError as e:
+            raise HTTPException(status_code=502, detail=str(e))  # noqa: B904
+        except ValueError as e:
+            raise HTTPException(status_code=502, detail=f"数据校验失败: {e}")  # noqa: B904
     # 估值采集尽力而为：失败不改行情的成功/失败语义，只在响应里给出估值状态
     valuation_service = get_valuation_service(request)
     valuation = valuation_status(request, index_code)
@@ -197,12 +220,12 @@ async def refresh(
         except Exception:  # noqa: BLE001 — 估值异常不改变行情结果
             valuation = valuation_status(request, index_code)
     return {
-        "success": result.success,
-        "message": result.message,
+        "success": result.success if result else valuation.get("state") != "error",
+        "message": result.message if result else "仅刷新估值分位（该指数没有走势通道）",
         "index_code": index_code,
-        "data_cutoff_week": result.data_cutoff_week,
-        "new_models": result.new_models,
-        "weekly_count": result.weekly_count,
-        "snapshot_id": result.snapshot_id,
+        "data_cutoff_week": result.data_cutoff_week if result else None,
+        "new_models": result.new_models if result else None,
+        "weekly_count": result.weekly_count if result else None,
+        "snapshot_id": result.snapshot_id if result else None,
         "valuation": valuation,
     }

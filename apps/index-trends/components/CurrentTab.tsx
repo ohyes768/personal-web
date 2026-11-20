@@ -3,20 +3,16 @@
 /** 当前通道 Tab：近10年 / 成立以来模型切换 + 状态摘要 + 主图（含约 1 年趋势延伸）。 */
 import { useEffect, useState } from "react";
 import OccupancyPanel from "./OccupancyPanel";
-import PercentileChart from "./PercentileChart";
 import TrendChart from "./TrendChart";
+import ValuationBlock from "./ValuationBlock";
 import { api } from "../lib/api";
 import {
   KIND_LABELS,
   REGION_LABELS,
-  VALUATION_METRIC_LABELS,
   type ChartData,
   type CurrentModelKind,
   type CurrentStatus,
   type ModelInfo,
-  type Valuation,
-  type ValuationMetric,
-  type ValuationMetricSnapshot,
 } from "../lib/types";
 
 export type CurrentModel = CurrentModelKind;
@@ -56,79 +52,6 @@ async function loadConsistent(code: string, model: CurrentModel): Promise<{
     if (!s || !c || s === c) return last;
   }
   throw new Error("数据版本不一致：摘要与图表来自不同快照，请重试");
-}
-
-/** 单条指标的读数：PB 为主、PE-TTM 为辅，各自独立判状态。
- *
- * 与通道位置严格区分：通道位置是相对趋势通道，分位是相对自身历史估值。
- * 旧后端只给顶层 PE 平铺字段时按 PE 降级，不影响主图。
- */
-function metricSnapshot(
-  valuation: Valuation | null,
-  metric: ValuationMetric,
-): ValuationMetricSnapshot | null {
-  if (!valuation) return null;
-  const explicit = valuation.metrics?.[metric];
-  if (explicit) return explicit;
-  if (metric !== "pe_ttm_mcw") return null;
-  return {
-    state: valuation.state,
-    reason: valuation.reason,
-    metric,
-    source: valuation.source,
-    window: valuation.window,
-    target_date: valuation.target_date,
-    as_of: valuation.as_of,
-    value: valuation.value ?? valuation.pe_ttm,
-    percentile_pct: valuation.percentile_pct,
-    captured_at: valuation.captured_at,
-  };
-}
-
-function ValuationBlock({
-  code,
-  valuation,
-  reloadKey,
-}: {
-  code: string;
-  valuation: Valuation | null;
-  reloadKey: number;
-}) {
-  const [metric, setMetric] = useState<ValuationMetric>("pb_mcw");
-  const snapshot = metricSnapshot(valuation, metric);
-  const pct = snapshot?.percentile_pct ?? null;
-  const value = snapshot?.value ?? null;
-  const metricLabel = metric === "pb_mcw" ? "PB" : "PE-TTM";
-
-  let stateNote: string | null = null;
-  if (!valuation) stateNote = "暂不可用";
-  else if (snapshot?.state === "disabled") stateNote = "未启用（未配置理杏仁访问令牌）";
-  else if (snapshot?.state === "empty") stateNote = "暂无估值数据";
-  else if (snapshot?.state === "error")
-    stateNote = `暂不可用${snapshot.reason ? `（${snapshot.reason}）` : ""}`;
-  else if (snapshot?.state === "stale")
-    stateNote = `未更新至 ${snapshot.target_date ?? "目标日"}`;
-
-  return (
-    <div className="valuation-block">
-      <div className="valuation-line">
-        <div className="picker" role="tablist" aria-label="估值指标">
-          {(Object.keys(VALUATION_METRIC_LABELS) as ValuationMetric[]).map((item) => (
-            <button key={item} aria-current={metric === item} onClick={() => setMetric(item)}>
-              {VALUATION_METRIC_LABELS[item]}
-            </button>
-          ))}
-        </div>
-        <b>{typeof pct === "number" ? `${pct.toFixed(1)}%` : "—"}</b>
-        <small>
-          {metricLabel} {typeof value === "number" ? value.toFixed(2) : "—"} ·{" "}
-          {snapshot?.as_of ?? "无数据"} · 理杏仁
-        </small>
-        {stateNote && <span className="valuation-muted">{stateNote}</span>}
-      </div>
-      <PercentileChart code={code} metric={metric} reloadKey={reloadKey} />
-    </div>
-  );
 }
 
 export default function CurrentTab({
@@ -176,7 +99,6 @@ export default function CurrentTab({
 
   const dataState = state.status?.data_status?.state ?? "ok";
   const stale = dataState === "stale";
-  const valuation = state.status?.valuation ?? null;
 
   return (
     <section>
@@ -259,7 +181,6 @@ export default function CurrentTab({
               <br />
               投影周 {state.status.projection_week}
             </div>
-            <ValuationBlock code={code} valuation={valuation} reloadKey={reloadKey + retryTick} />
             <div className="model-line">
               模型：{KIND_LABELS[selected]}（{model.fit_start} – {model.fit_end}，{model.sample_count}
               个交易周）

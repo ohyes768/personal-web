@@ -32,6 +32,9 @@ class IndexDef:
     earliest_weekly: str
     """周K 必须覆盖到此日或更早；晚于它视为供应商数据不完整。"""
 
+    has_trend: bool = True
+    """是否提供走势通道。False = 只做估值分位（不采行情、不出通道图）。"""
+
 
 INDEXES: tuple[IndexDef, ...] = (
     IndexDef(
@@ -50,6 +53,8 @@ INDEXES: tuple[IndexDef, ...] = (
         inception_week="2014-06-16",
         # 指数 2014-06-18 发布；留一个月容差，避免供应商首周口径差异把刷新打死
         earliest_weekly="2014-07-15",
+        # 只做 PB/PE 分位：不采行情、不出通道图（用户明确不需要通道）
+        has_trend=False,
     ),
 )
 
@@ -65,3 +70,8 @@ def get_index(code: str) -> IndexDef | None:
 
 def index_codes() -> tuple[str, ...]:
     return tuple(item.code for item in INDEXES)
+
+
+def trend_index_codes() -> tuple[str, ...]:
+    """只列出有走势通道的指数（行情刷新只该遍历这些）。"""
+    return tuple(item.code for item in INDEXES if item.has_trend)

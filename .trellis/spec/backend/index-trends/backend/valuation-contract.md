@@ -13,6 +13,10 @@
 
 - 指数来自注册表 `src/core/indexes.py`（当前 000300 沪深300、399673 创业板50）。
   **一个指数一次请求**，两条指标（PE-TTM 与 PB）一起取回。
+- `IndexDef.has_trend` 决定这个指数有没有走势通道：`False` 的指数（当前 399673）
+  **只采估值**，不进行情刷新、不算模型；`/chart` `/history` 对它返回 409，
+  `/status` 返回 `available=false` + `reason=valuation_only`，
+  估值走独立的 `GET /api/indices/{code}/valuation`（不需要 `model` 参数）。
 - 指标注册表（`src/data/lixinger.py`）：
 
   | metric key | 数值字段 | 分位字段 |
@@ -92,6 +96,7 @@
 ## 接口
 
 - `GET /api/indices/{code}/status?model=…`：行情 + `valuation`（顶层兼容字段 + `metrics`）。
+- `GET /api/indices/{code}/valuation`：只取估值状态，不依赖 `model`；估值型指数走这里。
 - `GET /api/indices/{code}/valuation/history?metric=pb_mcw|pe_ttm_mcw[&start_date=…]`：
   分位序列 `{dates, values, percentiles}`，供分位走势图使用。
   `metric` 不在注册表内 → **400** 并列出支持值；未知指数 → **404** 并列出支持代码。
@@ -121,7 +126,8 @@
 `tests/test_valuation_store.py`（迁移与读写）、
 `tests/test_api_valuation.py`（状态 API 只读、不泄露凭据）、
 `tests/test_refresh_lifecycle.py`（每日刷新与估值任务分离、启动行为与历史保留）、
-`tests/test_multi_index.py`（多指数存储隔离、旧库迁移、双指标解析、metric 白名单）。
+`tests/test_multi_index.py`（多指数存储隔离、旧库迁移、双指标解析、metric 白名单、
+估值型指数无通道与行情刷新跳过）。
 
 ## Wrong vs Correct
 

@@ -2,7 +2,10 @@
 
 ## Goal
 
-在 index-trends 上能看到**创业板50（399673）的周线通道位置**，以及它的 **PB 分位（主）** 与 **PE 分位（辅）**，用于定投加减档决策：分位越低投越多，PB 分位过半停止新增，高位回落配合 IRR 止盈。
+在 index-trends 上能看到**创业板50（399673）的 PB 分位（主）** 与 **PE 分位（辅）**，用于定投加减档决策：分位越低投越多，PB 分位过半停止新增，高位回落配合 IRR 止盈。
+
+> 范围修正（2026-11-20，用户明确）：**创业板50 不要走势通道**，只做 PB/PE 分位。
+> 它不采行情、不算模型、不出通道图；通道类接口返回 409。
 
 ## Background（已核实的现状）
 
@@ -33,7 +36,9 @@
 
 **R2 行情隔离** — 两个指数的月K / 周K / 日线 / 模型 / 元数据互不覆盖；一个指数刷新失败不得影响另一个的可用数据与状态。
 
-**R3 创业板50 走势可用** — 现有周线能力（近10年、成立以来、固定10年窗口）在 399673 上可用；起点用其自身发布周，不套用 2005-04。点位区间、通道、位置百分比由该指数自己的数据算出。
+**R3 创业板50 只做估值** — 399673 不提供走势通道：`IndexDef.has_trend=False`，行情刷新跳过它，`/chart` `/history` 返回 409，`/status` 返回 `reason=valuation_only`，估值走 `GET /api/indices/{code}/valuation`（不需要 `model`）。
+
+**R3b 通道指数不受影响** — 000300 的周线能力（近10年、成立以来、固定10年窗口）与起点边界保持原样。
 
 **R4 估值双指标** — 每个指数可采集 PE-TTM 与 PB 两条分位，落库按 `(index_code, metric, window)` 区分；失败状态按指数隔离。
 
@@ -44,7 +49,9 @@
 ## Acceptance Criteria
 
 - [ ] `GET /api/indices` 返回两个指数条目，399673 含 code/name/symbol/inception。
-- [ ] `GET /api/indices/399673/status?model=trailing_10y_weekly` 返回该指数自身模型的 close / position_pct / region / data_status；与 000300 的调用互相独立。
+- [ ] `GET /api/indices/399673/status` 返回 `available=false`、`reason=valuation_only`，且 `valuation.metrics` 仍有 PB 与 PE-TTM 两条。
+- [ ] `GET /api/indices/399673/chart` 与 `/history` 返回 409；`GET /api/indices/399673/valuation` 不需要 `model` 参数即可取到两条分位。
+- [ ] 每日行情刷新只遍历 `trend_index_codes()`（当前只有 000300）。
 - [ ] `GET /api/indices/399673/status` 的 `valuation` 同时含 PB 与 PE-TTM 两条，各自有 percentile_pct、as_of、state。
 - [ ] 刷新 399673 前后，000300 的周K行数与 weekly model_id 不变；反之亦然。
 - [ ] 未配置 `INDEX_TRENDS_LIXINGER_TOKEN` 时 `valuation.state=="disabled"`，页面不出现 0 分位或假数据。

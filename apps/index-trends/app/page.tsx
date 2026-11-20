@@ -9,10 +9,12 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import CurrentTab, { type CurrentModel } from "../components/CurrentTab";
 import HistoryTab from "../components/HistoryTab";
+import ValuationTab from "../components/ValuationTab";
 import { api } from "../lib/api";
 import {
   DEFAULT_INDEX_CODE,
   INDEX_OPTIONS,
+  hasTrend,
   indexName,
   isIndexCode,
 } from "../lib/indexes";
@@ -69,6 +71,7 @@ function PageInner() {
   const modelParam: CurrentModel = resolveModel(rawModel);
   const rawIndex = params.get("index");
   const code = isIndexCode(rawIndex) ? rawIndex : DEFAULT_INDEX_CODE;
+  const trendEnabled = hasTrend(code);
 
   const [overview, setOverview] = useState<HistoryOverview | null>(null);
   const [overviewError, setOverviewError] = useState<string | null>(null);
@@ -103,6 +106,11 @@ function PageInner() {
   }, [rawModel, setQuery]);
 
   useEffect(() => {
+    if (!trendEnabled) {
+      setOverview(null);
+      setOverviewError(null);
+      return;
+    }
     let cancelled = false;
     api
       .history(code)
@@ -120,7 +128,7 @@ function PageInner() {
     return () => {
       cancelled = true;
     };
-  }, [code, tick]);
+  }, [code, trendEnabled, tick]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -145,15 +153,19 @@ function PageInner() {
         <div className="site-top">
           <div>
             <div className="eyebrow">宽基趋势观察 · INDEX TRENDS</div>
-            <h1>{indexName(code)} · 线性回归通道</h1>
+            <h1>
+              {indexName(code)}
+              {trendEnabled ? " · 线性回归通道" : " · 估值分位"}
+            </h1>
           </div>
           <button type="button" className="refresh" disabled={refreshing} onClick={onRefresh}>
             {refreshing ? "正在获取…" : "获取最新"}
           </button>
         </div>
         <p className="subtitle">
-          周收盘拟合的长期趋势通道，回看它在历史上的表现，观察当前指数位置。
-          描述相对趋势的位置，不构成买卖建议。
+          {trendEnabled
+            ? "周收盘拟合的长期趋势通道，回看它在历史上的表现，观察当前指数位置。描述相对趋势的位置，不构成买卖建议。"
+            : "PB / PE-TTM 近10年分位，看它相对自身历史估值处在什么位置。不构成买卖建议。"}
         </p>
       </header>
 
@@ -172,16 +184,18 @@ function PageInner() {
         ))}
       </nav>
 
-      <nav className="tabs" aria-label="页面切换">
-        <button aria-current={tab === "history"} onClick={() => setQuery({ tab: "history", window: windowParam })}>
-          历史回溯
-        </button>
-        <button aria-current={tab === "current"} onClick={() => setQuery({ tab: "current", model: modelParam })}>
-          当前通道
-        </button>
-      </nav>
+      {trendEnabled && (
+        <nav className="tabs" aria-label="页面切换">
+          <button aria-current={tab === "history"} onClick={() => setQuery({ tab: "history", window: windowParam })}>
+            历史回溯
+          </button>
+          <button aria-current={tab === "current"} onClick={() => setQuery({ tab: "current", model: modelParam })}>
+            当前通道
+          </button>
+        </nav>
+      )}
 
-      <DataStatusBar status={overview?.data_status ?? null} />
+      {trendEnabled && <DataStatusBar status={overview?.data_status ?? null} />}
 
       {overviewError && (
         <div className="message error">
@@ -193,7 +207,9 @@ function PageInner() {
         </div>
       )}
 
-      {tab === "history" &&
+      {!trendEnabled && <ValuationTab code={code} reloadKey={tick} />}
+
+      {trendEnabled && tab === "history" &&
         (overview ? (
           <HistoryTab
             code={code}
@@ -206,7 +222,7 @@ function PageInner() {
           !overviewError && <div className="message">加载中…</div>
         ))}
 
-      {tab === "current" && (
+      {trendEnabled && tab === "current" && (
         <CurrentTab
           code={code}
           selected={modelParam}

@@ -261,3 +261,59 @@ def test_valuation_history_rejects_unknown_metric(api_client):
     resp = client.get("/api/indices/399673/valuation/history?metric=pe")
     assert resp.status_code == 400
     assert "pb_mcw" in resp.json()["detail"]
+
+
+# ---- 只做估值的指数（没有通道）----
+def test_valuation_only_index_has_no_channel(api_client):
+    client, _ = api_client
+    entries = {i["index_code"]: i for i in client.get("/api/indices").json()["indices"]}
+    assert entries["000300"]["has_trend"] is True
+    assert entries["000300"]["available_model_kinds"]
+    assert entries["399673"]["has_trend"] is False
+    assert entries["399673"]["kind"] == "valuation_only"
+    assert entries["399673"]["available_model_kinds"] == []
+
+
+def test_channel_endpoints_reject_valuation_only_index(api_client):
+    client, _ = api_client
+    chart = client.get("/api/indices/399673/chart?model=kind:trailing_10y_weekly")
+    history = client.get("/api/indices/399673/history")
+    assert chart.status_code == 409
+    assert history.status_code == 409
+    assert "分位" in chart.json()["detail"]
+
+
+def test_status_of_valuation_only_index_says_so(api_client):
+    client, _ = api_client
+    body = client.get("/api/indices/399673/status?model=trailing_10y_weekly").json()
+    assert body["available"] is False
+    assert body["reason"] == "valuation_only"
+    # 估值仍要照常给出来
+    assert set(body["valuation"]["metrics"]) == {"pe_ttm_mcw", "pb_mcw"}
+
+
+def test_valuation_endpoint_needs_no_model(api_client):
+    client, store = api_client
+    store.publish_valuation(
+        "399673", "lixinger", "pb_mcw", "y10", [("2026-10-30", 6.9, 0.195)], "2026-10-30"
+    )
+    body = client.get("/api/indices/399673/valuation").json()
+    assert body["metrics"]["pb_mcw"]["percentile_pct"] == 19.5
+    assert body["metrics"]["pb_mcw"]["state"] == "ok"
+
+
+def test_daily_market_job_skips_valuation_only_index(store, monkeypatch):
+    """行情刷新只遍历有通道的指数；创业板50 不该被拉K线。"""
+    import src.main as main_module
+
+    refreshed: list[str] = []
+
+    async def fake_refresh(self, code: str) -> object:
+        refreshed.append(code)
+        return {"index_code": code, "success": True}
+
+    monkeypatch.setattr(main_module.WeeklyTrendService, "refresh", fake_refresh)
+    with TestClient(main_module.create_app()) as client:
+        scheduler = client.app.state.scheduler
+        client.portal.call(scheduler._run_daily)
+    assert refreshed == ["000300"]
