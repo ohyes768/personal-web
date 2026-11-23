@@ -676,7 +676,9 @@ tasks:
     network: nginx_nginx-bridge
     env:
       HERMES_PROFILE: "ohyes768"
-    cron: "30 13 * * *"
+    # 13:15 避开每周一 13:30 路由器定时重启的断网窗口（11-09/16/23 三个周一
+    # 均因重启期 DNS 失败导致 run 首次模型调用 APIConnectionError，详见记忆）
+    cron: "15 13 * * *"
     timeout: 900
 
   # 迁移来源：n8n「xwlb-analyse Push」08:10 git-pull 触发器（2026-11-07 n8n 完整下线时迁移）。
