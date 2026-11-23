@@ -53,7 +53,7 @@ test("台账条目：搜索命中、弹窗改名称与用途、移除", async ({
   await login(page);
   const name = `e2e-服务-${Date.now()}`;
 
-  // 列表页不再有「新增服务」入口：台账条目从发现导入来（这里用接口代劳）
+  // 列表页不再有「新增服务」入口：台账条目从容器管理页导入（这里用接口代劳）
   await expect(page.getByRole("button", { name: "新增服务" })).toHaveCount(0);
   const created = await page.request.post("/api/services/services", {
     headers: { Origin: new URL(page.url()).origin },
@@ -276,10 +276,10 @@ test("证书列存在且存量 https 入口显示有效", async ({ page }) => {
   await expect(page.getByText("有效").first()).toBeVisible();
 });
 
-test("发现页展示候选表格（或明确的不可用提示）", async ({ page }) => {
+test("容器管理页展示候选表格（或明确的不可用提示）", async ({ page }) => {
   await login(page);
-  await page.getByRole("link", { name: "发现导入" }).click();
-  await expect(page.getByRole("heading", { name: "发现导入" })).toBeVisible();
+  await page.getByRole("link", { name: "容器管理" }).click();
+  await expect(page.getByRole("heading", { name: "容器管理" })).toBeVisible();
   // 三种正常终态：有候选表格 / 无匹配候选 / Docker 不可用（后端未配 DOCKER_HOST 时）
   const table = page.locator("table").first();
   const empty = page.getByText(/没有匹配的候选容器|Docker 不可用时没有候选/);

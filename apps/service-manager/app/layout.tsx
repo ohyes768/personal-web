@@ -20,7 +20,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             {/* basePath=/services 由 Next 自动拼接；写 /services 会变成 /services/services */}
             <Link href="/">服务</Link>
             <Link href="/resources">资源总览</Link>
-            <Link href="/discovery">发现导入</Link>
+            <Link href="/discovery">容器管理</Link>
             <Link href="/settings">设置</Link>
           </nav>
         </header>

@@ -209,6 +209,35 @@ def test_oneoff_hidden_from_default_candidates(store, registry) -> None:
     assert len(with_ephemeral) == 2
 
 
+def test_candidates_bound_filter(store, registry) -> None:
+    service = make(
+        store,
+        registry,
+        [
+            container_payload(service="a", container_id="a" * 64),
+            container_payload(service="b", container_id="b" * 64),
+        ],
+    )
+    service.run_scan()
+    created = service.import_components(
+        DiscoveryImportRequest(
+            components=[DiscoveryImportItem(source_key="nas:compose:personal-web:a:1")],
+            name="A 服务",
+        )
+    )
+    service_id = created["service_id"]
+
+    unbound = service.candidates(bound=False)
+    assert [row.service_name for row in unbound] == ["b"]
+    assert all(row.bound_service_id is None for row in unbound)
+
+    bound_rows = service.candidates(bound=True)
+    assert [row.service_name for row in bound_rows] == ["a"]
+    assert all(row.bound_service_id == service_id for row in bound_rows)
+
+    assert {row.service_name for row in service.candidates(bound=None)} == {"a", "b"}
+
+
 def test_scan_does_not_overwrite_manual_fields(store, registry) -> None:
     service = make(store, registry, [container_payload()])
     service.run_scan()

@@ -186,6 +186,7 @@ class DiscoveryService:
         state: str = "",
         ignored: bool | None = None,
         include_ephemeral: bool = False,
+        bound: bool | None = None,
     ) -> list[DiscoveryCandidate]:
         components = self.components()
         bindings = self.registry.binding_map()
@@ -204,7 +205,10 @@ class DiscoveryService:
             )
             if ephemeral and not include_ephemeral:
                 continue
-            bound = bindings.get(source_key)
+            is_bound = source_key in bindings
+            if bound is not None and is_bound != bound:
+                continue
+            bound_service_id = bindings.get(source_key)
             rows.append(
                 DiscoveryCandidate(
                     source_key=source_key,
@@ -225,7 +229,7 @@ class DiscoveryService:
                     ignored=is_ignored,
                     oneoff=bool(item.get("oneoff")),
                     bindable=bound is None and not bool(item.get("oneoff")),
-                    bound_service_id=bound[0] if bound else None,
+                    bound_service_id=bound_service_id[0] if bound_service_id else None,
                 )
             )
         rows.sort(

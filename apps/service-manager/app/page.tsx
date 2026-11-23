@@ -273,9 +273,10 @@ function ServiceList() {
             <div className="num">{summary.components}</div>
             <div className="lbl">已关联组件</div>
           </div>
-          <div
+          <Link
             className="kpi"
-            title={`发现但没关联到任何业务服务的容器：${summary.unregistered_components} 个，其中 ${summary.ignored_components} 个已标记忽略，实际待处理 ${summary.unregistered_components - summary.ignored_components} 个`}
+            href="/discovery?bound=unbound"
+            title={`发现但没关联到任何业务服务的容器：${summary.unregistered_components} 个，其中 ${summary.ignored_components} 个已标记忽略，实际待处理 ${summary.unregistered_components - summary.ignored_components} 个。点击查看`}
           >
             <div
               className="num"
@@ -289,7 +290,7 @@ function ServiceList() {
               {summary.unregistered_components}
             </div>
             <div className="lbl">未入账</div>
-          </div>
+          </Link>
           <div className="kpi">
             <div className="num small" style={{ fontSize: 13 }}>
               {formatRelative(summary.docker_last_success_at)}
@@ -349,7 +350,7 @@ function ServiceList() {
         <div className="card">
           <p>
             {items.length === 0
-              ? "台账还是空的。到「发现导入」从运行中的容器建立台账条目。"
+              ? "台账还是空的。到「容器管理」从运行中的容器建立台账条目。"
               : tagFilter.length > 0
                 ? `没有同时具备这些标签的服务（${tagFilter.join("、")}）。`
                 : "没有匹配的服务。"}
@@ -361,7 +362,7 @@ function ServiceList() {
               </button>
             ) : null}
             <Link className="btn" href="/discovery">
-              去发现导入
+              去容器管理
             </Link>
           </div>
         </div>

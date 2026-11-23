@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   api,
   ApiError,
@@ -15,17 +15,23 @@ import { StateBadge, Toast } from "@/components/Widgets";
 export default function DiscoveryPage() {
   return (
     <SessionGate>
-      <DiscoveryView />
+      <Suspense>
+        <DiscoveryView />
+      </Suspense>
     </SessionGate>
   );
 }
 
 function DiscoveryView() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [data, setData] = useState<DiscoveryResponse | null>(null);
   const [project, setProject] = useState("");
   const [state, setState] = useState("");
   const [ignored, setIgnored] = useState<"all" | "active" | "ignored">("active");
+  const [bound, setBound] = useState<"all" | "unbound" | "bound">(
+    searchParams.get("bound") === "bound" ? "bound" : searchParams.get("bound") === "all" ? "all" : "unbound",
+  );
   const [includeEphemeral, setIncludeEphemeral] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [name, setName] = useState("");
@@ -45,6 +51,7 @@ function DiscoveryView() {
         state,
         ignored: ignored === "all" ? null : ignored === "ignored",
         include_ephemeral: includeEphemeral,
+        bound: bound === "all" ? null : bound === "bound",
       });
       setData(result);
     } catch (caught) {
@@ -52,7 +59,7 @@ function DiscoveryView() {
     } finally {
       setLoading(false);
     }
-  }, [project, state, ignored, includeEphemeral]);
+  }, [project, state, ignored, includeEphemeral, bound]);
 
   useEffect(() => {
     void load();
@@ -136,9 +143,9 @@ function DiscoveryView() {
 
   return (
     <>
-      <h1>发现导入</h1>
+      <h1>容器管理</h1>
       <p className="lead">
-        从运行中的 Docker 容器建立服务。勾选多个组件可以合并成一个业务服务。
+        看机器上全部容器，谁入了账、谁没入。勾选多个未入账容器可以合并成一个业务服务。
       </p>
 
       {data && !data.docker_available ? (
@@ -165,6 +172,15 @@ function DiscoveryView() {
             <option value="running">运行中</option>
             <option value="exited">已退出</option>
             <option value="missing">已消失</option>
+          </select>
+          <select
+            value={bound}
+            onChange={(event) => setBound(event.target.value as typeof bound)}
+            aria-label="按入账状态筛选"
+          >
+            <option value="unbound">未入账</option>
+            <option value="bound">已入账</option>
+            <option value="all">全部</option>
           </select>
           <select
             value={ignored}

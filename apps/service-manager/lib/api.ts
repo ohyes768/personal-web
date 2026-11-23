@@ -286,6 +286,7 @@ export const api = {
     state?: string;
     ignored?: boolean | null;
     include_ephemeral?: boolean;
+    bound?: boolean | null;
   }) => request<DiscoveryResponse>(`/discovery${query(params)}`),
   importComponents: (body: Record<string, unknown>) =>
     request<{ service_id: string; created: boolean; bound: string[]; registry_revision: number }>(

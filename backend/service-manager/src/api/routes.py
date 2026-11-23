@@ -416,12 +416,14 @@ def discovery_list(
     state: str = Query(default="", max_length=32),
     ignored: bool | None = Query(default=None),
     include_ephemeral: bool = Query(default=False),
+    bound: bool | None = Query(default=None),
 ) -> dict[str, Any]:
     items = discovery.candidates(
         project=project,
         state=state,
         ignored=ignored,
         include_ephemeral=include_ephemeral,
+        bound=bound,
     )
     available, error = discovery.scan_available()
     return {
