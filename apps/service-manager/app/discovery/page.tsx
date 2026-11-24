@@ -28,7 +28,13 @@ function DiscoveryView() {
   const [data, setData] = useState<DiscoveryResponse | null>(null);
   const [project, setProject] = useState("");
   const [state, setState] = useState("");
-  const [ignored, setIgnored] = useState<"all" | "active" | "ignored">("active");
+  const [ignored, setIgnored] = useState<"all" | "active" | "ignored">(
+    searchParams.get("ignored") === "ignored"
+      ? "ignored"
+      : searchParams.get("ignored") === "all"
+        ? "all"
+        : "active",
+  );
   const [bound, setBound] = useState<"all" | "unbound" | "bound">(
     searchParams.get("bound") === "bound" ? "bound" : searchParams.get("bound") === "all" ? "all" : "unbound",
   );

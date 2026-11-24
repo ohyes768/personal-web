@@ -291,6 +291,14 @@ function ServiceList() {
             </div>
             <div className="lbl">未入账</div>
           </Link>
+          <Link
+            className="kpi"
+            href="/discovery?bound=unbound&ignored=ignored"
+            title={`未入账中已标记忽略的容器：${summary.ignored_components} 个（有意不入账）。点击查看`}
+          >
+            <div className="num">{summary.ignored_components}</div>
+            <div className="lbl">已忽略</div>
+          </Link>
           <div className="kpi">
             <div className="num small" style={{ fontSize: 13 }}>
               {formatRelative(summary.docker_last_success_at)}
