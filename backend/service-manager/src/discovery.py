@@ -37,6 +37,19 @@ from src.registry import Registry
 DOCKER_CHECK_KIND = "docker_scan"
 
 
+def _parse_ts(value: Any) -> datetime | None:
+    """解析 ISO 时间戳（扫描写入的 UTC isoformat）；失败返回 None。"""
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
 @dataclass
 class ScanSnapshot:
     scan_id: int
@@ -50,12 +63,22 @@ class ScanSnapshot:
 
 
 class DiscoveryService:
-    def __init__(self, store: Store, registry: Registry, reader: ContainerReader | None) -> None:
+    def __init__(
+        self,
+        store: Store,
+        registry: Registry,
+        reader: ContainerReader | None,
+        *,
+        ephemeral_grace_seconds: int = 7200,
+    ) -> None:
         self.store = store
         self.registry = registry
         self.reader = reader
         self.last_error: str | None = None
         self._last_success_at: str | None = None
+        # 游离容器（无 compose 项目）从首见起在宽限期内不算候选：
+        # docker run --rm 的临时容器只会存活几分钟，常驻服务能稳定跨过整个宽限期。
+        self.ephemeral_grace_seconds = max(0, int(ephemeral_grace_seconds))
 
     # -- 扫描 ------------------------------------------------------------
 
@@ -104,14 +127,16 @@ class DiscoveryService:
     def _publish(self, result: ScanResult) -> None:
         """单事务替换观测表；只删本轮未出现的，保留人工覆盖表。"""
         seen = {item["source_key"] for item in result.components}
+        bound_keys = set(self.registry.binding_map())
+        ignored_keys = self.registry.ignored_keys()
         with self.store.transaction() as conn:
             for item in result.components:
                 conn.execute(
                     "INSERT INTO docker_components(source_key, project, service_name,"
                     " container_id, container_name, image_ref, image_id, state, health,"
                     " network_mode, ports, mounts, compose_working_dir, compose_files,"
-                    " oneoff, last_seen_at, scan_id)"
-                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+                    " oneoff, last_seen_at, first_seen_at, scan_id)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
                     " ON CONFLICT(source_key) DO UPDATE SET"
                     " project = excluded.project, service_name = excluded.service_name,"
                     " container_id = excluded.container_id,"
@@ -123,6 +148,7 @@ class DiscoveryService:
                     " compose_working_dir = excluded.compose_working_dir,"
                     " compose_files = excluded.compose_files,"
                     " oneoff = excluded.oneoff, last_seen_at = excluded.last_seen_at,"
+                    " first_seen_at = docker_components.first_seen_at,"
                     " scan_id = excluded.scan_id",
                     (
                         item["source_key"],
@@ -141,15 +167,26 @@ class DiscoveryService:
                         json.dumps(item["compose_files"], ensure_ascii=False),
                         1 if item["oneoff"] else 0,
                         result.finished_at,
+                        result.finished_at,
                         result.scan_id,
                     ),
                 )
-            # 本轮成功扫描中未出现的组件：保留台账，标 missing（design §3）
+            # 本轮成功扫描中未出现的组件：
+            # - compose 项目 / 已绑定 / 已忽略 → 保留台账，标 missing（design §3）
+            # - 游离且无归属的一次性容器 → 直接删除，避免 missing 候选永久堆积
             placeholders = ",".join("?" for _ in seen) or "''"
+            keep_keys = bound_keys | ignored_keys
+            keep_placeholders = ",".join("?" for _ in keep_keys) or "''"
             conn.execute(
                 f"UPDATE docker_components SET state = 'missing', scan_id = ? "
-                f"WHERE source_key NOT IN ({placeholders})",
-                [result.scan_id, *seen],
+                f"WHERE source_key NOT IN ({placeholders}) "
+                f"AND (project IS NOT NULL OR source_key IN ({keep_placeholders}))",
+                [result.scan_id, *seen, *keep_keys],
+            )
+            conn.execute(
+                f"DELETE FROM docker_components WHERE source_key NOT IN ({placeholders}) "
+                f"AND project IS NULL AND source_key NOT IN ({keep_placeholders})",
+                [*seen, *keep_keys],
             )
             Store._set_state(conn, "docker_scan_generation", str(result.scan_id))
             Store._set_state(conn, "docker_last_success_at", result.finished_at)
@@ -187,10 +224,12 @@ class DiscoveryService:
         ignored: bool | None = None,
         include_ephemeral: bool = False,
         bound: bool | None = None,
+        now: datetime | None = None,
     ) -> list[DiscoveryCandidate]:
         components = self.components()
         bindings = self.registry.binding_map()
         ignored_keys = self.registry.ignored_keys()
+        now = now or datetime.now(timezone.utc)
         rows: list[DiscoveryCandidate] = []
         for source_key, item in components.items():
             is_ignored = source_key in ignored_keys
@@ -200,12 +239,29 @@ class DiscoveryService:
                 continue
             if state and item.get("state") != state:
                 continue
+            is_bound = source_key in bindings
             ephemeral = bool(item.get("oneoff")) or (
-                item.get("state") in ("exited", "dead") and not item.get("project")
+                item.get("state") in ("exited", "dead", "missing")
+                and not item.get("project")
             )
+            if (
+                not ephemeral
+                and not item.get("project")
+                and not is_bound
+                and not is_ignored
+            ):
+                # 游离运行容器：首见宽限期内视为临时容器，不当候选展示
+                first_seen = _parse_ts(
+                    item.get("first_seen_at") or item.get("last_seen_at")
+                )
+                if (
+                    first_seen is not None
+                    and (now - first_seen).total_seconds()
+                    < self.ephemeral_grace_seconds
+                ):
+                    ephemeral = True
             if ephemeral and not include_ephemeral:
                 continue
-            is_bound = source_key in bindings
             if bound is not None and is_bound != bound:
                 continue
             bound_service_id = bindings.get(source_key)
@@ -328,6 +384,7 @@ def _component_row(row: sqlite3.Row) -> dict[str, Any]:
         "compose_files": json.loads(row["compose_files"] or "[]"),
         "oneoff": bool(row["oneoff"]),
         "last_seen_at": row["last_seen_at"],
+        "first_seen_at": row["first_seen_at"] if "first_seen_at" in row.keys() else None,
         "scan_id": row["scan_id"],
     }
 

@@ -264,3 +264,105 @@ def test_scan_does_not_record_raw_inspect(store, registry) -> None:
         rows = conn.execute("SELECT * FROM docker_components").fetchall()
     serialized = repr([dict(row) for row in rows])
     assert "TOP_SECRET" not in serialized
+
+
+def _loose_payload(container_id: str, name: str, image: str, state: str = "running"):
+    """游离容器（无任何 compose 标签），模拟 docker run --rm 一次性容器。"""
+    return container_payload(
+        project=None,
+        service=None,
+        container_id=container_id,
+        name=name,
+        image=image,
+        state=state,
+        working_dir=None,
+        config_files=None,
+    )
+
+
+def test_loose_missing_rows_are_deleted(store, registry) -> None:
+    """游离容器消失后必须删台账，而不是留下永久 missing 候选。"""
+    reader = FakeReader(
+        [
+            container_payload(service="a", container_id="a" * 64),
+            _loose_payload("c" * 64, "brave_yalow", "debian:stable-slim"),
+        ]
+    )
+    service = DiscoveryService(store, registry, reader)
+    service.run_scan()
+    assert "nas:container:" + "c" * 12 in service.components()
+    # 容器消失（docker run --rm 退出即删）：compose 容器标 missing，游离容器删除
+    reader.payloads = [container_payload(service="a", container_id="a" * 64)]
+    service.run_scan()
+    components = service.components()
+    assert components["nas:compose:personal-web:a:1"]["state"] == "running"
+    assert "nas:container:" + "c" * 12 not in components
+
+
+def test_loose_running_container_hidden_within_grace(store, registry) -> None:
+    """游离运行容器在首见宽限期内不作为候选展示，宽限期过后出现。"""
+    from datetime import datetime, timedelta, timezone
+
+    reader = FakeReader([_loose_payload("d" * 64, "jolly_einstein", "alpine")])
+    service = DiscoveryService(store, registry, reader, ephemeral_grace_seconds=7200)
+    seen_at = datetime(2026, 11, 24, 10, 0, 0, tzinfo=timezone.utc)
+    service.run_scan(now=seen_at)
+
+    key = "nas:container:" + "d" * 12
+    assert service.components()[key]["first_seen_at"] == seen_at.isoformat(timespec="seconds")
+
+    def names(at):
+        return {
+            row.container_name
+            for row in service.candidates(now=at)
+        }
+
+    # 首见后 1 小时：仍在宽限期内，不出现
+    assert names(seen_at + timedelta(minutes=60)) == set()
+    # include_ephemeral=True 仍然可见（保留排查通道）
+    assert {
+        row.container_name
+        for row in service.candidates(include_ephemeral=True, now=seen_at + timedelta(minutes=60))
+    } == {"jolly_einstein"}
+    # 首见 2 小时后：宽限期已过，作为候选出现
+    assert names(seen_at + timedelta(hours=2)) == {"jolly_einstein"}
+
+
+def test_loose_container_grace_survives_restart(store, registry) -> None:
+    """游离容器重启（同 id）不重置首见时间：宽限期从第一次发现起算。"""
+    from datetime import datetime, timedelta, timezone
+
+    reader = FakeReader([_loose_payload("e" * 64, "relaxed_elion", "debian:stable-slim")])
+    service = DiscoveryService(store, registry, reader, ephemeral_grace_seconds=7200)
+    seen_at = datetime(2026, 11, 24, 10, 0, 0, tzinfo=timezone.utc)
+    service.run_scan(now=seen_at)
+    restarted_at = seen_at + timedelta(minutes=90)
+    service.run_scan(now=restarted_at)
+
+    key = "nas:container:" + "e" * 12
+    row = service.components()[key]
+    assert row["first_seen_at"] == seen_at.isoformat(timespec="seconds")
+    assert row["last_seen_at"] == restarted_at.isoformat(timespec="seconds")
+    # 重启后离首见 90 分钟，仍在 2h 宽限期内 → 不出现
+    assert service.candidates(now=restarted_at) == []
+
+
+def test_bound_loose_container_not_hidden_by_grace(store, registry) -> None:
+    """已绑定/已忽略的游离容器不受宽限期影响。"""
+    reader = FakeReader([_loose_payload("f" * 64, "file-system-go", "alpine")])
+    service = DiscoveryService(store, registry, reader, ephemeral_grace_seconds=7200)
+    from datetime import datetime, timezone
+
+    now = datetime(2026, 11, 24, 10, 0, 0, tzinfo=timezone.utc)
+    service.run_scan(now=now)
+    key = "nas:container:" + "f" * 12
+    service.import_components(
+        DiscoveryImportRequest(
+            components=[DiscoveryImportItem(source_key=key)],
+            name="audio-server",
+        )
+    )
+    assert [
+        row.container_name
+        for row in service.candidates(bound=True, now=now)
+    ] == ["file-system-go"]

@@ -49,7 +49,12 @@ def build_app(settings: Settings) -> FastAPI:
         if settings.docker_host
         else None
     )
-    discovery = DiscoveryService(store, registry, reader)
+    discovery = DiscoveryService(
+        store,
+        registry,
+        reader,
+        ephemeral_grace_seconds=settings.ephemeral_grace_seconds,
+    )
     releases = ReleaseStore(store)
     checks = CheckStore(store)
     github = (

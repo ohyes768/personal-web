@@ -40,6 +40,10 @@ class Settings(BaseSettings):
 
     # ---- 检查周期（秒）；0 = 该检查不自动跑 ----
     docker_interval: int = Field(default=60, alias="SERVICE_MANAGER_DOCKER_INTERVAL")
+    # 游离容器（无 compose 项目）首见宽限期（秒）：期内不出现在发现候选里
+    ephemeral_grace_seconds: int = Field(
+        default=7200, alias="SERVICE_MANAGER_EPHEMERAL_GRACE_SECONDS"
+    )
     url_interval: int = Field(default=300, alias="SERVICE_MANAGER_URL_INTERVAL")
     tls_interval: int = Field(default=43200, alias="SERVICE_MANAGER_TLS_INTERVAL")
     release_interval: int = Field(default=21600, alias="SERVICE_MANAGER_RELEASE_INTERVAL")

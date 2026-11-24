@@ -124,6 +124,7 @@ CREATE TABLE IF NOT EXISTS docker_components (
     compose_files TEXT NOT NULL DEFAULT '[]',
     oneoff INTEGER NOT NULL DEFAULT 0,
     last_seen_at TEXT NOT NULL,
+    first_seen_at TEXT,
     scan_id INTEGER NOT NULL DEFAULT 0
 );
 
@@ -240,6 +241,8 @@ class Store:
                 conn.executescript(_SCHEMA)
                 # 归属字段退役：直接删列（语义已由标签承担，无需迁移数据）
                 self._drop_column(conn, "services", "ownership")
+                # 游离容器首见宽限期需要首见时间（追加列向后兼容，不升 schema 版本）
+                self._ensure_column(conn, "docker_components", "first_seen_at", "TEXT")
                 stored = self._get_state(conn, "schema_version")
                 if stored is None:
                     self._set_state(conn, "schema_version", str(SCHEMA_VERSION))
