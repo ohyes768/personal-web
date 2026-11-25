@@ -753,3 +753,27 @@ tasks:
       - "/home/ohyes768/skills/knowledge/rss-relay-publish:/opt/rss-relay-publish:ro"
     cron: "45 11 * * *"
     timeout: 300
+
+  # 抖音收藏采集（2026-11-25）：Playwright 采收藏列表 → MP4 → WAV → 写共享目录
+  # → 即时触发 douyin-processor 跑 FunASR（内部防重入，与 09:45/17:15 定时批次并发安全）。
+  # 镜像: cd /home/ohyes768/douyin-collector && docker build -t douyin-collector:latest .
+  # 浏览器内核用宿主 ~/.cache/ms-playwright（挂载只读，免镜像内重复下载）；
+  # cookie 在 config/cookie.yaml（挂载只读，600 权限，root 容器可读）。
+  # 06:00 / 18:00 采集，错开 processor 03:07 清理与 09:45/17:15 兜底批次。
+  - id: douyin-collect
+    name: 抖音收藏采集
+    description: 采集抖音收藏视频转 WAV 写共享目录并即时触发 FunASR 转写（06:00 / 18:00）
+    targets: []
+    engine: docker
+    image: douyin-collector:latest
+    command: python main.py
+    cwd: /app
+    network: nginx_nginx-bridge  # 触发 https://stock.duomi77.cn:9443（nginx 内网豁免）
+    volumes:
+      - "/home/ohyes768/douyin-collector/config:/app/config:ro"
+      - "/home/ohyes768/douyin-audio:/home/ohyes768/douyin-audio"
+      - "/home/ohyes768/douyin-collector/cache:/app/cache"
+      - "/home/ohyes768/douyin-collector/logs:/app/logs"
+      - "/home/ohyes768/.cache/ms-playwright:/ms-playwright:ro"
+    cron: "0 6,18 * * *"
+    timeout: 1800
