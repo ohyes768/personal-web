@@ -229,6 +229,29 @@ class Checker:
     # 批量执行（job runner）
     # ------------------------------------------------------------------
 
+    async def _run_releases_all(self, ctx: JobContext) -> dict[str, int]:
+        """对全部（或 target 指定）服务跑 release 检查。**不带锁**——
+        run_kind 与 docker 扫描联动（已在锁内）都调这里。"""
+        counts = {"succeeded": 0, "failed": 0, "skipped": 0}
+        for service_id in self._service_ids(None):
+            if ctx.cancelled.is_set():
+                counts["skipped"] += 1
+                continue
+            source = self.registry.get_release_source_for_service(service_id)
+            if source is None:
+                counts["skipped"] += 1
+                continue
+            try:
+                outcome = await self.run_releases(service_id)
+                if outcome.check_status == CheckStatus.SUCCESS:
+                    counts["succeeded"] += 1
+                else:
+                    counts["failed"] += 1
+            except Exception:  # noqa: BLE001
+                logger.exception("release check failed for %s", service_id)
+                counts["failed"] += 1
+        return counts
+
     async def run_kind(
         self, kind: RefreshKind, target_id: str | None, ctx: JobContext
     ) -> dict[str, int]:
@@ -240,6 +263,18 @@ class Checker:
                     counts["succeeded"] += 1
                 else:
                     counts["failed"] += 1
+                # 扫描完顺手跑一轮 release 检查：镜像变化（升级/换 tag）后
+                # 版本列要跟着变，不用等 6 小时定时，也不必手动再点一次。
+                # 注意：这里已在 _lock 内，必须走不带锁的 _run_releases_all，
+                # 不能递归调 run_kind（asyncio.Lock 不可重入，会死锁）。
+                if self.intervals.get("releases", 0) > 0:
+                    try:
+                        rel = await self._run_releases_all(ctx)
+                        counts["succeeded"] += rel["succeeded"]
+                        counts["failed"] += rel["failed"]
+                    except Exception:  # noqa: BLE001 - release 失败不影响扫描结果
+                        logger.exception("post-scan release check failed")
+                        counts["failed"] += 1
                 return counts
 
             services = self._service_ids(target_id)
@@ -272,23 +307,10 @@ class Checker:
                         logger.exception("tls check failed for %s", endpoint.id)
                         counts["failed"] += 1
             if kind in (RefreshKind.RELEASES, RefreshKind.ALL):
-                for service_id in services:
-                    if ctx.cancelled.is_set():
-                        counts["skipped"] += 1
-                        continue
-                    source = self.registry.get_release_source_for_service(service_id)
-                    if source is None:
-                        counts["skipped"] += 1
-                        continue
-                    try:
-                        outcome = await self.run_releases(service_id)
-                        if outcome.check_status == CheckStatus.SUCCESS:
-                            counts["succeeded"] += 1
-                        else:
-                            counts["failed"] += 1
-                    except Exception:  # noqa: BLE001
-                        logger.exception("release check failed for %s", service_id)
-                        counts["failed"] += 1
+                rel = await self._run_releases_all(ctx)
+                counts["succeeded"] += rel["succeeded"]
+                counts["failed"] += rel["failed"]
+                counts["skipped"] += rel["skipped"]
         return counts
 
     # ------------------------------------------------------------------
