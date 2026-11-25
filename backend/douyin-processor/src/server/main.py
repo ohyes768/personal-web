@@ -20,8 +20,8 @@ from src.server.endpoints import (
 from src.scheduler import jobs as scheduler_jobs
 from src.scheduler.manager import SchedulerManager
 from src.scheduler.routes import router as scheduler_router
-from src.processor.filesystem_client import FileSystemClient
-from src.processor.asr_client import AliyunASRClient
+
+from src.processor.local_funasr_client import LocalFunASRClient
 from src.processor.status_manager import StatusManager
 from src.processor.video_processor import VideoProcessor
 from src.utils import load_config, setup_logger
@@ -49,19 +49,20 @@ async def lifespan(app: FastAPI):
     app_config = config.get("app", {})
 
     # 初始化各组件
-    filesystem_config = app_config.get("filesystem", {})
-    filesystem_client = FileSystemClient(
-        base_url=filesystem_config.get("base_url", ""),
-        query_endpoint=filesystem_config.get("query_endpoint", "/api/videos/query"),
-        download_endpoint_template=filesystem_config.get("download_endpoint_template", "/api/videos/{id}/download"),
-        timeout=filesystem_config.get("timeout", 300),
-        cache_ttl=filesystem_config.get("cache_ttl", 30)
+    # 2026-11-25 v3：去掉 file-system-go，改为宿主共享目录（collector 直写 WAV）
+    from src.processor.local_audio_store import LocalAudioStore
+    audio_store = LocalAudioStore(
+        audio_dir=app_config.get("audio_store", {}).get("dir", "/app/audio"),
     )
 
+    # 2026-11-25：ASR 切换到本机 FunASR 容器（SenseVoiceSmall），
+    # 阿里云百炼 dashscope 客户端已移除（asr_client.py 已删）
+    from src.processor.local_funasr_client import LocalFunASRClient
     asr_config = app_config.get("asr", {})
-    asr_client = AliyunASRClient(
-        api_key=os.getenv(asr_config.get("access_key", ""), ""),
-        model=asr_config.get("model", "fun-asr")
+    asr_client = LocalFunASRClient(
+        base_url=asr_config.get("base_url", "http://funasr-asr:8000"),
+        filesystem_client=audio_store,
+        timeout=asr_config.get("timeout", 600),
     )
 
     files_config = app_config.get("files", {})
@@ -70,7 +71,7 @@ async def lifespan(app: FastAPI):
     )
 
     video_processor = VideoProcessor(
-        filesystem_client=filesystem_client,
+        filesystem_client=audio_store,
         asr_client=asr_client,
         status_manager=status_manager,
         output_dir=files_config.get("output_dir", "data/output")

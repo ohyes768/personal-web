@@ -140,11 +140,13 @@ services:
       - douyin-data:/app/data
       - douyin-logs:/app/logs
       - ./backend/douyin-processor/config:/app/config:ro  # file-system-go 地址可热改，无需 rebuild
+      - /home/ohyes768/douyin-audio:/app/audio  # v3: 共享音频目录（collector 直写 WAV，本容器读取）
     environment:
-      - ALIYUN_ACCESS_KEY=${DOUYIN_ALIYUN_ACCESS_KEY:-}
+      # 2026-11-25：ASR 已切本机 FunASR 容器，不再需要 DOUYIN_ALIYUN_ACCESS_KEY
       - DOUYIN_RSS_TOKEN=${DOUYIN_RSS_TOKEN:-}
     networks:
       - app-net
+      - funasr-net  # 直连本机 FunASR 容器（local-funasr ASR provider）
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8093/health"]
       interval: 30s
@@ -731,6 +733,9 @@ services:
 networks:
   app-net:
     name: nginx_nginx-bridge
+    external: true
+  funasr-net:
+    name: funasr-asr_default
     external: true
   # service-manager 专用：只有 socket-proxy 与后端接入，internal 不允许出网
   sm-docker-net:

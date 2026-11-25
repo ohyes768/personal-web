@@ -463,7 +463,7 @@ async def get_videos(
                 "aweme_id": aweme_id,
                 "status": video_status,
                 "is_read": video_is_read,
-                "audio_url": video.url,
+                "audio_url": "",  # v3: 本地共享目录方案，前端不播放音频
                 "status_data": status_data
             })
 
@@ -640,7 +640,7 @@ async def get_video_detail(aweme_id: str):
         audio_url = ""
         for video in videos:
             if video.aweme_id == aweme_id:
-                audio_url = video.url
+                audio_url = ""  # v3: 本地路径，不再暴露
                 break
 
         # 默认值

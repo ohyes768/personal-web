@@ -8,8 +8,8 @@ from pathlib import Path
 from loguru import logger
 
 from src.models import TranscriptResult, ProcessResult
-from src.processor.filesystem_client import FileSystemClient
-from src.processor.asr_client import AliyunASRClient
+from src.processor.local_audio_store import LocalAudioStore
+from src.processor.local_funasr_client import LocalFunASRClient
 from src.processor.status_manager import StatusManager
 from src.utils import save_json
 
@@ -19,15 +19,15 @@ class VideoProcessor:
 
     def __init__(
         self,
-        filesystem_client: FileSystemClient,
-        asr_client: AliyunASRClient,
+        filesystem_client: LocalAudioStore,
+        asr_client: LocalFunASRClient,
         status_manager: StatusManager,
         output_dir: str = "data/output"
     ):
         """初始化音频处理器
 
         Args:
-            filesystem_client: file-system-go 客户端
+            filesystem_client: 本地共享目录音频存储
             asr_client: ASR 客户端
             status_manager: 状态管理器
             output_dir: 输出目录

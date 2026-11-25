@@ -4,23 +4,23 @@ app:
     host: "0.0.0.0"
     port: 8093
 
-  # file-system-go 配置（v2.0：5 个文件 CRUD 端点）
-  filesystem:
-    base_url: "https://stock.duomi77.cn:1443"
-    query_endpoint: "/api/files/query"
-    timeout: 30
-    cache_ttl: 30  # 视频列表缓存有效期（秒）
+  # 共享音频目录（v3: 2026-11-25 去掉 file-system-go，collector 直写宿主目录，
+  # 容器挂载为 /app/audio；LocalAudioStore 扫描/读取/删除都在这个目录）
+  audio_store:
+    dir: "/app/audio"
 
   # 文件配置
   files:
     output_dir: "data/output"
     status_file: "data/status.json"
 
-  # ASR配置
+  # ASR配置（本机 FunASR 容器，SenseVoiceSmall）
+  # 注：2026-11-25 从阿里云百炼 dashscope 切换过来，本地推理免费；
+  # SenseVoice 只输出纯文本，无分段时间戳/置信度（单段全文）
   asr:
-    provider: "aliyun"
-    model: "fun-asr"
-    access_key: "ALIYUN_ACCESS_KEY"
+    provider: "local-funasr"
+    base_url: "http://funasr-asr:8000"   # 容器网络地址（douyin-backend 已接入 funasr-asr_default 网络）
+    timeout: 600                          # CPU 推理超时（长音频放宽）
 
   # 日志配置
   logging:

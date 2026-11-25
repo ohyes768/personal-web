@@ -507,10 +507,12 @@ function ServiceList() {
                       // 有仓库：当前 → 最新（落后标黄）；没仓库：只显示镜像识别到的版本
                       const current = info?.current_version ?? item.status.image_version;
                       if (!current && !info) return <span className="muted small">-</span>;
+                      // 镜像 label 与 GitHub tag 的 v 前缀习惯不同（6.18.0 vs v6.18.0），比较前归一化
+                      const norm = (v: string) => v.replace(/^v/i, "");
                       const behind =
                         info?.latest_version != null &&
                         info.current_version != null &&
-                        info.current_version !== info.latest_version;
+                        norm(info.current_version) !== norm(info.latest_version);
                       return (
                         <span
                           className="mono small"
