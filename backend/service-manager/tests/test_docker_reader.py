@@ -234,7 +234,7 @@ def test_version_falls_back_to_semverish_image_tag() -> None:
 
 
 def test_non_version_tags_are_ignored() -> None:
-    # valkey:9 的主版本号 "9" 也算版本（上一行除外，见下）
+    # nginx 在基础设施名单里，tag 兜底整体关闭；valkey:9 同理（infra 排除）
     assert project_container(container_payload(image="nginx:alpine"))["image_version"] == ""
     assert (
         project_container(container_payload(image="songloft/songloft:tmp-full-amd64"))[
@@ -242,7 +242,7 @@ def test_non_version_tags_are_ignored() -> None:
         ]
         == ""
     )
-    assert project_container(container_payload(image="valkey:9@sha256:5463"))["image_version"] == "9"
+    assert project_container(container_payload(image="valkey:9@sha256:5463"))["image_version"] == ""
 
 
 def test_v_prefixed_tag_and_label_priority() -> None:
@@ -251,3 +251,22 @@ def test_v_prefixed_tag_and_label_priority() -> None:
     payload["Config"]["Labels"]["org.opencontainers.image.version"] = "9.9.9"
     # label 优先于 tag
     assert project_container(payload)["image_version"] == "9.9.9"
+
+
+def test_infra_images_do_not_provide_version() -> None:
+    """基础设施镜像的版本 tag 不代表业务服务版本，不识别。"""
+    assert (
+        project_container(
+            container_payload(image="tecnativa/docker-socket-proxy:0.2.0")
+        )["image_version"]
+        == ""
+    )
+    assert project_container(container_payload(image="postgres:14"))["image_version"] == ""
+    assert project_container(container_payload(image="valkey:9"))["image_version"] == ""
+
+
+def test_infra_label_still_wins_if_present() -> None:
+    """基础设施排除只作用于 tag 兜底；镜像真打了 OCI label 照样识别。"""
+    payload = container_payload(image="postgres:14")
+    payload["Config"]["Labels"]["org.opencontainers.image.version"] = "14.4-rc1"
+    assert project_container(payload)["image_version"] == "14.4-rc1"

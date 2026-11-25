@@ -274,13 +274,28 @@ def image_version(labels: dict[str, str]) -> str:
 
 _SEMVERISH_TAG_RE = re.compile(r"^v?\d+([.\-+][A-Za-z0-9.]+)*$")
 
+# 基础设施镜像：tag 里的数字（postgres:14、valkey:9、socket-proxy:0.2.0）只是
+# 组件自身的版本，不代表业务服务的版本，不参与「当前版本」识别。
+_INFRA_IMAGE_RE = re.compile(
+    r"(?:^|/)(?:"
+    "postgres|redis|valkey|mariadb|mysql|mongo|memcached|"
+    "curlimages/curl|alpine|debian|ubuntu|busybox|nginx|"
+    "docker-socket-proxy|buildkit|moby/buildkit|"
+    "rabbitmq|kafka|zookeeper|etcd|minio"
+    r")(?::|@|$)",
+    re.IGNORECASE,
+)
+
 
 def version_from_image_ref(image_ref: str) -> str:
     """镜像 tag 长得像版本号时当版本用（如 `:2.8.2`、`v2.5.6`）。
 
-    latest / alpine / tmp-full-amd64 这类非版本 tag 一律不认。
+    latest / alpine / tmp-full-amd64 这类非版本 tag 一律不认；
+    基础设施镜像（数据库 / 代理 / 工具镜像）即使 tag 是版本号也不认。
     """
     ref = image_ref.split("@", 1)[0]
+    if _INFRA_IMAGE_RE.search(ref):
+        return ""
     tag = ref.rsplit("/", 1)[-1].rsplit(":", 1)[-1] if ":" in ref.rsplit("/", 1)[-1] else ""
     if tag and _SEMVERISH_TAG_RE.match(tag):
         return tag[:120]
