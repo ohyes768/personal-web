@@ -324,8 +324,9 @@ def delete_port_note(
 # ---- GitHub 仓库 ------------------------------------------------------------
 
 
-@router.put(
+@router.api_route(
     "/services/{service_id}/release-source",
+    methods=["PUT", "POST"],  # POST 兼容旧前端缓存（upsert 语义已统一为 PUT）
     response_model=ReleaseSourceRecord,
 )
 def set_release_source(
