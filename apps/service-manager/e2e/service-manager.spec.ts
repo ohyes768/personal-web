@@ -128,6 +128,7 @@ test("标签可维护：弹窗里勾选已有标签 + 新建一个，保存后�
 });
 
 test("标签可筛选：多选是 AND，可一键清除", async ({ page }) => {
+  await openApp(page);
   const stamp = Date.now();
   // 两条都带 e2e-a，只有一条带 e2e-b：AND 语义能自证，不依赖词表里已有什么
   const both = `e2e-筛选-双-${stamp}`;
@@ -176,6 +177,7 @@ test("分类字段已退役：界面上没有分类入口", async ({ page }) => 
 });
 
 test("资源总览只剩端口视图（域名与证书已下线）", async ({ page }) => {
+  await openApp(page);
   await page.getByRole("link", { name: "资源总览" }).click();
   await expect(page.getByText(/不能据此证明端口空闲/)).toBeVisible();
   await expect(page.getByRole("tab")).toHaveCount(0);
@@ -256,6 +258,7 @@ test("证书列存在且存量 https 入口显示有效", async ({ page }) => {
 });
 
 test("容器管理页展示候选表格（或明确的不可用提示）", async ({ page }) => {
+  await openApp(page);
   await page.getByRole("link", { name: "容器管理" }).click();
   await expect(page.getByRole("heading", { name: "容器管理" })).toBeVisible();
   // 三种正常终态：有候选表格 / 无匹配候选 / Docker 不可用（后端未配 DOCKER_HOST 时）
