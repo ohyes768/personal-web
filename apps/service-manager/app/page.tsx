@@ -306,7 +306,7 @@ function ServiceList() {
           <Link
             className="kpi"
             href="/discovery?bound=unbound"
-            title={`发现但没关联到任何业务服务的容器：${summary.unregistered_components} 个，其中 ${summary.ignored_components} 个已标记忽略，实际待处理 ${summary.unregistered_components - summary.ignored_components} 个。点击查看`}
+            title={`发现但没关联到任何业务服务、且未标记忽略的容器：${summary.unregistered_components - summary.ignored_components} 个（另有 ${summary.ignored_components} 个已忽略）。点击查看`}
           >
             <div
               className="num"
@@ -317,17 +317,9 @@ function ServiceList() {
                     : undefined,
               }}
             >
-              {summary.unregistered_components}
+              {summary.unregistered_components - summary.ignored_components}
             </div>
-            <div className="lbl">未入账</div>
-          </Link>
-          <Link
-            className="kpi"
-            href="/discovery?bound=unbound&ignored=ignored"
-            title={`未入账中已标记忽略的容器：${summary.ignored_components} 个（有意不入账）。点击查看`}
-          >
-            <div className="num">{summary.ignored_components}</div>
-            <div className="lbl">已忽略</div>
+            <div className="lbl">未入账 · 不含已忽略</div>
           </Link>
           <div className="kpi">
             <div className="num small" style={{ fontSize: 13 }}>
