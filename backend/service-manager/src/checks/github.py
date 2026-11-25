@@ -375,7 +375,7 @@ class ReleaseStore:
 
         以 latest_release_id 优先，取不到时退回缓存里第一条（同步时按新→旧存）。
         """
-        state = self.sync_state(owner, repo)
+        state = self.sync_state(owner, repo) or {}
         latest_id = state.get("latest_release_id")
         cached = self.cached(owner, repo)
         if not cached:

@@ -306,3 +306,16 @@ def test_token_sent_when_configured() -> None:
 
     run(make_client(handler, token="tkn").sync_repo(parse_repo("o/r"), etag=None))
     assert seen.get("authorization") == "Bearer tkn"
+
+
+def test_latest_tag_without_sync_state_is_none(store) -> None:
+    """只有 release 缓存、还没有 release_sync 行时不炸（保存后立刻读列表的窗口）。"""
+    releases = ReleaseStore(store)
+    with store.transaction() as conn:
+        conn.execute(
+            "INSERT INTO releases(owner, repo, release_id, tag, name, published_at,"
+            " updated_at, body, html_url, prerelease) VALUES (?,?,?,?,?,?,?,?,?,0)",
+            ("a", "repo", 1, "v1", "n", "2026-01-01", None, "", "u"),
+        )
+    assert releases.latest_tag("a", "repo") == "v1"
+    assert releases.latest_tag("x", "y") is None
