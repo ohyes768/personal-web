@@ -265,8 +265,15 @@ def test_infra_images_do_not_provide_version() -> None:
     assert project_container(container_payload(image="valkey:9"))["image_version"] == ""
 
 
-def test_infra_label_still_wins_if_present() -> None:
-    """基础设施排除只作用于 tag 兜底；镜像真打了 OCI label 照样识别。"""
-    payload = container_payload(image="postgres:14")
-    payload["Config"]["Labels"]["org.opencontainers.image.version"] = "14.4-rc1"
-    assert project_container(payload)["image_version"] == "14.4-rc1"
+def test_noninfra_label_still_wins_over_tag() -> None:
+    """非基础设施镜像：label 优先于 tag 兜底（业务镜像不受排除影响）。"""
+    payload = container_payload(image="myapp/app:v1.2.3")
+    payload["Config"]["Labels"]["org.opencontainers.image.version"] = "9.9.9"
+    assert project_container(payload)["image_version"] == "9.9.9"
+
+
+def test_infra_image_label_is_excluded_too() -> None:
+    """socket-proxy 镜像自带 OCI version label，同样不算业务服务版本。"""
+    payload = container_payload(image="tecnativa/docker-socket-proxy:0.2.0")
+    payload["Config"]["Labels"]["org.opencontainers.image.version"] = "0.2.0"
+    assert project_container(payload)["image_version"] == ""

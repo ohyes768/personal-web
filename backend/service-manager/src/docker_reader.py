@@ -327,7 +327,10 @@ def project_container(payload: dict[str, Any]) -> dict[str, Any]:
     working_dir, compose_files = project_compose_files(labels=labels)
     image_ref = str(config.get("Image") or "")
     image_id = str(payload.get("Image") or "")
-    version = image_version(labels) or version_from_image_ref(image_ref)
+    # 基础设施镜像整体不识别版本：label 与 tag 一样只是组件自身版本
+    # （socket-proxy 镜像自带 org.opencontainers.image.version=0.2.0）。
+    infra = _INFRA_IMAGE_RE.search(image_ref.split("@", 1)[0]) is not None
+    version = "" if infra else (image_version(labels) or version_from_image_ref(image_ref))
     ports_payload = (payload.get("NetworkSettings") or {}).get("Ports") or {}
     return {
         "source_key": source_key,
