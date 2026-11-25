@@ -50,6 +50,8 @@ export interface ServiceStatus {
   runtime: RuntimeState;
   health: HealthState;
   release_info: ReleaseInfoView | null;
+  /** 与仓库无关的当前版本：镜像版本 label 或长得像版本号的镜像 tag */
+  image_version: string | null;
 }
 
 export interface ComposeFileView {

@@ -272,6 +272,21 @@ def image_version(labels: dict[str, str]) -> str:
     return ""
 
 
+_SEMVERISH_TAG_RE = re.compile(r"^v?\d+([.\-+][A-Za-z0-9.]+)*$")
+
+
+def version_from_image_ref(image_ref: str) -> str:
+    """镜像 tag 长得像版本号时当版本用（如 `:2.8.2`、`v2.5.6`）。
+
+    latest / alpine / tmp-full-amd64 这类非版本 tag 一律不认。
+    """
+    ref = image_ref.split("@", 1)[0]
+    tag = ref.rsplit("/", 1)[-1].rsplit(":", 1)[-1] if ":" in ref.rsplit("/", 1)[-1] else ""
+    if tag and _SEMVERISH_TAG_RE.match(tag):
+        return tag[:120]
+    return ""
+
+
 def project_container(payload: dict[str, Any]) -> dict[str, Any]:
     """把一份 inspect（或 list 合成体）投影到白名单字段。
 
@@ -297,6 +312,7 @@ def project_container(payload: dict[str, Any]) -> dict[str, Any]:
     working_dir, compose_files = project_compose_files(labels=labels)
     image_ref = str(config.get("Image") or "")
     image_id = str(payload.get("Image") or "")
+    version = image_version(labels) or version_from_image_ref(image_ref)
     ports_payload = (payload.get("NetworkSettings") or {}).get("Ports") or {}
     return {
         "source_key": source_key,
@@ -306,7 +322,7 @@ def project_container(payload: dict[str, Any]) -> dict[str, Any]:
         "container_name": name,
         "image_ref": image_ref,
         "image_id": image_id if _HEX_ID_RE.match(image_id or "") else "",
-        "image_version": image_version(labels),
+        "image_version": version,
         "state": state or "unknown",
         "health": project_health(state_block).value,
         "network_mode": network_mode,

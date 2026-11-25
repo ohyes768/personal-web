@@ -225,3 +225,29 @@ def test_project_container_image_version_falls_back_to_revision() -> None:
 def test_project_container_image_version_absent_is_empty() -> None:
     projected = project_container(container_payload())
     assert projected["image_version"] == ""
+
+
+def test_version_falls_back_to_semverish_image_tag() -> None:
+    """没打 OCI label 时，版本号形态的镜像 tag 兜底（如 music-assistant:2.8.2）。"""
+    projected = project_container(container_payload(image="ghcr.io/music-assistant/server:2.8.2"))
+    assert projected["image_version"] == "2.8.2"
+
+
+def test_non_version_tags_are_ignored() -> None:
+    # valkey:9 的主版本号 "9" 也算版本（上一行除外，见下）
+    assert project_container(container_payload(image="nginx:alpine"))["image_version"] == ""
+    assert (
+        project_container(container_payload(image="songloft/songloft:tmp-full-amd64"))[
+            "image_version"
+        ]
+        == ""
+    )
+    assert project_container(container_payload(image="valkey:9@sha256:5463"))["image_version"] == "9"
+
+
+def test_v_prefixed_tag_and_label_priority() -> None:
+    assert project_container(container_payload(image="x/y:v2.5.6"))["image_version"] == "v2.5.6"
+    payload = container_payload(image="x/y:v2.5.6")
+    payload["Config"]["Labels"]["org.opencontainers.image.version"] = "9.9.9"
+    # label 优先于 tag
+    assert project_container(payload)["image_version"] == "9.9.9"

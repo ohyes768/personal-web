@@ -502,33 +502,34 @@ function ServiceList() {
                     )}
                   </td>
                   <td>
-                    {item.status.release_info ? (
-                      (() => {
-                        const info = item.status.release_info;
-                        const behind =
-                          info.latest_version !== null &&
-                          info.current_version !== null &&
-                          info.current_version !== info.latest_version;
-                        return (
-                          <span
-                            className="mono small"
-                            style={behind ? { color: "var(--warn)" } : undefined}
-                            title={
-                              behind
-                                ? `当前 ${info.current_version ?? "未知"}，源码仓库已发布 ${info.latest_version}`
-                                : `当前 ${info.current_version ?? "未知"}${
+                    {(() => {
+                      const info = item.status.release_info;
+                      // 有仓库：当前 → 最新（落后标黄）；没仓库：只显示镜像识别到的版本
+                      const current = info?.current_version ?? item.status.image_version;
+                      if (!current && !info) return <span className="muted small">-</span>;
+                      const behind =
+                        info?.latest_version != null &&
+                        info.current_version != null &&
+                        info.current_version !== info.latest_version;
+                      return (
+                        <span
+                          className="mono small"
+                          style={behind ? { color: "var(--warn)" } : undefined}
+                          title={
+                            behind
+                              ? `当前 ${info.current_version}，源码仓库已发布 ${info.latest_version}`
+                              : info
+                                ? `当前 ${current ?? "未知"}${
                                     info.latest_version ? `，已是最新 ${info.latest_version}` : "（最新版本还没同步到）"
                                   }`
-                            }
-                          >
-                            {info.current_version ?? "—"}
-                            {info.latest_version ? ` → ${info.latest_version}` : ""}
-                          </span>
-                        );
-                      })()
-                    ) : (
-                      <span className="muted small">-</span>
-                    )}
+                                : `当前 ${current}（识别自镜像，未跟踪源码仓库）`
+                          }
+                        >
+                          {current ?? "—"}
+                          {info?.latest_version ? ` → ${info.latest_version}` : ""}
+                        </span>
+                      );
+                    })()}
                   </td>
                   <td>
                     <div className="row-actions">

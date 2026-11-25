@@ -235,6 +235,7 @@ class StatusProjector:
             release_state = ReleaseState.NO_UNREAD
 
         release_info: ReleaseInfoView | None = None
+        image_version: str | None = None
         if release_source is not None:
             # 当前版本取值链：手填 installed_tag_note → 绑定组件镜像 OCI 版本 label
             current_version = release_source.installed_tag_note.strip() or None
@@ -255,6 +256,12 @@ class StatusProjector:
                 current_version=current_version,
                 latest_version=latest_version,
             )
+        else:
+            # 没配源码仓库也把镜像识别到的版本亮出来（版本列不再依赖仓库配置）
+            for item in views:
+                if item.present and item.image_version:
+                    image_version = item.image_version
+                    break
 
         primary_url = None
         for endpoint in endpoints:
@@ -274,6 +281,7 @@ class StatusProjector:
             tls_check=tls_check,
             release_check=release_check,
             release_info=release_info,
+            image_version=image_version,
             unread_releases=unread,
             primary_url=primary_url,
             component_states={item.source_key: item.state for item in views},

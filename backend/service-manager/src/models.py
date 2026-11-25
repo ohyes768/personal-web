@@ -377,6 +377,8 @@ class ServiceStatus(BaseModel):
     tls_check: CheckView | None = None
     release_check: CheckView | None = None
     release_info: ReleaseInfoView | None = None
+    # 与仓库无关的当前版本：镜像 OCI 版本 label，或长得像版本号的镜像 tag
+    image_version: str | None = None
     unread_releases: int = 0
     primary_url: str | None = None
     component_states: dict[str, str] = Field(default_factory=dict)
