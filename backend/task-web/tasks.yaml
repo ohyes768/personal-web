@@ -277,7 +277,11 @@ tasks:
     targets: [dingtalk]
     engine: docker
     image: stock-info:latest
-    command: python csi300_brief/brief.py --push --insecure --only-today --env-file /app/csi300_brief/.env
+    # base-url 走内网直连 index-trends 后端：nginx 全域 basic auth（7508d09f,
+    # 2026-11-17）会把这个无凭据请求打成 401；需 stock-server 已接入
+    # nginx_nginx-bridge 网络（docker network connect，容器重启后仍保留）
+    command: python csi300_brief/brief.py --push --insecure --only-today --env-file /app/csi300_brief/.env --base-url http://index-trends-backend:8100/api
+    network: nginx_nginx-bridge
     cwd: /app
     env:
       DINGTALK_PUSH_SKILL_DIR: /opt/dingtalk-push
