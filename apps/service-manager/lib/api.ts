@@ -278,14 +278,14 @@ export const api = {
   // 入口
   deleteReleaseSource: (serviceId: string) =>
     request<{ ok: boolean }>(`/services/${serviceId}/release-source`, { method: "DELETE" }),
-  /** 登记 / 更新源码仓库（owner/repo + 手填的当前版本备注）。 */
+  /** 登记 / 更新源码仓库（owner/repo + 手填的当前版本备注）。后端为 upsert 语义，用 PUT。 */
   setReleaseSource: (
     serviceId: string,
     body: { owner: string; repo: string; installed_tag_note: string },
   ) =>
     request<{ id: string; owner: string; repo: string; installed_tag_note: string }>(
       `/services/${serviceId}/release-source`,
-      { method: "POST", body: JSON.stringify(body) },
+      { method: "PUT", body: JSON.stringify(body) },
     ),
   discovery: (params: {
     project?: string;
