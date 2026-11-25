@@ -145,7 +145,9 @@ class GithubClient:
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(self.timeout),
             transport=self.transport,
-            follow_redirects=False,
+            # 仓库改名/转手（如 music-assistant）后 api.github.com 的
+            # 旧名 URL 会 301 到新名；跟随重定向，否则旧名直接报错。
+            follow_redirects=True,
         ) as client:
             url: str | None = f"{API_ROOT}/repos/{repo.owner}/{repo.repo}/releases?per_page={PER_PAGE}"
             first = True
