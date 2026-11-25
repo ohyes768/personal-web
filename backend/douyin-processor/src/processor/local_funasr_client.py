@@ -34,7 +34,7 @@ class LocalFunASRClient:
 
         Args:
             base_url: FunASR 服务地址（容器网络内）
-            filesystem_client: FileSystemClient 实例，用于下载音频到临时文件
+            audio_store: LocalAudioStore 实例，用于从共享目录取音频
             timeout: ASR 请求超时（CPU 推理较慢，长音频需要宽松超时）
         """
         self.base_url = base_url.rstrip("/")
@@ -57,8 +57,8 @@ class LocalFunASRClient:
 
         Args:
             audio_file: 本地文件路径（未使用，兼容旧接口签名）
-            file_url: 音频文件的公网 URL（用于提取 aweme_id 并经
-                      FileSystemClient 从 file-system-go 下载）
+            file_url: 音频 URL（用于提取 aweme_id，经
+                      LocalAudioStore 从共享目录取音频）
             format: 音频格式
 
         Returns:
