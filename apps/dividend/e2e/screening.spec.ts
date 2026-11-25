@@ -348,24 +348,24 @@ test('quality queue shows running and queued stocks, keeps others actionable, an
   await setup(page, false, undefined, quality);
   await page.goto('/?tab=screening');
   await expect(page.getByRole('button', { name: '符合条件 3' })).toBeVisible();
-  const queue = page.getByLabel('评级任务队列');
+  const queue = page.getByLabel('任务队列');
   // 默认只有紧凑入口，点击后才展示任务列表
   await expect(queue).toHaveCount(0);
-  await page.getByRole('button', { name: /评级队列/ }).click();
+  await page.getByRole('button', { name: /任务队列/ }).click();
   await expect(queue).toBeVisible();
   await expect(queue.getByText('暂无进行中的任务')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(queue).toHaveCount(0);
   // 提交一只股票，mock 随后返回 running：空态切换为带实时计时的运行行
   await page.getByRole('button', { name: '分析', exact: true }).first().click();
-  await page.getByRole('button', { name: /评级队列/ }).click();
+  await page.getByRole('button', { name: /任务队列/ }).click();
   quality.perCode['000001'] = perCodeItem('running', { started_at: startedAt, queued_at: startedAt });
   await expect(queue.getByText(/已分析 2分\d+秒/)).toBeVisible({ timeout: 10_000 });
   await expect(queue.getByText('暂无进行中的任务')).toHaveCount(0);
   // 追加 000002：同一任务排队；面板显示运行+排队计数
   quality.perCode['000002'] = perCodeItem('queued', { queued_at: new Date().toISOString(), name: '排队公司' });
   await expect(queue.getByText(/运行 1 · 排队 1/)).toBeVisible({ timeout: 10_000 });
-  await expect(queue.getByRole('heading', { name: '排队中' })).toBeVisible();
+  await expect(queue.getByText('评级·排队')).toBeVisible();
   // 运行中/排队中股票行内显示状态文本而非按钮，空闲股票 000003 仍可点击
   await expect(page.getByRole('button', { name: '重评', exact: true })).toHaveCount(0);
   // 000001 评级中、000002 排队中都是状态文本；只有空闲的 000003 还有按钮且可点
@@ -378,8 +378,8 @@ test('quality queue shows running and queued stocks, keeps others actionable, an
   expect(secondElapsed).not.toEqual(firstElapsed);
   await page.keyboard.press('Escape');
   await expect(queue).toHaveCount(0);
-  await expect(page.getByRole('button', { name: /评级队列.*运行 1.*排队 1/ })).toBeVisible();
-  await page.getByRole('button', { name: /评级队列/ }).click();
+  await expect(page.getByRole('button', { name: /任务队列.*运行 1.*排队 1/ })).toBeVisible();
+  await page.getByRole('button', { name: /任务队列/ }).click();
   await expect(queue.getByText(/已分析 2分\d+秒/)).toBeVisible();
 });
 
@@ -394,9 +394,9 @@ test('quality queue recovers after reload and offers retry for failed stock', as
   };
   await setup(page, false, undefined, quality);
   await page.goto('/?tab=screening');
-  const queue = page.getByLabel('评级任务队列');
+  const queue = page.getByLabel('任务队列');
   // 刷新恢复：mount 发现 running 任务恢复轮询，面板展示失败与排队项
-  await page.getByRole('button', { name: /评级队列/ }).click();
+  await page.getByRole('button', { name: /任务队列/ }).click();
   await expect(queue).toBeVisible({ timeout: 10_000 });
   await expect(queue.getByText(/失败/)).toHaveCount(0);
   await expect(queue.getByRole('button', { name: '重试', exact: true })).toHaveCount(0);
@@ -455,8 +455,8 @@ test('temporary quality query errors keep state and recover automatically', asyn
   await setup(page, false, undefined, quality);
   await page.goto('/?tab=screening');
   await page.getByRole('button', { name: '分析', exact: true }).first().click();
-  const queue = page.getByLabel('评级任务队列');
-  await page.getByRole('button', { name: /评级队列/ }).click();
+  const queue = page.getByLabel('任务队列');
+  await page.getByRole('button', { name: /任务队列/ }).click();
   await expect(queue).toBeVisible();
   // 查询开始失败：状态保留并提示自动重试
   quality.failQuery!.value = true;
@@ -481,9 +481,9 @@ test('quality queue orders waiting rows from the server and cancels them', async
   await setup(page, false, undefined, quality);
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto('/?tab=screening');
-  const queue = page.getByLabel('评级任务队列');
-  await page.getByRole('button', { name: /评级队列/ }).click();
-  await expect(queue.getByRole('heading', { name: '正在分析' })).toBeVisible();
+  const queue = page.getByLabel('任务队列');
+  await page.getByRole('button', { name: /任务队列/ }).click();
+  await expect(queue.getByText('评级·正在分析')).toBeVisible();
   await expect(queue.getByText(/失败/)).toHaveCount(0);
   await expect(queue.getByText(/进度/)).toHaveCount(0);
   const waiting = queue.getByRole('list').nth(1);
@@ -504,8 +504,8 @@ test('quality queue orders waiting rows from the server and cancels them', async
   await expect(queue.getByText('空闲公司')).toHaveCount(0);
   await expect(page.getByRole('button', { name: '分析', exact: true })).toBeEnabled();
   await page.reload();
-  await page.getByRole('button', { name: /评级队列/ }).click();
-  await expect(page.getByLabel('评级任务队列').getByRole('listitem').filter({ hasText: '排队公司' })).toBeVisible();
+  await page.getByRole('button', { name: /任务队列/ }).click();
+  await expect(page.getByLabel('任务队列').getByRole('listitem').filter({ hasText: '排队公司' })).toBeVisible();
 });
 
 test('running cancel stays visible until the server removes it and reports request failures', async ({ page }) => {
@@ -521,8 +521,8 @@ test('running cancel stays visible until the server removes it and reports reque
   };
   await setup(page, false, undefined, quality);
   await page.goto('/?tab=screening');
-  const queue = page.getByLabel('评级任务队列');
-  await page.getByRole('button', { name: /评级队列/ }).click();
+  const queue = page.getByLabel('任务队列');
+  await page.getByRole('button', { name: /任务队列/ }).click();
   const cancel = queue.getByRole('button', { name: '取消' });
   await cancel.click();
   await expect(queue.getByRole('button', { name: '取消中…' })).toBeDisabled();
@@ -537,16 +537,16 @@ test('running cancel stays visible until the server removes it and reports reque
   quality.queueStatus = 502;
   quality.perCode['000001'] = perCodeItem('running', { started_at: new Date(Date.now() - 10_000).toISOString(), item_id: 'run-1', name: '测试公司' });
   await page.reload();
-  await page.getByRole('button', { name: /评级队列/ }).click();
-  await page.getByLabel('评级任务队列').getByRole('button', { name: '取消' }).click();
-  await expect(page.getByLabel('评级任务队列').getByRole('alert')).toContainText('取消请求失败');
-  await expect(page.getByLabel('评级任务队列').getByText('测试公司')).toBeVisible();
+  await page.getByRole('button', { name: /任务队列/ }).click();
+  await page.getByLabel('任务队列').getByRole('button', { name: '取消' }).click();
+  await expect(page.getByLabel('任务队列').getByRole('alert')).toContainText('取消请求失败');
+  await expect(page.getByLabel('任务队列').getByText('测试公司')).toBeVisible();
 
   quality.queueStatus = undefined;
   quality.queueNetwork = true;
-  await page.getByLabel('评级任务队列').getByRole('button', { name: '取消' }).click();
-  await expect(page.getByLabel('评级任务队列').getByRole('alert')).toBeVisible();
-  await expect(page.getByLabel('评级任务队列').getByText('测试公司')).toBeVisible();
+  await page.getByLabel('任务队列').getByRole('button', { name: '取消' }).click();
+  await expect(page.getByLabel('任务队列').getByRole('alert')).toBeVisible();
+  await expect(page.getByLabel('任务队列').getByText('测试公司')).toBeVisible();
 });
 
 test('queue conflict refreshes to the server order', async ({ page }) => {
@@ -570,10 +570,10 @@ test('queue conflict refreshes to the server order', async ({ page }) => {
   };
   await setup(page, false, undefined, quality);
   await page.goto('/?tab=screening');
-  await page.getByRole('button', { name: /评级队列/ }).click();
-  const queue = page.getByLabel('评级任务队列');
+  await page.getByRole('button', { name: /任务队列/ }).click();
+  const queue = page.getByLabel('任务队列');
   await queue.getByRole('listitem').nth(1).getByRole('button', { name: '置顶' }).click();
   await expect(queue.getByRole('alert')).toContainText('无法调整排队顺序');
-  await expect(queue.getByRole('heading', { name: '正在分析' })).toBeVisible();
+  await expect(queue.getByText('评级·正在分析')).toBeVisible();
   await expect(queue.getByText('空闲公司')).toBeVisible();
 });

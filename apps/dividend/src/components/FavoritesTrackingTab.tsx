@@ -20,7 +20,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { dividendApi } from '@/lib/api';
 import { useQualityAnalysis } from '@/lib/hooks/useQualityAnalysis';
 import { useValuation } from '@/lib/hooks/useValuation';
-import { isQualityPending, QUALITY_DIMENSION_LABELS, QUALITY_DIMENSION_ORDER, type QualityDimensionKey, type QualityPerCodeStatus } from '@/lib/quality';
+import { buildQualityQueue, isQualityPending, QUALITY_DIMENSION_LABELS, QUALITY_DIMENSION_ORDER, type QualityDimensionKey, type QualityPerCodeStatus } from '@/lib/quality';
 import {
   VALUATION_EVAL_STATE_META,
   VALUATION_LEVEL_KEYS,
@@ -51,7 +51,7 @@ import {
 import type { AlertLevels, DividendStockWithTechnical, PriceItem } from '@/lib/types';
 import type { UseAlertsStatusResult } from '@/lib/hooks/useAlertsStatus';
 import type { UseWatchlistResult } from '@/lib/hooks/useWatchlist';
-import { QualityQueuePanel } from './QualityQueuePanel';
+import { TaskQueuePanel } from './TaskQueuePanel';
 import { QualitySkillVersion } from './QualitySkillVersion';
 import { SessionDownloadButton } from './SessionDownloadButton';
 import { ValuationApplyConfirm } from './ValuationApplyConfirm';
@@ -121,7 +121,8 @@ export function FavoritesTrackingTab({
 
   const { reports, perCode, configured, currentSkillVersion, job, message: valuationMessage, pollError,
           analyze, refresh: refreshValuation, cancelQueueItem, moveQueueItem } = useValuation();
-  const { qualityScores, qualityPerCode, qualityConfigured, currentSkillVersion: qualityVersion, analyze: analyzeQuality } = useQualityAnalysis();
+  const { qualityScores, qualityPerCode, qualityConfigured, currentSkillVersion: qualityVersion, analyze: analyzeQuality,
+          cancelQueueItem: cancelQualityQueueItem, moveQueueItem: moveQualityQueueItem } = useQualityAnalysis();
   const keyword = normalize(searchInput);
   const stockByCode = useMemo(() => {
     const map = new Map<string, DividendStockWithTechnical>();
@@ -231,6 +232,12 @@ export function FavoritesTrackingTab({
     ? { processed: job.processed, total: job.total }
     : null;
   const valuationQueueView = useMemo(() => buildValuationQueue(perCode), [perCode]);
+  const qualityQueueView = useMemo(() => buildQualityQueue(qualityPerCode), [qualityPerCode]);
+  /** 统一任务队列：估值 + 评级两节，行首徽章区分类型 */
+  const taskQueueSections = useMemo(() => ([
+    { label: '估值', view: valuationQueueView, onCancel: cancelQueueItem, onMove: moveQueueItem },
+    { label: '评级', view: qualityQueueView, onCancel: cancelQualityQueueItem, onMove: moveQualityQueueItem },
+  ]), [valuationQueueView, qualityQueueView, cancelQueueItem, moveQueueItem, cancelQualityQueueItem, moveQualityQueueItem]);
 
   return (
     <section aria-label="收藏跟踪" className="space-y-3">
@@ -267,7 +274,7 @@ export function FavoritesTrackingTab({
           {rows.length} 只收藏
           {pendingApplyCount > 0 && <span className="text-accent-deep font-medium"> · {pendingApplyCount} 份待确认</span>}
         </p>
-        <QualityQueuePanel view={valuationQueueView} onCancel={cancelQueueItem} onMove={moveQueueItem} label="估值" />
+        <TaskQueuePanel sections={taskQueueSections} />
         <ValuationReaderEntry sourceQuery={sourceQuery} variant="toolbar" />
         <input
           type="search"

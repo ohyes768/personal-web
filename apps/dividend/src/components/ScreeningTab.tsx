@@ -1,14 +1,16 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRealtimePrices } from '@/lib/hooks/useRealtimePrices';
 import { useQualityAnalysis } from '@/lib/hooks/useQualityAnalysis';
+import { useValuation } from '@/lib/hooks/useValuation';
 import { dividendApi } from '@/lib/api';
 import { buildQualityQueue, isQualityPending, QUALITY_DIMENSION_ORDER, QUALITY_DIMENSION_LABELS } from '@/lib/quality';
+import { buildValuationQueue } from '@/lib/valuation';
 import { DEFAULT_SCREENING, restoreScreeningConditions, SCREENING_STORAGE_KEY, type ScreeningConditions, type ScreeningItem, type ScreeningResponse, type ScreeningStatus } from '@/lib/screening';
 import type { UseWatchlistResult } from '@/lib/hooks/useWatchlist';
 import { QualityReportModal } from './QualityReportModal';
-import { QualityQueuePanel } from './QualityQueuePanel';
+import { TaskQueuePanel } from './TaskQueuePanel';
 import { QualityReaderEntry } from './QualityReaderEntry';
 import { ScreeningStockDetailModal } from './ScreeningStockDetailModal';
 import { SessionDownloadButton } from './SessionDownloadButton';
@@ -45,7 +47,14 @@ export function ScreeningTab({ watchlist, refreshRevision = 0, sourceQuery = 'ta
   const [qualityModalCode, setQualityModalCode] = useState<string | null>(null);
   const [detailItem, setDetailItem] = useState<ScreeningItem | null>(null);
   const { qualityScores, qualityPerCode, qualityConfigured, currentSkillVersion, qualityJob, qualityMessage, qualityPollError, analyze, cancelQueueItem, moveQueueItem } = useQualityAnalysis();
+  // 统一任务队列：本 tab 也会提交挡位估值（快捷「评估挡位」），估值队列状态一并接入
+  const { perCode: valuationPerCode, cancelQueueItem: cancelValuationQueueItem, moveQueueItem: moveValuationQueueItem } = useValuation();
   const queueView = buildQualityQueue(qualityPerCode);
+  const valuationQueueView = buildValuationQueue(valuationPerCode);
+  const taskQueueSections = useMemo(() => ([
+    { label: '评级', view: queueView, onCancel: cancelQueueItem, onMove: moveQueueItem },
+    { label: '估值', view: valuationQueueView, onCancel: cancelValuationQueueItem, onMove: moveValuationQueueItem },
+  ]), [queueView, valuationQueueView, cancelQueueItem, moveQueueItem, cancelValuationQueueItem, moveValuationQueueItem]);
   const pending = useCallback((code: string) => isQualityPending(qualityPerCode[code]), [qualityPerCode]);
   const requestId = useRef(0);
   const appliedConditions = useRef(DEFAULT_SCREENING);
@@ -134,7 +143,7 @@ export function ScreeningTab({ watchlist, refreshRevision = 0, sourceQuery = 'ta
     setQuickPending(true); setQuickNotice('');
     try {
       await dividendApi.analyzeValuation(codes);
-      setQuickNotice(`已提交 ${codes.length} 只挡位评估，前往收藏跟踪查看进度`);
+      setQuickNotice(`已提交 ${codes.length} 只挡位评估，可在任务队列查看进度`);
     } catch (err) {
       setQuickNotice(err instanceof Error ? `提交评估失败：${err.message}` : '提交评估失败，请重试');
     } finally { setQuickPending(false); }
@@ -189,7 +198,7 @@ export function ScreeningTab({ watchlist, refreshRevision = 0, sourceQuery = 'ta
         <button className={`${buttonClass} md:ml-auto`} disabled={saving || selected.size === 0} onClick={() => void save([...selected])}>收藏所选 ({selected.size})</button>
         <button className={buttonClass} disabled={saving || eligibleCodes.length === 0} onClick={() => void save(eligibleCodes)}>{saving ? '收藏中…' : '收藏全部符合条件'}</button>
         <div className="screening-quality-actions flex items-center gap-2">
-          <QualityQueuePanel view={queueView} onCancel={cancelQueueItem} onMove={moveQueueItem} />
+          <TaskQueuePanel sections={taskQueueSections} />
           <QualityReaderEntry sourceQuery={sourceQuery} />
         </div>
       </div>
