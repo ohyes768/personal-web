@@ -1,11 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 
 /**
- * 端到端：登录 → 手工建服务 → 加端口 → 搜索 → 导出 → 恢复预览 → 删除台账。
- * 依赖真实后端（SERVICE_MANAGER_E2E_PASSWORD 提供管理口令）。
+ * 端到端：手工建服务 → 加端口 → 搜索 → 导出 → 恢复预览 → 删除台账。
+ * 认证由 nginx basic auth 承担，本地 e2e 直连时无认证。
  */
-
-const PASSWORD = process.env.SM_E2E_PASSWORD || "devpass";
 
 /** 用例里通过接口造的条目：登记在这里，afterEach 无条件清掉。 */
 const createdServiceIds: string[] = [];
@@ -21,6 +19,14 @@ test.afterEach(async ({ page }) => {
 });
 
 /** 按表头名取列下标：列一多，写死下标就容易随改列而失效。 */
+/** 打开应用首页：原先在 login() 里顺带做的 goto，认证移除后显式化。 */
+async function openApp(page: Page) {
+  await page.goto("/services");
+  await expect(
+    page.getByRole("heading", { name: "服务", exact: true }),
+  ).toBeVisible();
+}
+
 async function columnIndex(page: Page, header: string): Promise<number> {
   return page.locator("thead th").evaluateAll(
     (cells, name) => cells.findIndex((cell) => cell.textContent?.trim() === name),
@@ -28,29 +34,8 @@ async function columnIndex(page: Page, header: string): Promise<number> {
   );
 }
 
-async function login(page: Page) {
-  await page.goto("/services");
-  // 会话检查是异步的：等「门禁表单」或「已登录内容」二者之一出现，再决定要不要登录。
-  // 不能用 isVisible() 立即判断——React 还没 hydrate 时它恒为 false，会跳过登录。
-  const gate = page.locator("#admin-password");
-  const content = page.getByRole("heading", { name: "服务", exact: true });
-  await expect(gate.or(content).first()).toBeVisible();
-  if (await gate.isVisible()) {
-    await gate.fill(PASSWORD);
-    await page.getByRole("button", { name: "登录" }).click();
-  }
-  await expect(content).toBeVisible();
-}
-
-test("登录门禁：未登录只显示登录表单", async ({ page }) => {
-  await page.context().clearCookies();
-  await page.goto("/services");
-  await expect(page.locator("#admin-password")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "服务", exact: true })).toHaveCount(0);
-});
-
 test("台账条目：搜索命中、弹窗改名称与用途、移除", async ({ page }) => {
-  await login(page);
+  await openApp(page);
   const name = `e2e-服务-${Date.now()}`;
 
   // 列表页不再有「新增服务」入口：台账条目从容器管理页导入（这里用接口代劳）
@@ -87,7 +72,6 @@ test("台账条目：搜索命中、弹窗改名称与用途、移除", async ({
 });
 
 test("归属字段已退役：列表平铺，没有分组 tab 也没有归属下拉", async ({ page }) => {
-  await login(page);
   await page.goto("/services");
   // 不再有「我维护的 / 别人的」两个分组 tab
   await expect(page.getByRole("tab")).toHaveCount(0);
@@ -108,7 +92,7 @@ test("归属字段已退役：列表平铺，没有分组 tab 也没有归属下
 });
 
 test("标签可维护：弹窗里勾选已有标签 + 新建一个，保存后列表行立即更新", async ({ page }) => {
-  await login(page);
+  await openApp(page);
   const name = `e2e-标签-${Date.now()}`;
   const created = await page.request.post("/api/services/services", {
     headers: { Origin: new URL(page.url()).origin },
@@ -144,7 +128,6 @@ test("标签可维护：弹窗里勾选已有标签 + 新建一个，保存后�
 });
 
 test("标签可筛选：多选是 AND，可一键清除", async ({ page }) => {
-  await login(page);
   const stamp = Date.now();
   // 两条都带 e2e-a，只有一条带 e2e-b：AND 语义能自证，不依赖词表里已有什么
   const both = `e2e-筛选-双-${stamp}`;
@@ -184,7 +167,6 @@ test("标签可筛选：多选是 AND，可一键清除", async ({ page }) => {
 });
 
 test("分类字段已退役：界面上没有分类入口", async ({ page }) => {
-  await login(page);
   await page.goto("/services");
   await expect(page.getByLabel("按分类筛选")).toHaveCount(0);
   await expect(page.getByText("分类")).toHaveCount(0);
@@ -194,7 +176,6 @@ test("分类字段已退役：界面上没有分类入口", async ({ page }) => 
 });
 
 test("资源总览只剩端口视图（域名与证书已下线）", async ({ page }) => {
-  await login(page);
   await page.getByRole("link", { name: "资源总览" }).click();
   await expect(page.getByText(/不能据此证明端口空闲/)).toBeVisible();
   await expect(page.getByRole("tab")).toHaveCount(0);
@@ -202,7 +183,6 @@ test("资源总览只剩端口视图（域名与证书已下线）", async ({ pa
 });
 
 test("详情页仍下线：路由 404，列表页没有详情/打开/巡检", async ({ page }) => {
-  await login(page);
   await page.goto("/services");
   // 列表页的状态维度：运行 + 健康（URL/发布维度不展示）
   await expect(page.getByRole("columnheader", { name: "运行" })).toBeVisible();
@@ -223,7 +203,7 @@ test("详情页仍下线：路由 404，列表页没有详情/打开/巡检", as
 });
 
 test("主入口在编辑弹窗里登记，列表列只读，证书列出现状态", async ({ page }) => {
-  await login(page);
+  await openApp(page);
   const name = `e2e-入口-${Date.now()}`;
   const created = await page.request.post("/api/services/services", {
     headers: { Origin: new URL(page.url()).origin },
@@ -254,7 +234,6 @@ test("主入口在编辑弹窗里登记，列表列只读，证书列出现状�
 });
 
 test("服务器端口列：从主入口 URL 派生", async ({ page }) => {
-  await login(page);
   await page.goto("/services");
   const header = page.getByRole("columnheader", { name: "服务器端口" });
   await expect(header).toBeVisible();
@@ -268,7 +247,7 @@ test("服务器端口列：从主入口 URL 派生", async ({ page }) => {
 });
 
 test("证书列存在且存量 https 入口显示有效", async ({ page }) => {
-  await login(page);
+  await openApp(page);
   await page.goto("/services");
   await expect(page.getByRole("columnheader", { name: "证书" })).toBeVisible();
   await expect(page.getByRole("columnheader", { name: "主入口" })).toBeVisible();
@@ -277,7 +256,6 @@ test("证书列存在且存量 https 入口显示有效", async ({ page }) => {
 });
 
 test("容器管理页展示候选表格（或明确的不可用提示）", async ({ page }) => {
-  await login(page);
   await page.getByRole("link", { name: "容器管理" }).click();
   await expect(page.getByRole("heading", { name: "容器管理" })).toBeVisible();
   // 三种正常终态：有候选表格 / 无匹配候选 / Docker 不可用（后端未配 DOCKER_HOST 时）
@@ -291,7 +269,7 @@ test("容器管理页展示候选表格（或明确的不可用提示）", async
 });
 
 test("导出与恢复预览", async ({ page }) => {
-  await login(page);
+  await openApp(page);
   await page.getByRole("link", { name: "设置" }).click();
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "下载 JSON" }).click();
@@ -307,7 +285,6 @@ test("375px 下主要页面无横向滚动且可操作", async ({ page }) => {
   // 移动项目固定 375 宽；桌面项目 1440。这里只对窄视口执行严格断言。
   const viewport = page.viewportSize();
   test.skip(viewport !== null && viewport.width > 400, "仅窄视口执行 375px 断言");
-  await login(page);
   for (const path of ["/services", "/services/resources", "/services/discovery", "/services/settings"]) {
     await page.goto(path);
     await page.waitForLoadState("networkidle");
@@ -321,7 +298,6 @@ test("375px 下主要页面无横向滚动且可操作", async ({ page }) => {
 });
 
 test("失败可重试：后端不可达时给出错误提示而非白屏", async ({ page }) => {
-  await login(page);
   await page.route("**/api/services/summary*", (route) => route.abort());
   await page.goto("/services");
   await expect(page.getByRole("heading", { name: "服务", exact: true })).toBeVisible();

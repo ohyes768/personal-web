@@ -149,6 +149,7 @@ class ComponentView(BaseModel):
     container_id: str = ""
     image_ref: str = ""
     image_id: str = ""
+    image_version: str = ""
     state: str = "unknown"
     health: HealthState = HealthState.UNKNOWN
     network_mode: str = "bridge"
@@ -347,6 +348,25 @@ class ComponentOverrideInput(BaseModel):
     version_note: str | None = Field(default=None, max_length=500)
 
 
+class ReleaseInfoView(BaseModel):
+    """服务的版本信息：源码仓库 + 当前/最新版本（列表页「版本」列与仓库按钮的数据源）。
+
+    current_version 取值链：release_source.installed_tag_note（手填）
+    → 绑定组件镜像的 OCI 版本 label → None。
+    latest_version 取自已缓存的 GitHub release 最新正式 tag（未同步过则为 None）。
+    """
+
+    owner: str
+    repo: str
+    installed_tag_note: str = ""
+    current_version: str | None = None
+    latest_version: str | None = None
+
+    @property
+    def url(self) -> str:
+        return f"https://github.com/{self.owner}/{self.repo}"
+
+
 class ServiceStatus(BaseModel):
     runtime: RuntimeState = RuntimeState.UNKNOWN
     health: HealthState = HealthState.UNKNOWN
@@ -356,6 +376,7 @@ class ServiceStatus(BaseModel):
     url_check: CheckView | None = None
     tls_check: CheckView | None = None
     release_check: CheckView | None = None
+    release_info: ReleaseInfoView | None = None
     unread_releases: int = 0
     primary_url: str | None = None
     component_states: dict[str, str] = Field(default_factory=dict)
@@ -584,14 +605,3 @@ class RestoreRequest(BaseModel):
     digest: str
     registry_revision: int
     confirm: bool = False
-
-
-class SessionResponse(BaseModel):
-    authenticated: bool
-    expires_at: str | None = None
-
-
-class LoginRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    password: str = Field(min_length=1, max_length=512)

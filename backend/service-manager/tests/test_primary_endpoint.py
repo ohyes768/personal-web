@@ -85,7 +85,6 @@ def test_list_item_without_endpoint_has_none(registry: Registry) -> None:
 
 
 def test_api_upsert_primary_endpoint(client) -> None:
-    client.post("/api/auth/login", json={"password": "test-password"})
     created = client.post(
         "/api/services", json={"name": "网站"}, headers=ORIGIN
     )

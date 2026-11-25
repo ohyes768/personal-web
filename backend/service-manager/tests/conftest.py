@@ -15,8 +15,6 @@ from typing import Any
 
 import pytest
 
-os.environ.setdefault("SERVICE_MANAGER_ADMIN_PASSWORD", "test-password")
-os.environ.setdefault("SERVICE_MANAGER_SESSION_SECRET", "test-secret")
 os.environ.setdefault("SERVICE_MANAGER_SCHEDULER_ENABLED", "false")
 
 from src.config import Settings  # noqa: E402
@@ -43,11 +41,8 @@ class FakeReader:
 @pytest.fixture()
 def settings(tmp_path: Path) -> Settings:
     return Settings(
-        SERVICE_MANAGER_ADMIN_PASSWORD="test-password",
-        SERVICE_MANAGER_SESSION_SECRET="test-secret",
         SERVICE_MANAGER_DATA_DIR=tmp_path / "data",
         SERVICE_MANAGER_PUBLIC_ORIGIN="http://localhost:3012",
-        SERVICE_MANAGER_SECURE_COOKIE="false",
         SERVICE_MANAGER_SCHEDULER_ENABLED="false",
         SERVICE_MANAGER_DOCKER_HOST="",
     )

@@ -370,6 +370,22 @@ class ReleaseStore:
             ).fetchall()
         return {int(row["release_id"]) for row in rows}
 
+    def latest_tag(self, owner: str, repo: str) -> str | None:
+        """已缓存 release 里最新正式版的 tag（含 GitHub /releases/latest 标注）。
+
+        以 latest_release_id 优先，取不到时退回缓存里第一条（同步时按新→旧存）。
+        """
+        state = self.sync_state(owner, repo)
+        latest_id = state.get("latest_release_id")
+        cached = self.cached(owner, repo)
+        if not cached:
+            return None
+        if latest_id is not None:
+            for item in cached:
+                if int(item["release_id"]) == int(latest_id):
+                    return str(item["tag"])
+        return str(cached[0]["tag"])
+
     def releases_for_source(
         self, release_source_id: str, owner: str, repo: str
     ) -> list[dict[str, Any]]:

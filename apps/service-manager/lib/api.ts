@@ -37,15 +37,19 @@ export type JobState =
   | "interrupted";
 export type RefreshKind = "docker" | "url" | "tls" | "releases" | "all";
 
-/** 列表页用到的状态：只保留**运行**与**健康**两个维度。
+/** 服务状态：运行 / 健康，外加版本信息（「版本」列与源码仓库按钮的数据源）。 */
+export interface ReleaseInfoView {
+  owner: string;
+  repo: string;
+  installed_tag_note: string;
+  current_version: string | null;
+  latest_version: string | null;
+}
 
- * URL / 证书 / 发布三个维度随入口与发布维护下线而不再展示（后端仍在检查，
- * 见 .trellis/spec/backend/service-manager/backend/index.md）。
- */
 export interface ServiceStatus {
   runtime: RuntimeState;
   health: HealthState;
-  component_states: Record<string, string>;
+  release_info: ReleaseInfoView | null;
 }
 
 export interface ComposeFileView {
@@ -243,15 +247,6 @@ function query(params: Record<string, string | number | boolean | undefined | nu
 }
 
 export const api = {
-  // 会话
-  session: () => request<{ authenticated: boolean; expires_at: string | null }>("/auth/session"),
-  login: (password: string) =>
-    request<{ authenticated: boolean }>("/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ password }),
-    }),
-  logout: () => request<{ authenticated: boolean }>("/auth/logout", { method: "POST" }),
-
   // 汇总
   summary: () => request<SummaryResponse>("/summary"),
 
@@ -281,6 +276,15 @@ export const api = {
   // 入口
   deleteReleaseSource: (serviceId: string) =>
     request<{ ok: boolean }>(`/services/${serviceId}/release-source`, { method: "DELETE" }),
+  /** 登记 / 更新源码仓库（owner/repo + 手填的当前版本备注）。 */
+  setReleaseSource: (
+    serviceId: string,
+    body: { owner: string; repo: string; installed_tag_note: string },
+  ) =>
+    request<{ id: string; owner: string; repo: string; installed_tag_note: string }>(
+      `/services/${serviceId}/release-source`,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
   discovery: (params: {
     project?: string;
     state?: string;

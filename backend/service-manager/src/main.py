@@ -2,7 +2,7 @@
 
 - Settings 不在导入时实例化：import 本模块不应要求环境变量就绪
 - lifespan 构造 Settings + 各 service 单例并挂到 app.state
-- 生产环境缺密码/签名密钥 → 拒绝启动
+- 生产环境缺 Docker/GitHub 配置按需降级，不再要求口令（认证由 nginx basic auth 承担）
 - 错误契约：`{code, message, field_errors?}`；校验失败统一 400
 """
 
@@ -19,7 +19,6 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from src.api.routes import router
-from src.auth import AuthService
 from src.checker import Checker
 from src.checks.common import CheckStore
 from src.checks.github import GithubClient, ReleaseStore
@@ -90,14 +89,6 @@ def build_app(settings: Settings) -> FastAPI:
     ):
         jobs.register(kind, checker.run_kind)
 
-    auth = AuthService(
-        password=settings.admin_password.get_secret_value(),
-        secret=settings.session_secret.get_secret_value(),
-        session_hours=settings.session_hours,
-        secure_cookie=settings.secure_cookie,
-        origin_allowlist=settings.origin_allowlist,
-    )
-
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         jobs.recover_interrupted()
@@ -134,7 +125,6 @@ def build_app(settings: Settings) -> FastAPI:
     app.state.discovery = discovery
     app.state.jobs = jobs
     app.state.checker = checker
-    app.state.auth = auth
     app.state.releases = releases
     app.state.checks = checks
     app.state.resources = ResourceProjector(registry, discovery)

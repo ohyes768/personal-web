@@ -10,15 +10,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError, type PortOverviewResponse } from "@/lib/api";
 import { portKindLabel, portText } from "@/lib/status";
-import SessionGate from "@/components/SessionGate";
 import { Toast } from "@/components/Widgets";
 
 export default function ResourcesPage() {
-  return (
-    <SessionGate>
-      <ResourcesView />
-    </SessionGate>
-  );
+  return <ResourcesView />;
 }
 
 function ResourcesView() {

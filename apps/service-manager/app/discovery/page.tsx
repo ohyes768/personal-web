@@ -9,16 +9,13 @@ import {
   type DiscoveryResponse,
 } from "@/lib/api";
 import { composeFileText, formatRelative, HEALTH, portText } from "@/lib/status";
-import SessionGate from "@/components/SessionGate";
 import { StateBadge, Toast } from "@/components/Widgets";
 
 export default function DiscoveryPage() {
   return (
-    <SessionGate>
-      <Suspense>
-        <DiscoveryView />
-      </Suspense>
-    </SessionGate>
+    <Suspense>
+      <DiscoveryView />
+    </Suspense>
   );
 }
 

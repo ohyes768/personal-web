@@ -115,6 +115,7 @@ CREATE TABLE IF NOT EXISTS docker_components (
     container_name TEXT NOT NULL DEFAULT '',
     image_ref TEXT NOT NULL DEFAULT '',
     image_id TEXT NOT NULL DEFAULT '',
+    image_version TEXT NOT NULL DEFAULT '',
     state TEXT NOT NULL DEFAULT 'unknown',
     health TEXT NOT NULL DEFAULT 'unknown',
     network_mode TEXT NOT NULL DEFAULT 'bridge',
@@ -243,6 +244,10 @@ class Store:
                 self._drop_column(conn, "services", "ownership")
                 # 游离容器首见宽限期需要首见时间（追加列向后兼容，不升 schema 版本）
                 self._ensure_column(conn, "docker_components", "first_seen_at", "TEXT")
+                # 镜像 OCI 版本 label（「当前版本」第一来源，追加列向后兼容）
+                self._ensure_column(
+                    conn, "docker_components", "image_version", "TEXT NOT NULL DEFAULT ''"
+                )
                 stored = self._get_state(conn, "schema_version")
                 if stored is None:
                     self._set_state(conn, "schema_version", str(SCHEMA_VERSION))

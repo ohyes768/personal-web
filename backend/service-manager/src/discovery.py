@@ -133,15 +133,17 @@ class DiscoveryService:
             for item in result.components:
                 conn.execute(
                     "INSERT INTO docker_components(source_key, project, service_name,"
-                    " container_id, container_name, image_ref, image_id, state, health,"
+                    " container_id, container_name, image_ref, image_id, image_version,"
+                    " state, health,"
                     " network_mode, ports, mounts, compose_working_dir, compose_files,"
                     " oneoff, last_seen_at, first_seen_at, scan_id)"
-                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
                     " ON CONFLICT(source_key) DO UPDATE SET"
                     " project = excluded.project, service_name = excluded.service_name,"
                     " container_id = excluded.container_id,"
                     " container_name = excluded.container_name,"
                     " image_ref = excluded.image_ref, image_id = excluded.image_id,"
+                    " image_version = excluded.image_version,"
                     " state = excluded.state, health = excluded.health,"
                     " network_mode = excluded.network_mode, ports = excluded.ports,"
                     " mounts = excluded.mounts,"
@@ -158,6 +160,7 @@ class DiscoveryService:
                         item["container_name"],
                         item["image_ref"],
                         item["image_id"],
+                        item.get("image_version", ""),
                         item["state"],
                         item["health"],
                         item["network_mode"],
@@ -375,6 +378,7 @@ def _component_row(row: sqlite3.Row) -> dict[str, Any]:
         "container_name": row["container_name"],
         "image_ref": row["image_ref"],
         "image_id": row["image_id"],
+        "image_version": row["image_version"] if "image_version" in row.keys() else "",
         "state": row["state"],
         "health": row["health"],
         "network_mode": row["network_mode"],

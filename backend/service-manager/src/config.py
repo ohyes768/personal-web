@@ -1,7 +1,8 @@
 """service-manager 配置（design §1 / §9）。
 
 Settings 不在模块导入时实例化——import src.main 不应要求环境变量已就绪。
-lifespan 在启动时构造 Settings；生产环境缺密码或签名密钥直接拒绝启动。
+认证由 nginx basic auth 承担（2026-11-25 去除应用内登录），后端只保留
+写请求 Origin 校验所需的 public_origin / allowed_origins。
 """
 
 from pathlib import Path
@@ -13,9 +14,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(populate_by_name=True, env_ignore_empty=True)
 
-    # ---- 身份（必需，缺失拒绝启动）----
-    admin_password: SecretStr = Field(alias="SERVICE_MANAGER_ADMIN_PASSWORD")
-    session_secret: SecretStr = Field(alias="SERVICE_MANAGER_SESSION_SECRET")
+    # ---- 同源校验（写请求 CSRF 防御）----
     public_origin: str = Field(
         default="http://localhost:3012", alias="SERVICE_MANAGER_PUBLIC_ORIGIN"
     )
@@ -33,11 +32,6 @@ class Settings(BaseSettings):
     # ---- GitHub ----
     github_token: SecretStr | None = Field(default=None, alias="SERVICE_MANAGER_GITHUB_TOKEN")
 
-    # ---- cookie ----
-    secure_cookie: bool = Field(default=True, alias="SERVICE_MANAGER_SECURE_COOKIE")
-    cookie_path: str = Field(default="/api", alias="SERVICE_MANAGER_COOKIE_PATH")
-    session_hours: int = Field(default=12, alias="SERVICE_MANAGER_SESSION_HOURS")
-
     # ---- 检查周期（秒）；0 = 该检查不自动跑 ----
     docker_interval: int = Field(default=60, alias="SERVICE_MANAGER_DOCKER_INTERVAL")
     # 游离容器（无 compose 项目）首见宽限期（秒）：期内不出现在发现候选里
@@ -51,13 +45,6 @@ class Settings(BaseSettings):
     scheduler_enabled: bool = Field(default=True, alias="SERVICE_MANAGER_SCHEDULER_ENABLED")
 
     service_port: int = Field(default=8102, alias="SERVICE_MANAGER_SERVICE_PORT")
-
-    @field_validator("admin_password", "session_secret")
-    @classmethod
-    def _non_empty(cls, value: SecretStr) -> SecretStr:
-        if not value.get_secret_value():
-            raise ValueError("must be a non-empty value")
-        return value
 
     @field_validator("data_dir")
     @classmethod

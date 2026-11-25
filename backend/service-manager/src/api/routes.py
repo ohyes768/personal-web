@@ -1,8 +1,8 @@
 """REST 路由（design §7 表格逐条对应）。
 
 对外路径 `/api/services/*` 由 Nginx 剥成 `/api/*`；本 router 因此挂在
-prefix="/api" 下，且认证 cookie Path 也是 `/api/services`（生产）——
-开发期前端走 rewrite，同样带前缀。
+prefix="/api" 下——开发期前端走 rewrite，同样带前缀。
+认证由 nginx basic auth 承担；写请求经 require_write 做同源校验。
 """
 
 from __future__ import annotations
@@ -16,14 +16,12 @@ from fastapi import (
     Form,
     Query,
     Request,
-    Response,
     UploadFile,
     status,
 )
 from fastapi.responses import JSONResponse
 
 from src.api.dependencies import (
-    get_auth,
     get_checker,
     get_discovery,
     get_jobs,
@@ -33,7 +31,7 @@ from src.api.dependencies import (
     get_status_projector,
     get_store,
 )
-from src.auth import AuthService
+from src.auth import check_origin
 from src.backup import (
     BackupError,
     export_payload,
@@ -55,7 +53,6 @@ from src.models import (
     EndpointInput,
     EndpointRecord,
     PrimaryEndpointInput,
-    LoginRequest,
     PortNoteInput,
     PortNoteRecord,
     RefreshJobView,
@@ -71,7 +68,6 @@ from src.models import (
     ServiceListItem,
     ServicePatch,
     RefreshKind,
-    SessionResponse,
     SummaryResponse,
 )
 from src.registry import Registry
@@ -84,29 +80,21 @@ MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 
 
 # ---------------------------------------------------------------------------
-# 认证依赖
+# 写请求同源校验（认证由 nginx basic auth 承担，见 src/auth.py）
 # ---------------------------------------------------------------------------
 
 
-def require_auth(
-    request: Request, auth: Annotated[AuthService, Depends(get_auth)]
-) -> None:
-    auth.require_session(request)
-
-
 def require_write(
-    request: Request, auth: Annotated[AuthService, Depends(get_auth)]
+    request: Request, settings: Annotated[Settings, Depends(get_settings)]
 ) -> None:
-    auth.require_session(request)
-    auth.check_origin(request)
+    check_origin(request, settings.origin_allowlist)
 
 
-AuthDep = Annotated[None, Depends(require_auth)]
 WriteDep = Annotated[None, Depends(require_write)]
 
 
 # ---------------------------------------------------------------------------
-# 健康 / 会话
+# 健康
 # ---------------------------------------------------------------------------
 
 
@@ -116,47 +104,6 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@router.post("/auth/login", response_model=SessionResponse)
-def login(
-    payload: LoginRequest,
-    request: Request,
-    response: Response,
-    auth: Annotated[AuthService, Depends(get_auth)],
-) -> SessionResponse:
-    client = request.client.host if request.client else "unknown"
-    auth.limiter.check(client)
-    if not auth.verify_password(payload.password):
-        from src.errors import unauthorized
-
-        raise unauthorized("口令不正确")
-    auth.limiter.reset(client)
-    info = auth.issue(response)
-    return SessionResponse(authenticated=True, expires_at=info.expires_at.isoformat(timespec="seconds"))
-
-
-@router.get("/auth/session", response_model=SessionResponse)
-def session_state(
-    request: Request, auth: Annotated[AuthService, Depends(get_auth)]
-) -> SessionResponse:
-    info = auth.read_session(request)
-    if info is None:
-        return SessionResponse(authenticated=False)
-    return SessionResponse(
-        authenticated=True, expires_at=info.expires_at.isoformat(timespec="seconds")
-    )
-
-
-@router.post("/auth/logout", response_model=SessionResponse)
-def logout(
-    response: Response,
-    request: Request,
-    auth: Annotated[AuthService, Depends(get_auth)],
-) -> SessionResponse:
-    auth.check_origin(request)
-    auth.clear(response)
-    return SessionResponse(authenticated=False)
-
-
 # ---------------------------------------------------------------------------
 # 汇总
 # ---------------------------------------------------------------------------
@@ -164,7 +111,6 @@ def logout(
 
 @router.get("/summary", response_model=SummaryResponse)
 def summary(
-    _: AuthDep,
     projector: Annotated[StatusProjector, Depends(get_status_projector)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> SummaryResponse:
@@ -178,7 +124,6 @@ def summary(
 
 @router.get("/services")
 def list_services(
-    _: AuthDep,
     registry: Annotated[Registry, Depends(get_registry)],
     projector: Annotated[StatusProjector, Depends(get_status_projector)],
     query: str = Query(default="", max_length=200),
@@ -222,7 +167,6 @@ def create_service(
 @router.get("/services/{service_id}", response_model=ServiceDetail)
 def get_service(
     service_id: str,
-    _: AuthDep,
     registry: Annotated[Registry, Depends(get_registry)],
     projector: Annotated[StatusProjector, Depends(get_status_projector)],
 ) -> ServiceDetail:
@@ -410,7 +354,6 @@ def delete_release_source(
 
 @router.get("/discovery")
 def discovery_list(
-    _: AuthDep,
     discovery: Annotated[DiscoveryService, Depends(get_discovery)],
     project: str = Query(default="", max_length=128),
     state: str = Query(default="", max_length=32),
@@ -486,7 +429,6 @@ async def discovery_scan(
 
 @router.get("/resources/ports")
 def resource_ports(
-    _: AuthDep,
     resources: Annotated[ResourceProjector, Depends(get_resources)],
     only_registered: bool = Query(default=False),
     query: str = Query(default="", max_length=200),
@@ -499,7 +441,6 @@ def resource_ports(
 
 @router.get("/resources/domains")
 def resource_domains(
-    _: AuthDep,
     resources: Annotated[ResourceProjector, Depends(get_resources)],
     query: str = Query(default="", max_length=200),
 ) -> dict[str, Any]:
@@ -508,7 +449,6 @@ def resource_domains(
 
 @router.get("/resources/certificates")
 def resource_certificates(
-    _: AuthDep,
     resources: Annotated[ResourceProjector, Depends(get_resources)],
     query: str = Query(default="", max_length=200),
 ) -> dict[str, Any]:
@@ -523,7 +463,6 @@ def resource_certificates(
 @router.get("/services/{service_id}/releases", response_model=ReleaseListResponse)
 def service_releases(
     service_id: str,
-    _: AuthDep,
     registry: Annotated[Registry, Depends(get_registry)],
     checker: Annotated[Checker, Depends(get_checker)],
 ) -> ReleaseListResponse:
@@ -597,7 +536,6 @@ async def refresh(
 @router.get("/jobs/{job_id}", response_model=RefreshJobView)
 def get_job(
     job_id: str,
-    _: AuthDep,
     jobs: Annotated[JobManager, Depends(get_jobs)],
 ) -> RefreshJobView:
     return jobs.get(job_id)
@@ -605,7 +543,6 @@ def get_job(
 
 @router.get("/jobs")
 def list_jobs(
-    _: AuthDep,
     jobs: Annotated[JobManager, Depends(get_jobs)],
     limit: int = Query(default=20, ge=1, le=100),
 ) -> dict[str, Any]:
@@ -619,7 +556,7 @@ def list_jobs(
 
 @router.get("/backup/export")
 def backup_export(
-    _: AuthDep, store: Annotated[Store, Depends(get_store)]
+    store: Annotated[Store, Depends(get_store)]
 ) -> JSONResponse:
     payload = export_payload(store)
     body = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")

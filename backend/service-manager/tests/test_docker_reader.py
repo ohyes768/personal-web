@@ -206,3 +206,22 @@ def test_mounts_projected() -> None:
     assert projected["mounts"][0]["read_only"] is True
     assert projected["mounts"][1]["kind"] == "volume"
     assert projected["mounts"][1]["read_only"] is False
+
+
+def test_project_container_carries_image_version_label() -> None:
+    """镜像 OCI 版本 label 投影进 image_version（「当前版本」第一来源）。"""
+    payload = container_payload()
+    payload["Config"]["Labels"]["org.opencontainers.image.version"] = "v2.5.1"
+    projected = project_container(payload)
+    assert projected["image_version"] == "v2.5.1"
+
+
+def test_project_container_image_version_falls_back_to_revision() -> None:
+    payload = container_payload()
+    payload["Config"]["Labels"]["org.opencontainers.image.revision"] = "a1b2c3d"
+    assert project_container(payload)["image_version"] == "a1b2c3d"
+
+
+def test_project_container_image_version_absent_is_empty() -> None:
+    projected = project_container(container_payload())
+    assert projected["image_version"] == ""

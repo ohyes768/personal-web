@@ -19,7 +19,6 @@ import {
   tlsInvalidReason,
   tlsTone,
 } from "@/lib/status";
-import SessionGate from "@/components/SessionGate";
 import { SafeLink, Spinner, StateBadge, Toast } from "@/components/Widgets";
 import { TagBadge } from "@/components/TagBadge";
 import { ServiceInfoEditor } from "@/components/ServiceInfoEditor";
@@ -27,11 +26,7 @@ import { TagEditor } from "@/components/TagEditor";
 import { TagFilterBar } from "@/components/TagFilterBar";
 
 export default function HomePage() {
-  return (
-    <SessionGate>
-      <ServiceList />
-    </SessionGate>
-  );
+  return <ServiceList />;
 }
 
 function ServiceList() {
@@ -150,7 +145,13 @@ function ServiceList() {
     setEditingInfo(null);
   }
 
-  async function saveInfo(values: { name: string; description: string; url: string | null }) {
+  async function saveInfo(values: {
+    name: string;
+    description: string;
+    url: string | null;
+    repo: { owner: string; repo: string } | null;
+    installedTagNote: string;
+  }) {
     if (!editingInfo) return;
     setSavingInfo(true);
     try {
@@ -176,6 +177,27 @@ function ServiceList() {
       if (values.url) {
         await api.upsertPrimaryEndpoint(editingInfo.id, values.url);
       }
+      // 源码仓库：填了就登记（含当前版本备注），清空就解绑
+      const previous = editingInfo.status.release_info;
+      let repoChanged = false;
+      if (values.repo) {
+        const same =
+          previous &&
+          previous.owner === values.repo.owner &&
+          previous.repo === values.repo.repo &&
+          previous.installed_tag_note === values.installedTagNote;
+        if (!same) {
+          await api.setReleaseSource(editingInfo.id, {
+            owner: values.repo.owner,
+            repo: values.repo.repo,
+            installed_tag_note: values.installedTagNote,
+          });
+          repoChanged = true;
+        }
+      } else if (previous) {
+        await api.deleteReleaseSource(editingInfo.id);
+        repoChanged = true;
+      }
       cancelEditInfo();
       setToast(values.url ? "已保存，主入口已登记" : "已保存");
       await load();
@@ -183,6 +205,14 @@ function ServiceList() {
         // 触发一次该服务的证书检查，别让用户干等下一轮定时
         try {
           await api.refresh("tls", editingInfo.id);
+        } catch {
+          // 检查提交失败不影响保存结果
+        }
+      }
+      if (repoChanged) {
+        // 仓库刚登记/解绑：立即跑一次 release 检查，版本列马上有数
+        try {
+          await api.refresh("releases", editingInfo.id);
         } catch {
           // 检查提交失败不影响保存结果
         }
@@ -385,6 +415,7 @@ function ServiceList() {
                 <th>运行</th>
                 <th>健康</th>
                 <th title="HTTPS 证书：有没有人信它、什么时候到期">证书</th>
+                <th title="当前版本取自镜像自带 label 或手工备注；最新版本取自源码仓库的 GitHub Release">版本</th>
                 <th>操作</th>
               </tr>
             </thead>
@@ -471,7 +502,45 @@ function ServiceList() {
                     )}
                   </td>
                   <td>
+                    {item.status.release_info ? (
+                      (() => {
+                        const info = item.status.release_info;
+                        const behind =
+                          info.latest_version !== null &&
+                          info.current_version !== null &&
+                          info.current_version !== info.latest_version;
+                        return (
+                          <span
+                            className="mono small"
+                            style={behind ? { color: "var(--warn)" } : undefined}
+                            title={
+                              behind
+                                ? `当前 ${info.current_version ?? "未知"}，源码仓库已发布 ${info.latest_version}`
+                                : `当前 ${info.current_version ?? "未知"}${
+                                    info.latest_version ? `，已是最新 ${info.latest_version}` : "（最新版本还没同步到）"
+                                  }`
+                            }
+                          >
+                            {info.current_version ?? "—"}
+                            {info.latest_version ? ` → ${info.latest_version}` : ""}
+                          </span>
+                        );
+                      })()
+                    ) : (
+                      <span className="muted small">-</span>
+                    )}
+                  </td>
+                  <td>
                     <div className="row-actions">
+                      {item.status.release_info ? (
+                        <SafeLink
+                          href={`https://github.com/${item.status.release_info.owner}/${item.status.release_info.repo}`}
+                          className="btn btn-mini"
+                          title={`打开源码仓库 github.com/${item.status.release_info.owner}/${item.status.release_info.repo}`}
+                        >
+                          源码
+                        </SafeLink>
+                      ) : null}
                       <button
                         className="btn btn-mini"
                         type="button"
@@ -506,6 +575,9 @@ function ServiceList() {
           name={editingInfo.name}
           description={editingInfo.description}
           endpointUrl={editingInfo.primary_endpoint?.url ?? null}
+          releaseOwner={editingInfo.status.release_info?.owner ?? null}
+          releaseRepo={editingInfo.status.release_info?.repo ?? null}
+          installedTagNote={editingInfo.status.release_info?.installed_tag_note ?? ""}
           busy={savingInfo}
           onSave={(values) => void saveInfo(values)}
           onClose={cancelEditInfo}

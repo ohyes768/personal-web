@@ -694,8 +694,7 @@ services:
     volumes:
       - service-manager-data:/app/data
     environment: [TZ=Asia/Shanghai,
-                  "SERVICE_MANAGER_ADMIN_PASSWORD=${SERVICE_MANAGER_ADMIN_PASSWORD:?service-manager 需要管理口令}",
-                  "SERVICE_MANAGER_SESSION_SECRET=${SERVICE_MANAGER_SESSION_SECRET:?service-manager 需要会话签名密钥}",
+                  # 认证由 nginx basic auth 承担，应用不再有口令/会话（2026-11-25）
                   "SERVICE_MANAGER_PUBLIC_ORIGIN=${SERVICE_MANAGER_PUBLIC_ORIGIN:-https://web.duomi77.cn:9443}",
                   # 允许的额外写请求来源。默认带上前端容器的回环入口：直连
                   # 127.0.0.1:3012（SSH 隧道、e2e）时 Next rewrite 会把 Host 改写成
@@ -705,7 +704,6 @@ services:
                   "SERVICE_MANAGER_GITHUB_TOKEN=${SERVICE_MANAGER_GITHUB_TOKEN:-}",
                   "SERVICE_MANAGER_DOCKER_HOST=tcp://service-manager-socket-proxy:2375",
                   SERVICE_MANAGER_DATA_DIR=/app/data,
-                  SERVICE_MANAGER_SECURE_COOKIE=true,
                   SERVICE_MANAGER_SERVICE_PORT=8102]
     networks: [app-net, sm-docker-net]
     depends_on:

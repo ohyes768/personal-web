@@ -3,15 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, downloadBackup, type SummaryResponse } from "@/lib/api";
 import { formatRelative } from "@/lib/status";
-import SessionGate, { logout } from "@/components/SessionGate";
 import { Toast } from "@/components/Widgets";
 
 export default function SettingsPage() {
-  return (
-    <SessionGate>
-      <SettingsView />
-    </SessionGate>
-  );
+  return <SettingsView />;
 }
 
 function SettingsView() {
@@ -189,20 +184,6 @@ function SettingsView() {
             </div>
           </div>
         ) : null}
-      </div>
-
-      <h2>会话</h2>
-      <div className="card">
-        <p className="small muted">会话有效期 12 小时，cookie 为 HttpOnly，页面不保存口令。</p>
-        <button
-          className="btn"
-          type="button"
-          onClick={async () => {
-            await logout();
-          }}
-        >
-          退出登录
-        </button>
       </div>
 
       {error ? <p className="notice bad">{error}</p> : null}

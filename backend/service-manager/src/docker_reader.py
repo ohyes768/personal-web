@@ -257,6 +257,21 @@ def project_health(state_block: Any) -> HealthState:
 _HEX_ID_RE = re.compile(r"^[0-9a-f]{12,64}$")
 
 
+def image_version(labels: dict[str, str]) -> str:
+    """镜像 OCI 版本 label：org.opencontainers.image.version，退回 .revision。
+
+    这是「当前版本」的第一来源（`:latest` 部署下版本号只能靠镜像自带 label）。
+    """
+    for key in (
+        "org.opencontainers.image.version",
+        "org.opencontainers.image.revision",
+    ):
+        value = str(labels.get(key) or "").strip()
+        if value:
+            return value[:120]
+    return ""
+
+
 def project_container(payload: dict[str, Any]) -> dict[str, Any]:
     """把一份 inspect（或 list 合成体）投影到白名单字段。
 
@@ -291,6 +306,7 @@ def project_container(payload: dict[str, Any]) -> dict[str, Any]:
         "container_name": name,
         "image_ref": image_ref,
         "image_id": image_id if _HEX_ID_RE.match(image_id or "") else "",
+        "image_version": image_version(labels),
         "state": state or "unknown",
         "health": project_health(state_block).value,
         "network_mode": network_mode,

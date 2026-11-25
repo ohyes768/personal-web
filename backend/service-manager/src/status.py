@@ -22,6 +22,7 @@ from src.models import (
     CheckView,
     ComponentView,
     HealthState,
+    ReleaseInfoView,
     ReleaseState,
     RuntimeState,
     ServiceStatus,
@@ -173,6 +174,7 @@ class StatusProjector:
             container_id=component.get("container_id", ""),
             image_ref=component.get("image_ref", ""),
             image_id=component.get("image_id", ""),
+            image_version=component.get("image_version", ""),
             state=component.get("state", "unknown"),
             health=HealthState(component.get("health", "unknown")),
             network_mode=component.get("network_mode", "bridge"),
@@ -232,6 +234,28 @@ class StatusProjector:
         else:
             release_state = ReleaseState.NO_UNREAD
 
+        release_info: ReleaseInfoView | None = None
+        if release_source is not None:
+            # 当前版本取值链：手填 installed_tag_note → 绑定组件镜像 OCI 版本 label
+            current_version = release_source.installed_tag_note.strip() or None
+            if current_version is None:
+                for item in views:
+                    if item.present and item.image_version:
+                        current_version = item.image_version
+                        break
+            latest_version = (
+                self.releases.latest_tag(release_source.owner, release_source.repo)
+                if self.releases is not None
+                else None
+            )
+            release_info = ReleaseInfoView(
+                owner=release_source.owner,
+                repo=release_source.repo,
+                installed_tag_note=release_source.installed_tag_note,
+                current_version=current_version,
+                latest_version=latest_version,
+            )
+
         primary_url = None
         for endpoint in endpoints:
             if endpoint.kind.value == "external":
@@ -249,6 +273,7 @@ class StatusProjector:
             url_check=url_check,
             tls_check=tls_check,
             release_check=release_check,
+            release_info=release_info,
             unread_releases=unread,
             primary_url=primary_url,
             component_states={item.source_key: item.state for item in views},

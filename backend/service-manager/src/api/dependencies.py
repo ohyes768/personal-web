@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from fastapi import Request
 
-from src.auth import AuthService
 from src.backup import Preview
 from src.checker import Checker
 from src.config import Settings
@@ -26,10 +25,6 @@ def get_settings(request: Request) -> Settings:
 
 def get_store(request: Request) -> Store:
     return request.app.state.store
-
-
-def get_auth(request: Request) -> AuthService:
-    return request.app.state.auth
 
 
 def get_registry(request: Request) -> Registry:
