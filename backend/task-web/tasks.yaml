@@ -728,3 +728,28 @@ tasks:
       - "/home/ohyes768/skills/knowledge/rss-relay-publish:/opt/rss-relay-publish:ro"
     cron: "15 8 * * *"
     timeout: 300
+
+  # task-web 自检：查昨日定时执行结果，全部正常则不发 RSS，有异常才推报告
+  # （2026-11-25 起因 sector-push / csi300-brief 连续失败，需要一个每日体检口径）
+  # 走内网直连 task-web 后端读 /api/schedule/day 与 /api/runs/{id}/logs：
+  # nginx 全域 basic auth 会把无凭据请求打成 401，需容器接入 nginx_nginx-bridge 网络。
+  - id: task-web-daily-check
+    name: 定时任务日检
+    description: 检查 task-web 昨日定时执行结果；存在失败/超时/漏执行时整理 markdown 报告推 RSS（channel=task-web）
+    targets: [rss]
+    engine: docker
+    image: stock-info:latest
+    command: python task_web_check.py
+    cwd: /app
+    env:
+      RSS_DRY_RUN: "0"
+      RSS_RELAY_SKILL_DIR: /opt/rss-relay-publish
+      TASK_WEB_BASE_URL: http://task-web-backend:8101
+      HOME: /tmp
+    env_file: /workspace/stock-info-dingding/.env
+    network: nginx_nginx-bridge
+    user: "1000:1000"
+    volumes:
+      - "/home/ohyes768/skills/knowledge/rss-relay-publish:/opt/rss-relay-publish:ro"
+    cron: "45 11 * * *"
+    timeout: 300
