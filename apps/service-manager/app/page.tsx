@@ -506,22 +506,19 @@ function ServiceList() {
                         info.current_version != null &&
                         norm(info.current_version) !== norm(info.latest_version);
                       return (
-                        <span
-                          className="mono small"
-                          style={behind ? { color: "var(--warn)" } : undefined}
-                          title={
-                            behind
-                              ? `当前 ${info.current_version}，源码仓库已发布 ${info.latest_version}`
-                              : info?.latest_version
-                                ? `已是最新 ${info.latest_version}`
-                                : info
-                                  ? `当前 ${current ?? "未知"}（最新版本还没同步到）`
-                                  : `当前 ${current}（识别自镜像，未跟踪源码仓库）`
-                          }
-                        >
-                          {current ?? "—"}
-                          {behind ? ` → ${info.latest_version}` : ""}
-                        </span>
+                        <div className="badge-stack">
+                          <span className="mono small">{current ?? "—"}</span>
+                          {behind ? (
+                            <>
+                              <span className="mono small">→ {info.latest_version}</span>
+                              <span className="badge warn">有更新</span>
+                            </>
+                          ) : info?.latest_version ? (
+                            <span className="badge ok">最新</span>
+                          ) : info ? (
+                            <span className="badge muted">未同步</span>
+                          ) : null}
+                        </div>
                       );
                     })()}
                   </td>
