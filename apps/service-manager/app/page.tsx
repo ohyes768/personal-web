@@ -512,15 +512,15 @@ function ServiceList() {
                           title={
                             behind
                               ? `当前 ${info.current_version}，源码仓库已发布 ${info.latest_version}`
-                              : info
-                                ? `当前 ${current ?? "未知"}${
-                                    info.latest_version ? `，已是最新 ${info.latest_version}` : "（最新版本还没同步到）"
-                                  }`
-                                : `当前 ${current}（识别自镜像，未跟踪源码仓库）`
+                              : info?.latest_version
+                                ? `已是最新 ${info.latest_version}`
+                                : info
+                                  ? `当前 ${current ?? "未知"}（最新版本还没同步到）`
+                                  : `当前 ${current}（识别自镜像，未跟踪源码仓库）`
                           }
                         >
                           {current ?? "—"}
-                          {info?.latest_version ? ` → ${info.latest_version}` : ""}
+                          {behind ? ` → ${info.latest_version}` : ""}
                         </span>
                       );
                     })()}
