@@ -98,6 +98,16 @@ class ChannelRegistry:
             self._channels = updated
             return dict(channel)
 
+    def remove(self, channel_id):
+        with self._lock:
+            if channel_id not in self._channels:
+                raise KeyError(channel_id)
+            if channel_id == UNCLASSIFIED:
+                raise ValueError("System channel cannot be deleted")
+            updated = {key: value for key, value in self._channels.items() if key != channel_id}
+            self._save(updated)
+            self._channels = updated
+
     def update(self, channel_id, changes):
         with self._lock:
             if channel_id not in self._channels:

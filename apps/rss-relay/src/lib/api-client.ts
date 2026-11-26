@@ -85,7 +85,7 @@ class ApiClient {
     return this.request<void>(url, { method: 'DELETE' });
   }
 
-  async mutate<T>(endpoint: string, method: 'POST' | 'PATCH', body: unknown): Promise<T> {
+  async mutate<T>(endpoint: string, method: 'POST' | 'PATCH' | 'DELETE', body: unknown): Promise<T> {
     const url = !this.baseUrl || this.baseUrl.startsWith('/')
       ? `${this.baseUrl}${endpoint}` : new URL(endpoint, this.baseUrl).toString();
     return this.request<T>(url, { method, body: JSON.stringify(body) });

@@ -20,6 +20,7 @@ import yaml
 from .channels import UNCLASSIFIED
 
 EAST8 = timezone(timedelta(hours=8))
+RETENTION_DEFAULT = 15
 
 
 def generate_id() -> str:
@@ -179,6 +180,25 @@ def find_post(posts_dir: Path, post_id: str, max_age_days: int = 15) -> dict | N
     if post["created_at"] < cutoff:
         return None
     return post
+
+
+def delete_channel_posts(posts_dir: Path, channel: str) -> int:
+    """删除某渠道保留期内的全部文章文件，返回删除数量。
+
+    仅遍历 .md 文件，损坏文件（parse_post 返回 None）按 channel 字段
+    无法判定，直接跳过——与 list_posts 的容错口径一致。
+    """
+    if not posts_dir.exists():
+        return 0
+    cutoff = datetime.now(EAST8) - timedelta(days=RETENTION_DEFAULT)
+    removed = 0
+    for f in posts_dir.glob("*.md"):
+        post = parse_post(f)
+        if post is None or post["channel"] != channel or post["created_at"] < cutoff:
+            continue
+        f.unlink()
+        removed += 1
+    return removed
 
 
 def delete_post(posts_dir: Path, post_id: str) -> bool:

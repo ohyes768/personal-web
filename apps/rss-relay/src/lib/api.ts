@@ -1,6 +1,8 @@
 import { directClient, ApiError } from './api-client';
 import type { Channel, PostInfo, PostsResponse } from './types';
 
+export { ApiError };
+
 export const rssRelayApi = {
   getChannels: (includeDisabled = false) => directClient.get<{ channels: Channel[] }>(
     '/rss/api/rss-relay/channels', includeDisabled ? { include_disabled: 'true' } : undefined),
@@ -8,6 +10,9 @@ export const rssRelayApi = {
     directClient.mutate<Channel>('/rss/api/rss-relay/channels', 'POST', channel),
   updateChannel: (id: string, updates: Partial<Pick<Channel, 'title' | 'description' | 'enabled'>>) =>
     directClient.mutate<Channel>(`/rss/api/rss-relay/channels/${encodeURIComponent(id)}`, 'PATCH', updates),
+  /** 删除渠道。渠道还有保留期内文章时后端 409，需带 purge 连文章一起删。 */
+  deleteChannel: (id: string, purge = false) =>
+    directClient.delete(`/rss/api/rss-relay/channels/${encodeURIComponent(id)}${purge ? '?purge=true' : ''}`),
   /** 拉取 post 列表（默认 50 条，最多 200）
    *
    * 注意：basePath='/rss' 时，浏览器调 `/api/...` 实际命中的是 `/rss/api/...`，

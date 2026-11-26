@@ -13,7 +13,7 @@ from pydantic import ValidationError
 from .channels import ChannelRegistry, ChannelCreate, ChannelUpdate, CHANNEL_PATTERN, UNCLASSIFIED
 
 from .rss_utils import build_rss_xml, truncate_for_summary
-from .store import generate_id, write_post, list_posts, find_post as find_post_file, delete_post as delete_post_file
+from .store import generate_id, write_post, list_posts, find_post as find_post_file, delete_post as delete_post_file, delete_channel_posts
 
 
 EAST8 = timezone(timedelta(hours=8))
@@ -66,6 +66,31 @@ async def update_channel(channel_id: str, req: ChannelUpdate):
         raise HTTPException(422, "Invalid channel update")
     except OSError:
         raise HTTPException(503, "Could not save channel")
+
+
+@router.delete("/api/channels/{channel_id}", status_code=204)
+async def delete_channel(channel_id: str, purge: bool = Query(False, description="同时删除该渠道保留期内的文章")):
+    """删除渠道。
+
+    默认：渠道保留期内还有文章时拒绝（409），避免误删历史内容；
+    `?purge=true` 连文章一起删。unclassified 系统渠道禁删（422）。
+    """
+    registry = channel_registry()
+    if registry.get(channel_id) is None:
+        raise HTTPException(404, "Channel not found")
+    if not purge and list_posts(_POSTS_DIR, limit=1, max_age_days=_RETENTION_DAYS, channel=channel_id):
+        raise HTTPException(409, "Channel still has posts; pass purge=true to delete them")
+    try:
+        if purge:
+            delete_channel_posts(_POSTS_DIR, channel_id)
+        registry.remove(channel_id)
+    except ValueError:
+        raise HTTPException(422, "System channel cannot be deleted")
+    except KeyError:
+        raise HTTPException(404, "Channel not found")
+    except OSError:
+        raise HTTPException(503, "Could not save channel")
+    logger.info(f"删除渠道 id={channel_id!r} purge={purge}")
 
 
 def set_storage_config(posts_dir: Path, retention_days: int) -> None:

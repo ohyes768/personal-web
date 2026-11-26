@@ -61,6 +61,22 @@ def test_channel_lifecycle(client):
     assert client.post("/api/post", json=payload).status_code == 422
 
 
+def test_channel_delete(client):
+    assert client.post("/api/channels", json={"id": "temp", "title": "临时"}).status_code == 201
+    assert client.delete("/api/channels/unclassified").status_code == 422
+    assert client.delete("/api/channels/missing").status_code == 404
+    # 渠道还有保留期内文章：默认 409，purge 才能删
+    assert client.post("/api/post", json={"title": "文章", "content": "正文", "channel": "temp"}).status_code == 201
+    assert client.delete("/api/channels/temp").status_code == 409
+    assert client.get("/api/channels").json()["channels"][-1]["id"] == "temp"
+    assert client.delete("/api/channels/temp?purge=true").status_code == 204
+    assert client.get("/api/posts?channel=temp").status_code == 404
+    assert all(c["id"] != "temp" for c in client.get("/api/channels?include_disabled=true").json()["channels"])
+    # 空渠道直接删
+    assert client.post("/api/channels", json={"id": "empty", "title": "空"}).status_code == 201
+    assert client.delete("/api/channels/empty").status_code == 204
+
+
 def test_save_failure_does_not_report_success(client, monkeypatch):
     monkeypatch.setattr("src.channels.os.replace", lambda *args: (_ for _ in ()).throw(OSError("disk full")))
     assert client.post("/api/channels", json={"id": "new", "title": "new"}).status_code == 503

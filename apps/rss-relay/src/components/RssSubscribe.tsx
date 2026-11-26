@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { rssRelayApi } from '@/lib/api';
+import { rssRelayApi, ApiError } from '@/lib/api';
 import type { Channel } from '@/lib/types';
 import { PUBLIC_API, feedUrl, pushExample } from '@/lib/rss-links';
 import { unclassifiedLast } from '@/lib/channel-order';
@@ -21,6 +21,7 @@ function ChannelPanel({ onClose, onChannelsChange }: { onClose: () => void; onCh
   const [form, setForm] = useState({ id: '', title: '', description: '' });
   const [saving, setSaving] = useState(false);
   const [pendingDisable, setPendingDisable] = useState<Channel | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<Channel | null>(null);
   const token = process.env.NEXT_PUBLIC_RSS_TOKEN || '';
   const load = async () => {
     setLoading(true); setError('');
@@ -42,6 +43,24 @@ function ChannelPanel({ onClose, onChannelsChange }: { onClose: () => void; onCh
     setSaving(true); setError('');
     try { applyChannel(await rssRelayApi.updateChannel(channel.id, { enabled: !channel.enabled })); setPendingDisable(null); setNotice(channel.enabled ? '渠道已停用，原订阅链接仍可读取历史文章。' : '渠道已恢复。'); }
     catch (e) { setError(e instanceof Error ? e.message : '保存失败'); }
+    finally { setSaving(false); }
+  };
+  const remove = async (channel: Channel, purge: boolean) => {
+    setSaving(true); setError('');
+    try {
+      await rssRelayApi.deleteChannel(channel.id, purge);
+      setChannels(current => current.filter(c => c.id !== channel.id));
+      setPendingDelete(null);
+      onChannelsChange();
+      setNotice(purge ? `渠道「${channel.title}」及其保留期内文章已删除。` : `渠道「${channel.title}」已删除。`);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409 && !purge) {
+        setPendingDelete(channel); // 仍显示确认框，切换为「连文章一起删」
+      } else {
+        setError(e instanceof Error ? e.message : '删除失败');
+        setPendingDelete(null);
+      }
+    }
     finally { setSaving(false); }
   };
   const visible = unclassifiedLast(channels.filter(c => (showDisabled || c.enabled) && `${c.title} ${c.id}`.toLowerCase().includes(search.trim().toLowerCase())));
@@ -73,12 +92,14 @@ function ChannelPanel({ onClose, onChannelsChange }: { onClose: () => void; onCh
         {channel.id !== 'unclassified' && <div className="col-start-2 row-start-2 sm:col-start-3 sm:row-start-1 flex justify-end gap-1">
           <button disabled={saving || !!editing} className="rounded px-1.5 py-0.5 sm:px-2.5 sm:py-1.5 text-xs text-ink-muted bg-paper-deep hover:bg-rule disabled:opacity-40 whitespace-nowrap" onClick={() => startEdit(channel)}>编辑</button>
           <button disabled={saving || !!editing} className="rounded px-1.5 py-0.5 sm:px-2.5 sm:py-1.5 text-xs text-ink-muted bg-paper-deep hover:bg-rule disabled:opacity-40 whitespace-nowrap" onClick={() => channel.enabled ? setPendingDisable(channel) : void toggle(channel)}>{channel.enabled ? '停用' : '恢复'}</button>
+          <button disabled={saving || !!editing} className="rounded px-1.5 py-0.5 sm:px-2.5 sm:py-1.5 text-xs text-ink-muted bg-paper-deep hover:bg-rule disabled:opacity-40 whitespace-nowrap" onClick={() => { setPendingDisable(null); setPendingDelete(channel); }}>删除</button>
         </div>}
         <div className="col-start-1 row-start-2 sm:col-span-3 min-w-0 flex items-center gap-2 text-xs text-ink-muted"><p title={channel.description || channel.id} className="min-w-0 flex-1 truncate">{channel.description || channel.id}{channel.id === 'unclassified' ? ' · 系统渠道' : ''}</p><button aria-expanded={example === channel.id} aria-controls={`channel-example-${channel.id}`} className="shrink-0 text-[11px] hover:text-ink py-0.5" onClick={() => setExample(example === channel.id ? null : channel.id)}>{example === channel.id ? '▾' : '▸'} 推送示例</button></div>
       </div>
       {editing && editing !== 'new' && editing.id === channel.id && editForm}
       {example === channel.id && <div id={`channel-example-${channel.id}`} className="mt-2 text-xs text-ink-muted"><p className="font-mono break-all">POST {PUBLIC_API}/post</p><pre className="overflow-x-auto my-2 p-2 bg-paper-deep rounded text-xs">{pushExample(channel.id)}</pre><CopyText text={pushExample(channel.id)} label="复制推送 JSON" className={button} /></div>}
       {pendingDisable?.id === channel.id && <div className="mt-3 p-3 bg-paper-deep rounded"><p>停用「{channel.title}」会暂停接收新推送，保留文章和原订阅链接。</p><div className="flex gap-2 mt-3"><button disabled={saving} className={button} onClick={() => void toggle(channel)}>确认停用</button><button disabled={saving} className={button} onClick={() => setPendingDisable(null)}>取消</button></div></div>}
+      {pendingDelete?.id === channel.id && <div className="mt-3 p-3 bg-paper-deep rounded"><p>删除「{channel.title}」后原订阅链接立即失效；保留期内的文章默认保留。{saving ? '' : ''}</p><div className="flex gap-2 mt-3 flex-wrap"><button disabled={saving} className={button} onClick={() => void remove(channel, false)}>仅删渠道</button><button disabled={saving} className={button} onClick={() => void remove(channel, true)}>连文章一起删</button><button disabled={saving} className={button} onClick={() => setPendingDelete(null)}>取消</button></div></div>}
     </div>)}{!visible.length && <p className="py-3 text-xs text-ink-muted">{search ? '没有匹配的渠道。' : '暂无启用渠道，可新增或显示已停用渠道。'}</p>}</div>}
     <p className="mt-3 text-[11px] text-ink-muted">订阅链接含 token，请妥善保管。改名不改变订阅链接。</p>
   </RelayDialog>;
