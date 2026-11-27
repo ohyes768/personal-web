@@ -39,12 +39,10 @@ function useFetchWithMock<T>(fetcher: () => Promise<T>, mock: () => T): WithRelo
       }
       setState((s) => ({ ...s, loading: false, error: e instanceof Error ? e.message : String(e) }));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [fetcher]);
 
   useEffect(() => {
     reload();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reload]);
 
   return { ...state, reload };

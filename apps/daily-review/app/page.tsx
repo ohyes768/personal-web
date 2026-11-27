@@ -92,7 +92,7 @@ export default function DailyHomePage() {
         <Loading />
       ) : error ? (
         <ErrorState error={error} onRetry={reload} />
-      ) : !data ? (
+      ) : !data || !data.report ? (
         <Empty hint="报告不存在" />
       ) : (
         <>
