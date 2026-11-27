@@ -353,6 +353,12 @@ table.cols-fit td, table.cols-fit th { overflow-wrap: anywhere; }
 .col-state { width: 12%; }
 .col-port { width: 18%; }
 .col-actions { width: 14%; }
+/* 资源总览表固定列宽，与主表/容器表同一套气质 */
+.pcol-port { width: 22%; }
+.pcol-kind { width: 12%; }
+.pcol-container { width: 26%; }
+.pcol-service { width: 20%; }
+.pcol-origin { width: 20%; }
 
 /* 移动端：表格转卡片式滚动，主要操作仍可键盘使用 */
 .table-scroll { overflow-x: auto; }

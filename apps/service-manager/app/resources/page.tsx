@@ -48,7 +48,7 @@ function ResourcesView() {
             onChange={(event) => setQuery(event.target.value)}
             placeholder="搜索主机 / 端口 / 服务"
             aria-label="搜索资源"
-            style={{ flex: "1 1 260px" }}
+            className="toolbar-search"
           />
           <label className="small" style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
             <input
@@ -92,14 +92,14 @@ function ResourcesView() {
             <p className="muted">没有端口记录。若 Docker 读取不可用，请到「设置」查看原因。</p>
           ) : (
             <div className="table-scroll">
-              <table>
+              <table className="cols-fit">
                 <thead>
                   <tr>
-                    <th>端口</th>
-                    <th>类型</th>
-                    <th>容器</th>
-                    <th>服务</th>
-                    <th>来源</th>
+                    <th className="pcol-port">端口</th>
+                    <th className="pcol-kind">类型</th>
+                    <th className="pcol-container">容器</th>
+                    <th className="pcol-service">服务</th>
+                    <th className="pcol-origin">来源</th>
                   </tr>
                 </thead>
                 <tbody>
