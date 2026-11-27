@@ -104,16 +104,7 @@ export const mockProjects: ProjectSummary[] = [
 ];
 
 export const mockReports: ReportMeta[] = [
-  {
-    id: "r-weekly-1",
-    report_type: "weekly",
-    period_start: "2026-11-23",
-    period_end: "2026-11-29",
-    generated_at: iso(9, 0),
-    status: "done",
-    summary_md:
-      "## 本周概览\n\n- 完成 **daily-review** 设计定稿，进入实施阶段\n- task-web 排期日历上线 missed/running 状态\n- rss-relay 修复上游限流退避\n\n> 下周重点：daily-review 前后端联调。",
-  },
+  
   {
     id: "r-daily-1",
     report_type: "daily",

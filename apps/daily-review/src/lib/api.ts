@@ -19,7 +19,7 @@ export interface ProjectSummary {
   recent: string[]; // 近期工作摘要
 }
 
-export type ReportType = "daily" | "weekly";
+export type ReportType = "daily";
 
 export interface ReportMeta {
   id: string;

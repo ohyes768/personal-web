@@ -4,7 +4,7 @@
 import { useState, use } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { machineMeta, type ReportType } from "@/lib/api";
+import { machineMeta } from "@/lib/api";
 import { generateReport, useReport } from "@/lib/hooks";
 import { fmtDateTime, fmtRelative, fmtTime } from "@/lib/time";
 import { Markdown } from "@/components/Markdown";
@@ -14,16 +14,16 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
   const { id } = use(params);
   const router = useRouter();
   const { data, loading, error, reload } = useReport(id);
-  const [generating, setGenerating] = useState<ReportType | null>(null);
+  const [generating, setGenerating] = useState<string | null>(null);
   const [genError, setGenError] = useState("");
-  const [confirming, setConfirming] = useState<ReportType | null>(null);
+  const [confirming, setConfirming] = useState<string | null>(null);
 
-  async function doGenerate(type: ReportType) {
+  async function doGenerate() {
     setConfirming(null);
-    setGenerating(type);
+    setGenerating("daily");
     setGenError("");
     try {
-      const { id: newId } = await generateReport(type);
+      const { id: newId } = await generateReport("daily");
       setGenerating(null);
       router.push(`/reports/${newId}`);
     } catch (e) {
@@ -32,7 +32,7 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
     }
   }
 
-  const generateLabel: Record<ReportType, string> = { daily: "生成日报", weekly: "生成周报" };
+  const generateLabel: Record<string, string> = { daily: "重新生成日报" };
 
   if (loading) return <Loading />;
   if (error) return <ErrorState error={error} onRetry={reload} />;
@@ -53,7 +53,7 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
         </h1>
         <span className="text-xs text-gray-400">{fmtRelative(report.generated_at)}生成</span>
         <div className="ml-auto flex gap-2">
-          {(Object.keys(generateLabel) as ReportType[]).map((t) => (
+          {(Object.keys(generateLabel)).map((t) => (
             <button
               key={t}
               onClick={() => setConfirming(t)}
@@ -109,7 +109,7 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
           <div className="bg-white rounded-xl p-6 min-w-[320px]">
             <h3 className="font-semibold mb-2">{generateLabel[confirming]}</h3>
             <p className="text-sm text-gray-500 mb-4">
-              将基于{confirming === "daily" ? "当天" : "本周"}的结构化记录重新调用 LLM 生成{confirming === "daily" ? "日报" : "周报"}，通常需要几十秒。
+              将基于当天的结构化记录重新调用 LLM 生成日报，通常需要几十秒。
             </p>
             <div className="flex justify-end gap-2">
               <button
@@ -119,7 +119,7 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
                 取消
               </button>
               <button
-                onClick={() => doGenerate(confirming)}
+                onClick={() => doGenerate()}
                 className="px-3 py-1.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
               >
                 确认生成

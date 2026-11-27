@@ -52,7 +52,31 @@ function useFetchWithMock<T>(fetcher: () => Promise<T>, mock: () => T): WithRelo
 
 export function useProjects(): WithReload<ProjectSummary[]> {
   return useFetchWithMock<ProjectSummary[]>(
-    useCallback(() => apiGet<{ projects: ProjectSummary[] }>("/projects").then((d) => d.projects), []),
+    useCallback(async () => {
+      const d = await apiGet<{ projects: Record<string, unknown>[] }>("/projects");
+      // 后端返回 last_activity + recent_summaries:[{title,summary_text,...}]；归一化成
+      // 前端契约的 last_active_at + recent:string[]，字段缺失时安全兜底避免页面崩溃。
+      return (d.projects ?? []).map((p) => {
+        const s = p as {
+          project?: string; last_activity?: string; last_active_at?: string;
+          session_count?: number; commit_count?: number;
+          recent_summaries?: { title?: string; summary_text?: string }[];
+          recent?: string[];
+        };
+        const recent = Array.isArray(s.recent)
+          ? s.recent
+          : (s.recent_summaries ?? []).map((r) =>
+              [r.title, r.summary_text].filter(Boolean).join(" — "),
+            );
+        return {
+          project: s.project ?? "未知项目",
+          last_active_at: s.last_active_at ?? s.last_activity ?? "",
+          session_count: s.session_count ?? 0,
+          commit_count: s.commit_count ?? 0,
+          recent,
+        };
+      });
+    }, []),
     () => mockProjects,
   );
 }
@@ -92,4 +116,20 @@ export async function generateReport(
     period_start,
     period_end,
   });
+}
+
+// 首页日历翻页用：日报日期索引（按 period_start 升序）+ 日期→id 映射
+export function useDailyIndex(): {
+  dates: string[];
+  byDate: Record<string, string>;
+  minDate: string;
+  loading: boolean;
+  error: string;
+  reload: () => Promise<void>;
+} {
+  const { data, loading, error, reload } = useReports("daily");
+  const dates = (data ?? []).map((r) => r.period_start).sort();
+  const byDate: Record<string, string> = {};
+  for (const r of data ?? []) byDate[r.period_start] = r.id;
+  return { dates, byDate, minDate: dates[0] ?? "", loading, error, reload };
 }

@@ -1,40 +1,17 @@
 "use client";
 
-// 报告列表：daily / weekly 两个 tab，点进详情
-import { useState } from "react";
+// 报告列表：日报（周报已取消）
 import Link from "next/link";
-import { type ReportType } from "@/lib/api";
 import { useReports } from "@/lib/hooks";
 import { fmtDateTime } from "@/lib/time";
 import { Empty, ErrorState, Loading } from "@/components/States";
 
-const TABS: { key: ReportType; label: string }[] = [
-  { key: "daily", label: "日报" },
-  { key: "weekly", label: "周报" },
-];
 
 export default function ReportsPage() {
-  const [type, setType] = useState<ReportType>("daily");
-  const { data, loading, error, reload } = useReports(type);
+  const { data, loading, error, reload } = useReports("daily");
 
   return (
     <div>
-      <div className="flex gap-1 mb-4">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setType(t.key)}
-            className={`px-4 py-1.5 text-sm rounded-md border cursor-pointer ${
-              type === t.key
-                ? "bg-blue-600 text-white border-blue-600"
-                : "bg-white border-gray-300 hover:bg-gray-50"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
       {loading ? (
         <Loading />
       ) : error ? (
