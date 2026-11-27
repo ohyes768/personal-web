@@ -77,7 +77,15 @@ export function useReports(type: ReportType): WithReload<ReportMeta[]> {
 
 export function useReport(id: string): WithReload<ReportDetail> {
   return useFetchWithMock<ReportDetail>(
-    useCallback(() => apiGet<ReportDetail>(`/reports/${id}`), [id]),
+    useCallback(async () => {
+      const d = await apiGet<Record<string, unknown>>(`/reports/${id}`);
+      // 后端详情返回扁平结构（报告字段在顶层 + records）；归一化成 {report, records}，
+      // 兼容旧版嵌套形状，避免 data.report 为 undefined 时页面崩溃。
+      const nested = (d.report ?? null) as ReportDetail["report"] | null;
+      if (nested) return { report: nested, records: (d.records as ReportDetail["records"]) ?? [] };
+      const { records = [], ...report } = d;
+      return { report: report as unknown as ReportDetail["report"], records: records as ReportDetail["records"] };
+    }, [id]),
     () => mockReportDetail(id),
   );
 }
