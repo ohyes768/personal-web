@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 83
-- **Last Active**: 2026-11-15
+- **Total Sessions**: 84
+- **Last Active**: 2026-11-27
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1347 | Active |
+| `journal-2.md` | ~1392 | Active |
 | `journal-1.md` | ~2042 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 84 | 2026-11-27 | 创业板50 纳入指数趋势与 PB/PE 分位 | `42cd6909`, `33687801`, `237d0196`, `5bd29829`, `c087f457`, `d07162e8`, `16777bb5` | `master` |
 | 83 | 2026-11-15 | 夏普榜单在榜占比筛选 + 精简时间范围 | `b056c798` | `master` |
 | 82 | 2026-11-15 | 夏普榜单数据缺口周口径修正 | `84ab060e`, `07316cc2` | `master` |
 | 81 | 2026-11-14 | 基金代码快速搜索（header 搜索框 + URL 跳转） | `ee73a068` | `master` |

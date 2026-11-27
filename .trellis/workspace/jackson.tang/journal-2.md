@@ -1345,3 +1345,48 @@ v2 入选规则（IR≥0.5/样本≥700/同类前20%）+ 52 周窗口统计；�
 ### Status
 
 [OK] **Completed**
+
+
+## Session 84: 创业板50 纳入指数趋势与 PB/PE 分位
+<!-- trellis-session: v=2 fp=c0251a78e012a00e -->
+
+**Date**: 2026-11-27
+**Task**: 创业板50 纳入指数趋势与 PB/PE 分位
+**Package**: backend/index-trends
+**Branch**: `master`
+
+### Summary
+
+index-trends 改注册表驱动多指数，新增创业板50（399673）：无回归通道但有价格走势 + PB/PE-TTM 双指标 10 年分位；行情/模型/估值按指数隔离。
+
+### Main Changes
+
+- 后端: 指数注册表 + 存储迁移 006_multi_index，行情/模型/元数据/估值失败状态全部按 index_code 隔离
+- 创业板50 has_channel=False: 采周K/日线出价格折线，/chart /history 返回 409，价格走 /prices、估值走 /valuation（不需 model）
+- 估值双指标: 理杏仁一次请求取 pe_ttm + pb 两条 y10 分位，落 index_valuation_history，失败状态按 (index_code, metric) 记
+- 前端: 指数切换 + 无通道指数自动落估值分位视图；估值页合并为一张图，最终改为只画指数点数、PB/PE 分位悬浮查表
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `42cd6909` | index-trends: 支持多指数（新增创业板50）与 PB/PE 双指标分位 |
+| `33687801` | index-trends: 前端加指数切换与分位走势图 |
+| `237d0196` | index-trends: 创业板50 只做 PB/PE 分位，不再提供走势通道 |
+| `5bd29829` | index-trends: 创业板50 显示价格走势（不拟合通道），分位独立计算 |
+| `c087f457` | index-trends: 估值 tab 也显示价格走势图 |
+| `d07162e8` | index-trends: 估值页价格走势与分位合并为一张图 |
+| `16777bb5` | index-trends: 估值图只画指数点数，PB/PE 分位改为悬浮查表 |
+
+### Testing
+
+- [OK] 后端 pytest 237 passed；前端 tsc --noEmit + pnpm build 通过
+- [OK] 生产复核: /api/indices 两条；399673 估值 state=ok（PB 分位 3.3%、PE 分位 0.0%，as_of 2026-11-26）；/chart /history 409；两指数 /prices 同日不同值
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 创业板50 进 Hermes 周报投递另开任务（不在本任务范围）

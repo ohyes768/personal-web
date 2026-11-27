@@ -49,14 +49,17 @@
 
 ## Acceptance Criteria
 
-- [ ] `GET /api/indices` 返回两个指数条目，399673 含 code/name/symbol/inception。
-- [ ] `GET /api/indices/399673/status` 返回 `available=false`、`reason=valuation_only`，且 `valuation.metrics` 仍有 PB 与 PE-TTM 两条。
-- [ ] `GET /api/indices/399673/chart` 与 `/history` 返回 409；`GET /api/indices/399673/valuation` 不需要 `model` 参数即可取到两条分位。
-- [ ] 每日行情刷新只遍历 `trend_index_codes()`（当前只有 000300）。
-- [ ] `GET /api/indices/399673/status` 的 `valuation` 同时含 PB 与 PE-TTM 两条，各自有 percentile_pct、as_of、state。
-- [ ] 刷新 399673 前后，000300 的周K行数与 weekly model_id 不变；反之亦然。
-- [ ] 未配置 `INDEX_TRENDS_LIXINGER_TOKEN` 时 `valuation.state=="disabled"`，页面不出现 0 分位或假数据。
-- [ ] `backend/index-trends` 的 pytest 全绿；`apps/index-trends` 的 `pnpm lint` 与 `tsc --noEmit` 通过。
+> 复核结论见 `implement.md` 第 8 节（2026-11-27 生产环境实测）。AC2 的 `available=false` / `reason=valuation_only`
+> 是初稿措辞，最终实现为 `has_channel=false` 承载语义：有日线即 `available=true`、`reason=null`，通道字段不出现。
+
+- [x] `GET /api/indices` 返回两个指数条目，399673 含 code/name/symbol/inception。
+- [x] `GET /api/indices/399673/status` 无通道指数返回 `has_channel=false`（不返回通道字段），且 `valuation.metrics` 仍有 PB 与 PE-TTM 两条。
+- [x] `GET /api/indices/399673/chart` 与 `/history` 返回 409；`GET /api/indices/399673/valuation` 不需要 `model` 参数即可取到两条分位。
+- [x] 每日行情刷新只遍历 `trend_index_codes()`（当前只有 000300）。
+- [x] `GET /api/indices/399673/status` 的 `valuation` 同时含 PB 与 PE-TTM 两条，各自有 percentile_pct、as_of、state。
+- [x] 刷新 399673 前后，000300 的周K行数与 weekly model_id 不变；反之亦然。
+- [x] 未配置 `INDEX_TRENDS_LIXINGER_TOKEN` 时 `valuation.state=="disabled"`，页面不出现 0 分位或假数据。
+- [x] `backend/index-trends` 的 pytest 全绿（237 passed）；`apps/index-trends` 的 `tsc --noEmit` 与 `pnpm build` 通过（该 app 无 lint 脚本）。
 
 ## Out of Scope
 
