@@ -607,6 +607,8 @@ services:
     expose: ["8101"]
     volumes:
       - task-web-data:/app/data
+      # 预登记任务清单 bind mount：改 tasks.yaml 只需 restart 容器（启动时 sync_registry 重导入），无需重建镜像
+      - ./backend/task-web/tasks.yaml:/app/tasks.yaml:ro
       # 业务仓库挂载：脚本类任务 env_file 读取来源（docker 引擎的代码在业务镜像内）
       - "${TASK_WEB_WORKSPACE_HOST_PATH:-/home/ohyes768/stock-info-dingding}:/workspace/stock-info-dingding"
       # Hermes profile 凭证（gw-8642/8643.env）只读挂载；AI 任务 env_file 指向这里
