@@ -327,8 +327,16 @@ def _period_range(report_type: str, period_start: str | None, period_end: str | 
 def _build_prompt(records: list, report_type: str, start: str, end: str) -> str:
     lines = [
         f"以下是 {start} 至 {end} 的结构化工作记录（两台机器合并，已脱敏，仅摘要不含原文）。",
-        f"请用中文写一份{'日报' if report_type == 'daily' else '周报'} markdown："
-        "先一段总体概述，再按项目分节列要点，最后给一段明日/下周建议。记录：",
+        f"请用中文写一份{'日报' if report_type == 'daily' else '周报'} markdown（不要一级标题）：\n"
+        "先一行引用块概览（几个项目、重点）；然后每个项目一节：\n"
+        "## <项目名>\n**✅ 完成**\n- ...\n**🔄 进行中**\n- ...\n**📋 待办**\n- ...\n"
+        "硬性规则：\n"
+        "1. 极简：每栏最多 2 条，每条不超过 20 字（commit 号不计入字数），"
+        "完成项只留该周期最重要的，其余靠记录回溯；\n"
+        "2. 「待办」「进行中」只在记录里有明确证据时才写，禁止推测；\n"
+        "3. 同一任务的多次推进合并成一条时间线叙述；\n"
+        "4. 最后加一节 \"## 明日建议\"（周报为 \"## 下周建议\"）只基于确凿待办列 1-3 条。\n"
+        "记录：",
     ]
     for r in records:
         lines.append(

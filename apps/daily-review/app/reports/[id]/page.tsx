@@ -71,9 +71,12 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
         {report.summary_md ? <Markdown md={report.summary_md} /> : <Empty hint="总结尚未生成" />}
       </div>
 
-      <h2 className="text-sm font-semibold text-gray-500 mb-2">
-        原始记录 <span className="font-normal text-gray-400">{records.length}</span>
-      </h2>
+      <details className="mt-5 group">
+        <summary className="text-sm font-semibold text-gray-500 cursor-pointer select-none">
+          原始记录 <span className="font-normal text-gray-400">{records.length}</span>
+          <span className="ml-2 text-xs text-gray-400 group-open:hidden">展开</span>
+        </summary>
+        <div className="mt-2">
       {records.length === 0 ? (
         <Empty hint="该周期没有结构化记录" />
       ) : (
@@ -97,6 +100,8 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
             );
           })}
         </ul>
+        </div>
+      </details>
       )}
 
       {confirming && (
