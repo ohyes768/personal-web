@@ -8,8 +8,10 @@ import {
   type DiscoveryCandidate,
   type DiscoveryResponse,
 } from "@/lib/api";
-import { composeFileText, formatRelative, HEALTH, portText } from "@/lib/status";
-import { StateBadge, Toast } from "@/components/Widgets";
+import { composeFileText, containerTone, formatRelative, HEALTH, portText } from "@/lib/status";
+import { StateBadge, Spinner, Toast } from "@/components/Widgets";
+import { describeJob, waitForJob } from "@/lib/jobs";
+import { DockerNotice } from "@/components/DockerNotice";
 
 export default function DiscoveryPage() {
   return (
@@ -43,7 +45,13 @@ function DiscoveryView() {
   const [services, setServices] = useState<{ id: string; name: string }[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [toastKind, setToastKind] = useState<"ok" | "error">("ok");
+  function notify(message: string, kind: "ok" | "error" = "ok") {
+    setToastKind(kind);
+    setToast(message);
+  }
   const [loading, setLoading] = useState(false);
+  const [scanning, setScanning] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -97,22 +105,40 @@ function DiscoveryView() {
   }
 
   async function scan() {
+    if (scanning) return;
+    const label = "容器扫描";
+    setScanning(true);
     try {
-      await api.refresh("docker");
-      setToast("已提交容器扫描，稍后刷新候选");
-      window.setTimeout(() => void load(), 3000);
+      const job = await api.refresh("docker");
+      notify(
+        job.deduplicated ? "已有同类型任务在跑，复用现有任务" : `已提交${label}任务`,
+      );
+      // 与「服务」页一致：轮询到终态再刷新，固定 3 秒会漏掉慢任务的结果。
+      const result = await waitForJob(job.id);
+      if (result.timedOut) {
+        notify(`${label}还没跑完，仍在后台执行，稍后再看`);
+      } else if (result.job) {
+        const failed =
+          result.job.state === "failed" ||
+          result.job.state === "partial_failed" ||
+          result.job.state === "interrupted";
+        notify(describeJob(label, result.job), failed ? "error" : "ok");
+      }
+      await load();
     } catch (caught) {
-      setToast(caught instanceof ApiError ? caught.message : "扫描失败");
+      notify(caught instanceof ApiError ? caught.message : `${label}失败`, "error");
+    } finally {
+      setScanning(false);
     }
   }
 
   async function doImport() {
     if (selected.length === 0) {
-      setToast("先勾选要导入的组件");
+      notify("先勾选要导入的组件", "error");
       return;
     }
     if (!attachTo && !name.trim()) {
-      setToast("新建服务需要填写名称");
+      notify("新建服务需要填写名称", "error");
       return;
     }
     try {
@@ -127,74 +153,88 @@ function DiscoveryView() {
       setName("");
       setDescription("");
       setAttachTo("");
-      setToast(result.created ? "已新建服务并关联组件" : "已追加到现有服务");
+      notify(result.created ? "已新建服务并关联组件" : "已追加到现有服务");
       router.push("/");
     } catch (caught) {
-      setToast(caught instanceof ApiError ? caught.message : "导入失败");
+      notify(caught instanceof ApiError ? caught.message : "导入失败", "error");
     }
   }
 
   async function toggleIgnore(sourceKeys: string[], next: boolean) {
     try {
       await api.setIgnored(sourceKeys, next);
-      setToast(next ? "已忽略" : "已取消忽略");
+      notify(next ? "已忽略" : "已取消忽略");
       await load();
     } catch (caught) {
-      setToast(caught instanceof ApiError ? caught.message : "操作失败");
+      notify(caught instanceof ApiError ? caught.message : "操作失败", "error");
     }
   }
 
   return (
     <>
       <h1>容器管理</h1>
-      <p className="lead">
-        看机器上全部容器，谁入了账、谁没入。勾选多个未入账容器可以合并成一个业务服务。
-      </p>
+      <p className="lead">全部容器，与台账的对应关系。</p>
 
-      {data && !data.docker_available ? (
-        <div className="notice">
-          Docker 读取不可用：{data.docker_error ?? "未配置"}。已登记台账不受影响。
-        </div>
-      ) : null}
-      {data?.last_success_at ? (
-        <p className="small muted">上次成功扫描：{formatRelative(data.last_success_at)}</p>
-      ) : null}
+      {data && !data.docker_available ? <DockerNotice error={data.docker_error} /> : null}
 
       <div className="card tight">
-        <div className="btn-row">
-          <select value={project} onChange={(event) => setProject(event.target.value)} aria-label="按项目筛选">
-            <option value="">全部 Compose 项目</option>
-            {(data?.projects ?? []).map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </select>
-          <select value={state} onChange={(event) => setState(event.target.value)} aria-label="按状态筛选">
-            <option value="">全部状态</option>
-            <option value="running">运行中</option>
-            <option value="exited">已退出</option>
-            <option value="missing">已消失</option>
-          </select>
-          <select
-            value={bound}
-            onChange={(event) => setBound(event.target.value as typeof bound)}
-            aria-label="按入账状态筛选"
+        <div className="filter-grid">
+          <label className="field" htmlFor="filter-project">
+            Compose 项目
+            <select
+              id="filter-project"
+              value={project}
+              onChange={(event) => setProject(event.target.value)}
+            >
+              <option value="">全部</option>
+              {(data?.projects ?? []).map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field" htmlFor="filter-state">
+            状态
+            <select
+              id="filter-state"
+              value={state}
+              onChange={(event) => setState(event.target.value)}
+            >
+              <option value="">全部</option>
+              <option value="running">运行中</option>
+              <option value="exited">已退出</option>
+              <option value="missing">已消失</option>
+            </select>
+          </label>
+          <label className="field" htmlFor="filter-bound">
+            入账状态
+            <select
+              id="filter-bound"
+              value={bound}
+              onChange={(event) => setBound(event.target.value as typeof bound)}
+            >
+              <option value="unbound">未入账</option>
+              <option value="bound">已入账</option>
+              <option value="all">全部</option>
+            </select>
+          </label>
+          <label className="field" htmlFor="filter-ignored">
+            忽略状态
+            <select
+              id="filter-ignored"
+              value={ignored}
+              onChange={(event) => setIgnored(event.target.value as typeof ignored)}
+            >
+              <option value="active">未忽略</option>
+              <option value="ignored">已忽略</option>
+              <option value="all">全部</option>
+            </select>
+          </label>
+          <label
+            className="small"
+            style={{ display: "inline-flex", gap: 6, alignItems: "center", justifyContent: "flex-end" }}
           >
-            <option value="unbound">未入账</option>
-            <option value="bound">已入账</option>
-            <option value="all">全部</option>
-          </select>
-          <select
-            value={ignored}
-            onChange={(event) => setIgnored(event.target.value as typeof ignored)}
-            aria-label="按忽略状态筛选"
-          >
-            <option value="active">未忽略</option>
-            <option value="ignored">已忽略</option>
-            <option value="all">全部</option>
-          </select>
-          <label className="small" style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
             <input
               type="checkbox"
               checked={includeEphemeral}
@@ -202,11 +242,36 @@ function DiscoveryView() {
             />
             显示一次性 / 已退出容器
           </label>
-          <button className="btn" type="button" onClick={() => void scan()}>
-            扫描容器
+        </div>
+        <div className="btn-row">
+          <button
+            className="btn"
+            type="button"
+            disabled={scanning}
+            aria-busy={scanning}
+            onClick={() => void scan()}
+          >
+            {scanning ? (
+              <>
+                <Spinner />
+                扫描中…
+              </>
+            ) : (
+              "扫描容器"
+            )}
           </button>
+          {data?.last_success_at ? (
+            <span className="scan-caption">上次扫描 {formatRelative(data.last_success_at)}</span>
+          ) : null}
         </div>
       </div>
+
+      {data?.counts ? (
+        <p className="small muted">
+          {data.counts.total} 个容器 · {data.counts.bound} 已入账 · {data.counts.unbound} 未入账
+          {data.counts.ignored > 0 ? `（已忽略 ${data.counts.ignored}）` : ""} · 当前显示 {items.length} 条
+        </p>
+      ) : null}
 
       {error ? <p className="notice bad">{error}</p> : null}
 
@@ -284,10 +349,8 @@ function DiscoveryView() {
               <tr>
                 <th style={{ width: "5%" }}>选择</th>
                 <th className="col-name">容器</th>
-                <th className="col-meta">项目</th>
                 <th className="col-state">状态</th>
                 <th className="col-port">端口</th>
-                <th className="col-path">部署路径</th>
                 <th className="col-actions">操作</th>
               </tr>
             </thead>
@@ -305,7 +368,15 @@ function DiscoveryView() {
                   </td>
                   <td>
                     <div className="mono">{item.container_name}</div>
-                    <div className="small muted">{item.image_ref}</div>
+                    <div className="small muted truncate">{item.image_ref}</div>
+                    <div className="small muted truncate">
+                      {item.project ?? "无 Compose 项目"}
+                      {item.service_name ? ` · ${item.service_name}` : ""}
+                    </div>
+                    <div className="small muted truncate">
+                      {item.compose_working_dir ?? "部署路径未知"}
+                      {item.compose_files.map((file) => `（${composeFileText(file)}）`)}
+                    </div>
                     {item.oneoff ? <span className="badge warn">一次性任务</span> : null}
                     {item.bound_service_id ? (
                       <span className="badge info">
@@ -313,14 +384,8 @@ function DiscoveryView() {
                       </span>
                     ) : null}
                   </td>
-                  <td className="small">
-                    <div className="truncate" title={item.project ?? ""}>
-                      {item.project ?? "（无 Compose 标签）"}
-                    </div>
-                    {item.service_name ? <div className="muted truncate">{item.service_name}</div> : null}
-                  </td>
                   <td>
-                    <span className="badge muted">{item.state}</span>
+                    <StateBadge tone={containerTone(item.state)} />
                     {item.health !== "not_configured" ? (
                       <div className="small">
                         <StateBadge tone={HEALTH[item.health]} />
@@ -330,23 +395,13 @@ function DiscoveryView() {
                   <td className="small mono">
                     {item.ports.length === 0 ? (
                       <span className="muted">
-                        {item.network_mode === "host" ? "宿主网络" : "无"}
+                        {item.network_mode === "host" ? "宿主网络" : "—"}
                       </span>
                     ) : (
                       item.ports.slice(0, 4).map((port, index) => (
                         <div key={index}>{portText(port)}</div>
                       ))
                     )}
-                  </td>
-                  <td className="small mono">
-                    <div className="truncate" title={item.compose_working_dir ?? ""}>
-                      {item.compose_working_dir ?? "未知"}
-                    </div>
-                    {item.compose_files.map((file) => (
-                      <div key={file.raw} className="muted truncate" title={composeFileText(file)}>
-                        {composeFileText(file)}
-                      </div>
-                    ))}
                   </td>
                   <td>
                     <div className="row-actions">
@@ -375,7 +430,7 @@ function DiscoveryView() {
           </table>
         </div>
       )}
-      <Toast message={toast} />
+      <Toast message={toast} kind={toastKind} onDismiss={() => setToast(null)} />
     </>
   );
 }

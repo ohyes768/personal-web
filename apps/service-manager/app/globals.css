@@ -121,14 +121,9 @@ tr:last-child td { border-bottom: none; }
 .btn.danger:hover { background: #991b1b; }
 .btn-mini { padding: 2px 8px; font-size: 12px; min-height: 26px; }
 .btn-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-
-/* 主入口单元���：URL + 「改/登记」小按钮 */
-.entry-cell {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: baseline;
-}
+.toolbar-search { flex: 0 1 360px; min-width: 220px; }
+.scan-group { display: inline-flex; align-items: center; gap: 8px; }
+.scan-caption { font-size: 12px; color: var(--muted); white-space: nowrap; }
 
 .service-name {
   font-weight: 600;
@@ -301,21 +296,7 @@ textarea { min-height: 72px; resize: vertical; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
 .truncate { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wrap-anywhere { overflow-wrap: anywhere; }
-.row-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-
-.tabs { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
-.tabs a, .tabs button {
-  padding: 6px 12px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  background: #fff;
-  color: var(--text);
-  text-decoration: none;
-  font-size: 13px;
-  cursor: pointer;
-  min-height: 32px;
-}
-.tabs .active { background: var(--info); border-color: var(--info); color: #fff; }
+.row-actions { display: flex; gap: 6px; flex-wrap: nowrap; align-items: center; }
 
 .copy-toast {
   position: fixed;
@@ -328,24 +309,9 @@ textarea { min-height: 72px; resize: vertical; }
   border-radius: 999px;
   font-size: 13px;
   z-index: 50;
+  cursor: pointer;
 }
-
-.gate {
-  max-width: 380px;
-  margin: 80px auto;
-}
-
-.release-body {
-  white-space: pre-wrap;
-  font-size: 13px;
-  line-height: 1.6;
-  max-height: 320px;
-  overflow: auto;
-  background: var(--bg);
-  border-radius: 6px;
-  padding: 8px 10px;
-  overflow-wrap: anywhere;
-}
+.copy-toast.error { background: var(--bad); }
 
 .kpi-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
 .kpi { background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; min-width: 120px; }
@@ -353,16 +319,38 @@ a.kpi { color: inherit; text-decoration: none; }
 a.kpi:hover { border-color: var(--muted); }
 .kpi .num { font-size: 20px; font-weight: 600; }
 .kpi .lbl { font-size: 12px; color: var(--muted); }
+a.kpi.kpi-link .num { text-decoration: underline; text-underline-offset: 3px; }
+
+/* 筛选网格：可见标签的 4 个 select + 一次性容器开关 */
+.filter-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 8px 12px;
+  margin-bottom: 12px;
+}
+.filter-grid .field { margin-bottom: 0; min-width: 0; }
+.filter-grid .field select { width: 100%; }
+.filter-grid > label.small { grid-column: 1 / -1; }
 
 /* 表格列宽：避免名字超长的容器把整行撑到必须横向滚动 */
 table.cols-fit { table-layout: fixed; }
 table.cols-fit td, table.cols-fit th { overflow-wrap: anywhere; }
-.col-name { width: 26%; }
-.col-meta { width: 12%; }
-.col-state { width: 9%; }
-.col-port { width: 17%; }
-.col-path { width: 26%; }
-.col-actions { width: 10%; }
+
+/* 主表固定列宽：筛选前后列宽不漂移 */
+.mcol-service { width: 22%; }
+.mcol-entry { width: 19%; }
+.mcol-port { width: 8%; }
+.mcol-run { width: 9%; }
+.mcol-health { width: 8%; }
+.mcol-cert { width: 13%; }
+.mcol-ver { width: 11%; }
+.mcol-actions { width: 10%; }
+/* 主入口 URL 单行省略，不折行撑高 */
+.entry-url { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.col-name { width: 44%; }
+.col-state { width: 12%; }
+.col-port { width: 18%; }
+.col-actions { width: 14%; }
 
 /* 移动端：表格转卡片式滚动，主要操作仍可键盘使用 */
 .table-scroll { overflow-x: auto; }

@@ -197,6 +197,23 @@ class DiscoveryService:
 
     # -- 观测读取 --------------------------------------------------------
 
+    def counts(self) -> dict[str, int]:
+        """台账对账用：全部容器里 已入账 / 未入账 / 未入账中已忽略。"""
+        components = self.components()
+        bound_keys = set(self.registry.binding_map())
+        ignored_keys = self.registry.ignored_keys()
+        total = len(components)
+        bound = sum(1 for key in components if key in bound_keys)
+        return {
+            "total": total,
+            "bound": bound,
+            "unbound": total - bound,
+            "ignored": sum(
+                1 for key in components
+                if key not in bound_keys and key in ignored_keys
+            ),
+        }
+
     def components(self) -> dict[str, dict[str, Any]]:
         with self.store.read() as conn:
             rows = conn.execute("SELECT * FROM docker_components").fetchall()

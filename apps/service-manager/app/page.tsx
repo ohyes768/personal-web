@@ -12,13 +12,13 @@ import { describeJob, waitForJob } from "@/lib/jobs";
 import { matchesTags } from "@/lib/tagFilter";
 import {
   formatRelative,
-  healthTooltip,
   HEALTH,
   RUNTIME,
-  tlsEndpointTooltip,
+  tlsErrorHint,
   tlsInvalidReason,
   tlsTone,
 } from "@/lib/status";
+import { DockerNotice } from "@/components/DockerNotice";
 import { SafeLink, Spinner, StateBadge, Toast } from "@/components/Widgets";
 import { TagBadge } from "@/components/TagBadge";
 import { ServiceInfoEditor } from "@/components/ServiceInfoEditor";
@@ -44,6 +44,11 @@ function ServiceList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [toastKind, setToastKind] = useState<"ok" | "error">("ok");
+  function notify(message: string, kind: "ok" | "error" = "ok") {
+    setToastKind(kind);
+    setToast(message);
+  }
   // 刷新任务在后台跑，按钮各自转圈；两类任务互不阻塞。
   const [pending, setPending] = useState<{ docker: boolean }>({ docker: false });
   const aborters = useRef<Set<AbortController>>(new Set());
@@ -97,12 +102,6 @@ function ServiceList() {
     [items, tagFilter],
   );
 
-  function toggleTagFilter(tag: string) {
-    setTagFilter((prev) =>
-      prev.includes(tag) ? prev.filter((item) => item !== tag) : [...prev, tag],
-    );
-  }
-
   async function saveTags(tags: string[]) {
     if (!editingTags) return;
     setSavingTags(true);
@@ -129,9 +128,9 @@ function ServiceList() {
           : prev,
       );
       setEditingTags(null);
-      setToast("标签已保存");
+      notify("标签已保存");
     } catch (caught) {
-      setToast(caught instanceof ApiError ? caught.message : "保存标签失败");
+      notify(caught instanceof ApiError ? caught.message : "保存标签失败", "error");
     } finally {
       setSavingTags(false);
     }
@@ -199,7 +198,7 @@ function ServiceList() {
         repoChanged = true;
       }
       cancelEditInfo();
-      setToast(values.url ? "已保存，主入口已登记" : "已保存");
+      notify(values.url ? "已保存，主入口已登记" : "已保存");
       await load();
       if (values.url) {
         // 触发一次该服务的证书检查，别让用户干等下一轮定时
@@ -218,7 +217,7 @@ function ServiceList() {
         }
       }
     } catch (caught) {
-      setToast(caught instanceof ApiError ? caught.message : "保存失败");
+      notify(caught instanceof ApiError ? caught.message : "保存失败", "error");
     } finally {
       setSavingInfo(false);
     }
@@ -234,10 +233,10 @@ function ServiceList() {
     }
     try {
       await api.deleteService(item.id);
-      setToast("已移除");
+      notify("已移除");
       await load();
     } catch (caught) {
-      setToast(caught instanceof ApiError ? caught.message : "移除失败");
+      notify(caught instanceof ApiError ? caught.message : "移除失败", "error");
     }
   }
 
@@ -251,7 +250,7 @@ function ServiceList() {
     try {
       const job = await api.refresh(kind);
       if (controller.signal.aborted) return;
-      setToast(
+      notify(
         job.deduplicated
           ? "已有同类型任务在跑，复用现有任务"
           : `已提交${label}任务`,
@@ -260,14 +259,18 @@ function ServiceList() {
       const result = await waitForJob(job.id, { signal: controller.signal });
       if (result.aborted) return;
       if (result.timedOut) {
-        setToast(`${label}还没跑完，仍在后台执行，稍后再看`);
+        notify(`${label}还没跑完，仍在后台执行，稍后再看`);
       } else if (result.job) {
-        setToast(describeJob(label, result.job));
+        const failed =
+          result.job.state === "failed" ||
+          result.job.state === "partial_failed" ||
+          result.job.state === "interrupted";
+        notify(describeJob(label, result.job), failed ? "error" : "ok");
       }
       await load();
     } catch (caught) {
       if (!controller.signal.aborted) {
-        setToast(caught instanceof ApiError ? caught.message : `${label}失败`);
+        notify(caught instanceof ApiError ? caught.message : `${label}失败`, "error");
       }
     } finally {
       aborters.current.delete(controller);
@@ -279,9 +282,7 @@ function ServiceList() {
   return (
     <>
       <h1>服务</h1>
-      <p className="lead">
-        台账里的服务、它们对应的容器，以及运行与健康两个状态。名称、用途、标签都在这一页就地改。
-      </p>
+      <p className="lead">台账与运行状态。</p>
 
       {summary ? (
         <div className="kpi-row">
@@ -289,25 +290,15 @@ function ServiceList() {
             <div className="num">{summary.services}</div>
             <div className="lbl">业务服务</div>
           </div>
-          <div
-            className="kpi"
-            title={`上次扫描观测到的容器总数：运行 ${summary.docker_running} · 已消失 ${summary.docker_missing}`}
-          >
+          <div className="kpi">
             <div className="num">{summary.docker_components}</div>
             <div className="lbl">发现容器</div>
           </div>
-          <div
-            className="kpi"
-            title={`已关联到业务服务的容器：${summary.components} / ${summary.docker_components}`}
-          >
+          <div className="kpi">
             <div className="num">{summary.components}</div>
             <div className="lbl">已关联组件</div>
           </div>
-          <Link
-            className="kpi"
-            href="/discovery?bound=unbound"
-            title={`发现但没关联到任何业务服务、且未标记忽略的容器：${summary.unregistered_components - summary.ignored_components} 个（另有 ${summary.ignored_components} 个已忽略）。点击查看`}
-          >
+          <Link className="kpi kpi-link" href="/discovery?bound=unbound">
             <div
               className="num"
               style={{
@@ -319,21 +310,13 @@ function ServiceList() {
             >
               {summary.unregistered_components - summary.ignored_components}
             </div>
-            <div className="lbl">未入账 · 不含已忽略</div>
+            <div className="lbl">未入账 · 不含已忽略 →</div>
           </Link>
-          <div className="kpi">
-            <div className="num small" style={{ fontSize: 13 }}>
-              {formatRelative(summary.docker_last_success_at)}
-            </div>
-            <div className="lbl">上次扫描</div>
-          </div>
         </div>
       ) : null}
 
       {summary && !summary.docker_available ? (
-        <div className="notice">
-          <span>Docker 读取不可用：{summary.docker_error ?? "未配置"}。人工台账仍可正常使用。</span>
-        </div>
+        <DockerNotice error={summary.docker_error} />
       ) : null}
 
       <div className="card tight">
@@ -344,30 +327,32 @@ function ServiceList() {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             aria-label="搜索服务"
-            style={{ flex: "1 1 320px" }}
+            className="toolbar-search"
           />
-          <button
-            className="btn"
-            type="button"
-            disabled={pending.docker}
-            aria-busy={pending.docker}
-            title="重新扫描 Docker 容器，刷新「发现容器 / 已关联组件 / 未入账」与各服务的运行、健康状态"
-            onClick={() => void refresh("docker")}
-          >
-            {pending.docker ? (
-              <>
-                <Spinner />
-                扫描中…
-              </>
-            ) : (
-              "扫描容器"
-            )}
-          </button>
+          <div className="scan-group">
+            <button
+              className="btn"
+              type="button"
+              disabled={pending.docker}
+              aria-busy={pending.docker}
+              onClick={() => void refresh("docker")}
+            >
+              {pending.docker ? (
+                <>
+                  <Spinner />
+                  扫描中…
+                </>
+              ) : (
+                "扫描容器"
+              )}
+            </button>
+            {summary?.docker_last_success_at ? (
+              <span className="scan-caption">
+                上次扫描 {formatRelative(summary.docker_last_success_at)}
+              </span>
+            ) : null}
+          </div>
         </div>
-
-        <p className="small muted" style={{ marginTop: 8 }}>
-          扫描容器：重新读取 Docker 容器状态与健康检查（后台每 60 秒自动扫一次）。
-        </p>
 
         <TagFilterBar allTags={allTags} selected={tagFilter} onChange={setTagFilter} />
       </div>
@@ -398,17 +383,17 @@ function ServiceList() {
         </div>
       ) : (
         <div className="table-scroll">
-          <table>
+          <table className="cols-fit">
             <thead>
               <tr>
-                <th>服务</th>
-                <th>主入口</th>
-                <th title="这条服务在服务器上监听的端口（取自主入口 URL；省略端口时按 https→443、http→80）">服务器端口</th>
-                <th>运行</th>
-                <th>健康</th>
-                <th title="HTTPS 证书：有没有人信它、什么时候到期">证书</th>
-                <th title="当前版本取自镜像自带 label 或手工备注；最新版本取自源码仓库的 GitHub Release">版本</th>
-                <th>操作</th>
+                <th className="mcol-service">服务</th>
+                <th className="mcol-entry">主入口</th>
+                <th className="mcol-port">端口</th>
+                <th className="mcol-run">运行</th>
+                <th className="mcol-health">健康</th>
+                <th className="mcol-cert">证书</th>
+                <th className="mcol-ver">版本</th>
+                <th className="mcol-actions">操作</th>
               </tr>
             </thead>
             <tbody>
@@ -417,36 +402,36 @@ function ServiceList() {
                   <td>
                     <span className="service-name">{item.name}</span>
                     {item.description ? (
-                      <div className="small truncate" title={item.description}>
-                        {item.description}
-                      </div>
+                      <div className="small truncate">{item.description}</div>
                     ) : null}
                     <div className="tag-row" style={{ marginTop: 2 }}>
                       {item.tags.map((tag) => (
-                        <TagBadge
-                          key={tag}
-                          tag={tag}
-                          active={tagFilter.includes(tag)}
-                          onClick={() => toggleTagFilter(tag)}
-                        />
+                        <TagBadge key={tag} tag={tag} active={tagFilter.includes(tag)} />
                       ))}
                       <button
                         type="button"
                         className="tag-add"
                         onClick={() => setEditingTags(item)}
                         aria-label={`编辑 ${item.name} 的标签`}
-                        title="编辑标签"
                       >
                         ＋标签
                       </button>
+                      {item.status.release_info ? (
+                        <SafeLink
+                          href={`https://github.com/${item.status.release_info.owner}/${item.status.release_info.repo}`}
+                          className="btn btn-mini"
+                        >
+                          源码
+                        </SafeLink>
+                      ) : null}
                     </div>
                   </td>
                   <td>
                     {item.primary_endpoint ? (
                       <SafeLink
                         href={item.primary_endpoint.url}
-                        className="mono wrap-anywhere"
-                        title="已登记的主入口不在台账里改"
+                        className="mono entry-url"
+                        title={item.primary_endpoint.url}
                       >
                         {item.primary_endpoint.url}
                       </SafeLink>
@@ -462,35 +447,56 @@ function ServiceList() {
                     <div className="small muted">{item.component_count} 个组件</div>
                   </td>
                   <td>
-                    <StateBadge
-                      tone={HEALTH[item.status.health]}
-                      title={healthTooltip(undefined, item.status.health)}
-                    />
+                    <StateBadge tone={HEALTH[item.status.health]} />
                   </td>
                   <td>
                     {item.primary_endpoint?.tls_check ? (
-                      <>
-                        <StateBadge
-                          tone={tlsTone(
-                            (item.primary_endpoint.tls_state ?? "unknown") as never,
-                            item.primary_endpoint.tls_invalid_reason,
-                          )}
-                          title={tlsEndpointTooltip(item.primary_endpoint)}
-                        />
-                        {item.primary_endpoint.tls_days_remaining !== null &&
-                        item.primary_endpoint.tls_days_remaining >= 0 ? (
-                          <div className="small muted">
-                            {item.primary_endpoint.tls_days_remaining} 天
-                          </div>
-                        ) : null}
-                        {item.primary_endpoint.tls_invalid_reason ? (
-                          <div className="small muted">
-                            {tlsInvalidReason(item.primary_endpoint.tls_invalid_reason)}
-                          </div>
-                        ) : null}
-                      </>
+                      item.primary_endpoint.tls_check_status === "error" ? (
+                        <>
+                          <StateBadge tone={{ tone: "warn", label: "检查失败" }} />
+                          {item.primary_endpoint.tls_check_error ? (
+                            <div className="small muted wrap-anywhere">
+                              {item.primary_endpoint.tls_check_error}
+                            </div>
+                          ) : null}
+                          {tlsErrorHint(item.primary_endpoint.tls_check_error) ? (
+                            <div className="small" style={{ color: "var(--muted)" }}>
+                              {tlsErrorHint(item.primary_endpoint.tls_check_error)}
+                            </div>
+                          ) : null}
+                        </>
+                      ) : item.primary_endpoint.tls_check_status === "success" ? (
+                        <>
+                          <StateBadge
+                            tone={tlsTone(
+                              (item.primary_endpoint.tls_state ?? "unknown") as never,
+                              item.primary_endpoint.tls_invalid_reason,
+                            )}
+                          />
+                          {item.primary_endpoint.tls_days_remaining !== null &&
+                          item.primary_endpoint.tls_days_remaining >= 0 ? (
+                            <div className="small muted">
+                              {item.primary_endpoint.tls_days_remaining} 天
+                            </div>
+                          ) : null}
+                          {item.primary_endpoint.tls_days_remaining !== null &&
+                          item.primary_endpoint.tls_days_remaining < 0 &&
+                          item.primary_endpoint.tls_not_after ? (
+                            <div className="small muted">
+                              {item.primary_endpoint.tls_not_after.slice(0, 10)}
+                            </div>
+                          ) : null}
+                          {item.primary_endpoint.tls_invalid_reason ? (
+                            <div className="small muted">
+                              {tlsInvalidReason(item.primary_endpoint.tls_invalid_reason)}
+                            </div>
+                          ) : null}
+                        </>
+                      ) : (
+                        <span className="muted small">未检查</span>
+                      )
                     ) : (
-                      <span className="muted small">-</span>
+                      <span className="muted small">—</span>
                     )}
                   </td>
                   <td>
@@ -498,7 +504,7 @@ function ServiceList() {
                       const info = item.status.release_info;
                       // 有仓库：当前 → 最新（落后标黄）；没仓库：只显示镜像识别到的版本
                       const current = info?.current_version ?? item.status.image_version;
-                      if (!current && !info) return <span className="muted small">-</span>;
+                      if (!current && !info) return <span className="muted small">—</span>;
                       // 镜像 label 与 GitHub tag 的 v 前缀习惯不同（6.18.0 vs v6.18.0），比较前归一化
                       const norm = (v: string) => v.replace(/^v/i, "");
                       const behind =
@@ -524,20 +530,11 @@ function ServiceList() {
                   </td>
                   <td>
                     <div className="row-actions">
-                      {item.status.release_info ? (
-                        <SafeLink
-                          href={`https://github.com/${item.status.release_info.owner}/${item.status.release_info.repo}`}
-                          className="btn btn-mini"
-                          title={`打开源码仓库 github.com/${item.status.release_info.owner}/${item.status.release_info.repo}`}
-                        >
-                          源码
-                        </SafeLink>
-                      ) : null}
                       <button
                         className="btn btn-mini"
                         type="button"
                         onClick={() => startEditInfo(item)}
-                        aria-label={`编辑「${item.name}」的名称与用途`}
+                        aria-label={`编辑「${item.name}」`}
                       >
                         编辑
                       </button>
@@ -560,6 +557,9 @@ function ServiceList() {
       <p className="small muted">
         共 {total} 个服务，当前显示 {tabItems.length} 个
         {tagFilter.length > 0 ? `（标签筛选：${tagFilter.join("、")}）` : ""}
+      </p>
+      <p className="small muted">
+        服务器端口取自主入口 URL，省略端口时按 https→443、http→80 推断。
       </p>
       {editingInfo ? (
         <ServiceInfoEditor
@@ -585,7 +585,7 @@ function ServiceList() {
           onClose={() => setEditingTags(null)}
         />
       ) : null}
-      <Toast message={toast} />
+      <Toast message={toast} kind={toastKind} onDismiss={() => setToast(null)} />
     </>
   );
 }

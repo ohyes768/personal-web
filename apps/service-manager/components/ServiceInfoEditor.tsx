@@ -8,6 +8,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 
 /** 从输入里解析 GitHub 仓库：收 owner/repo 或任意 github.com URL。 */
 export function parseGitHubRepo(input: string): { owner: string; repo: string } | null {
@@ -66,8 +67,13 @@ export function ServiceInfoEditor({
     releaseOwner && releaseRepo ? `${releaseOwner}/${releaseRepo}` : "",
   );
   const [draftTagNote, setDraftTagNote] = useState(installedTagNote);
+  // 逐字段校验：错误贴在各自 label 下，不用到对话框底部猜是哪行错了
+  const [nameError, setNameError] = useState("");
   const [urlError, setUrlError] = useState("");
+  const [repoError, setRepoError] = useState("");
   const firstField = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef);
 
   useEffect(() => {
     firstField.current?.focus();
@@ -83,25 +89,21 @@ export function ServiceInfoEditor({
 
   function submit() {
     const trimmed = draftName.trim();
-    if (!trimmed) {
-      setUrlError("名称不能为空");
-      return;
-    }
     const url = draftUrl.trim();
-    if (url && !/^https?:\/\//i.test(url)) {
-      setUrlError("主入口要以 http:// 或 https:// 开头");
-      return;
-    }
-    const repoInput = draftRepo.trim();
     let repo: { owner: string; repo: string } | null = null;
+    let repoOk = true;
+    const repoInput = draftRepo.trim();
     if (repoInput) {
       repo = parseGitHubRepo(repoInput);
-      if (!repo) {
-        setUrlError("源码仓库填 owner/repo 或 GitHub 链接");
-        return;
-      }
+      repoOk = repo !== null;
     }
-    setUrlError("");
+    const nameOk = trimmed.length > 0;
+    const urlOk = !url || /^https?:\/\//i.test(url);
+    // 三个校验同时报：一次提交看到全部要改的地方
+    setNameError(nameOk ? "" : "名称不能为空");
+    setUrlError(urlOk ? "" : "主入口要以 http:// 或 https:// 开头");
+    setRepoError(repoOk ? "" : "源码仓库填 owner/repo 或 GitHub 链接");
+    if (!nameOk || !urlOk || !repoOk) return;
     onSave({
       name: trimmed,
       description: draftDescription,
@@ -114,10 +116,11 @@ export function ServiceInfoEditor({
   return (
     <div className="dialog-backdrop">
       <div
+        ref={dialogRef}
         className="dialog"
         role="dialog"
         aria-modal="true"
-        aria-label={`编辑「${title}」的信息`}
+        aria-label={`编辑「${title}」`}
       >
         <h2 className="dialog-title">编辑 · {title}</h2>
 
@@ -127,9 +130,18 @@ export function ServiceInfoEditor({
             id="edit-name"
             ref={firstField}
             value={draftName}
-            onChange={(event) => setDraftName(event.target.value)}
+            onChange={(event) => {
+              setDraftName(event.target.value);
+              setNameError("");
+            }}
             required
+            aria-invalid={Boolean(nameError)}
           />
+          {nameError ? (
+            <p className="small" style={{ color: "var(--bad)" }} role="alert">
+              {nameError}
+            </p>
+          ) : null}
         </div>
 
         <div className="field">
@@ -147,10 +159,19 @@ export function ServiceInfoEditor({
           <input
             id="edit-endpoint"
             value={draftUrl}
-            onChange={(event) => setDraftUrl(event.target.value)}
+            onChange={(event) => {
+              setDraftUrl(event.target.value);
+              setUrlError("");
+            }}
             disabled={Boolean(endpointUrl)}
             placeholder="https://…（留空表示不登记）"
+            aria-invalid={Boolean(urlError)}
           />
+          {urlError ? (
+            <p className="small" style={{ color: "var(--bad)" }} role="alert">
+              {urlError}
+            </p>
+          ) : null}
           <span className="hint">
             {endpointUrl
               ? "已登记的主入口不在这里改——要换地址请改反代配置。"
@@ -163,9 +184,18 @@ export function ServiceInfoEditor({
           <input
             id="edit-repo"
             value={draftRepo}
-            onChange={(event) => setDraftRepo(event.target.value)}
+            onChange={(event) => {
+              setDraftRepo(event.target.value);
+              setRepoError("");
+            }}
             placeholder="owner/repo 或 https://github.com/owner/repo（留空表示不跟踪）"
+            aria-invalid={Boolean(repoError)}
           />
+          {repoError ? (
+            <p className="small" style={{ color: "var(--bad)" }} role="alert">
+              {repoError}
+            </p>
+          ) : null}
           <span className="hint">
             填了就会跟踪 GitHub Release，服务列表显示当前与最新版本，并提供源码仓库入口。
           </span>
@@ -185,11 +215,6 @@ export function ServiceInfoEditor({
           </span>
         </div>
 
-        {urlError ? (
-          <p className="small" style={{ color: "var(--bad)" }} role="alert">
-            {urlError}
-          </p>
-        ) : null}
         {error ? (
           <p className="notice bad" role="alert">
             {error}

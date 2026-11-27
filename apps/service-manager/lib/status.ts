@@ -20,9 +20,9 @@ export const HEALTH: Record<HealthState, Tone> = {
   healthy: { tone: "ok", label: "健康" },
   unhealthy: { tone: "bad", label: "不健康" },
   starting: { tone: "warn", label: "启动中" },
-  // 没配健康检查 → 这个维度对本服务不适用，显示 "-"。
+  // 没配健康检查 → 这个维度对本服务不适用，显示 "—"。
   // 不要求使用者去维护它；有自我检查的组件照常显示真实状态。
-  not_configured: { tone: "muted", label: "-" },
+  not_configured: { tone: "muted", label: "—" },
   unknown: { tone: "muted", label: "未知" },
 };
 
@@ -75,23 +75,34 @@ export function tlsTone(state: TlsState, invalidReason?: string | null): Tone {
   }
 }
 
-/** 证书 tooltip：为什么无效 + 什么时候到期 + 还剩几天。 */
-export function tlsEndpointTooltip(info: {
-  tls_state: string;
-  tls_days_remaining: number | null;
-  tls_not_after: string | null;
-  tls_invalid_reason: string | null;
-}): string {
-  const state = (info.tls_state || "unknown") as TlsState;
-  const bits: string[] = [];
-  const reason = tlsInvalidReason(info.tls_invalid_reason);
-  if (reason) bits.push(reason);
-  if (info.tls_not_after) bits.push(`有效期至 ${info.tls_not_after.slice(0, 10)}`);
-  if (info.tls_days_remaining !== null && info.tls_days_remaining >= 0) {
-    bits.push(`还剩 ${info.tls_days_remaining} 天`);
+/** 检查失败的原文翻译成一句人话：只报告「TLS 握手失败: …」不够，要说该往哪查。 */
+export function tlsErrorHint(error: string | null): string {
+  if (!error) return "";
+  if (/UNEXPECTED_EOF|EOF/i.test(error)) {
+    return "服务可能没在监听 TLS 端口，检查反代配置";
   }
-  const base = TLS_STATE[state]?.label ?? "未检查";
-  return bits.length ? `${base} · ${bits.join(" · ")}` : base;
+  if (/timed?\s?out|timeout/i.test(error)) {
+    return "网络不可达，稍后可重试";
+  }
+  if (/refused/i.test(error)) {
+    return "连接被拒绝，端口可能没开放";
+  }
+  return "";
+}
+
+/** 容器原始状态 → 徽章（discovery 页用，与服务页 RUNTIME 同一套文案：running=运行中）。 */
+export const CONTAINER_STATE: Record<string, Tone> = {
+  running: { tone: "ok", label: "运行中" },
+  restarting: { tone: "warn", label: "重启中" },
+  created: { tone: "muted", label: "已创建" },
+  exited: { tone: "muted", label: "已退出" },
+  paused: { tone: "muted", label: "已暂停" },
+  dead: { tone: "bad", label: "已死亡" },
+  missing: { tone: "bad", label: "已消失" },
+};
+
+export function containerTone(state: string): Tone {
+  return CONTAINER_STATE[state] ?? { tone: "muted", label: state || "未知" };
 }
 
 export function formatRelative(value: string | null): string {
@@ -144,19 +155,5 @@ export function composeFileText(file: {
     return `${file.raw}（相对路径，位置未确认）`;
   }
   return file.resolved ?? file.raw;
-}
-export function healthTooltip(
-  components: { health: HealthState }[] | undefined,
-  state: HealthState,
-): string {
-  if (state === "not_configured") {
-    return "该服务没有组件配置 Docker 健康检查，此维度不适用（显示 -）";
-  }
-  if (!components || components.length === 0) return "Docker 健康检查";
-  const configured = components.filter((c) => c.health !== "not_configured").length;
-  if (configured < components.length) {
-    return `Docker 健康检查：${configured}/${components.length} 个组件配置了检查`;
-  }
-  return "Docker 健康检查";
 }
 

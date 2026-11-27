@@ -305,6 +305,10 @@ class PrimaryEndpointView(BaseModel):
     tls_days_remaining: int | None = None
     tls_not_after: str | None = None
     tls_invalid_reason: str | None = None
+    # 最近一次 TLS 检查自身：never（没查过）/ success / error（查了但失败）
+    # 前端据此区分「未检查」「检查失败」「有效」——后两者不能显示成同一个徽章
+    tls_check_status: str | None = None
+    tls_check_error: str | None = None
     # 服务器端口：主入口 URL 上的端口（省略时取 scheme 默认 443/80）
     server_port: int | None = None
 

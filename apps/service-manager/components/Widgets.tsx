@@ -2,11 +2,12 @@
 
 /** 通用小部件：状态徽章、提示条、加载指示。 */
 
+import { useEffect, useRef } from "react";
 import type { Tone } from "@/lib/status";
 
 export function StateBadge({ tone, title }: { tone: Tone; title?: string }) {
   return (
-    <span className={`badge ${tone.tone}`} title={title ?? tone.label}>
+    <span className={`badge ${tone.tone}`} title={title}>
       {tone.label}
     </span>
   );
@@ -29,10 +30,32 @@ export function SafeLink({
   );
 }
 
-export function Toast({ message }: { message: string | null }) {
+/** 操作反馈条：成功/信息类 4 秒自动消失，失败类常驻到手动点掉。 */
+export function Toast({
+  message,
+  kind = "ok",
+  onDismiss,
+}: {
+  message: string | null;
+  kind?: "ok" | "error";
+  onDismiss: () => void;
+}) {
+  const dismissRef = useRef(onDismiss);
+  dismissRef.current = onDismiss;
+
+  useEffect(() => {
+    if (!message || kind === "error") return;
+    const timer = setTimeout(() => dismissRef.current(), 4000);
+    return () => clearTimeout(timer);
+  }, [message, kind]);
+
   if (!message) return null;
   return (
-    <div className="copy-toast" role="status">
+    <div
+      className={`copy-toast${kind === "error" ? " error" : ""}`}
+      role={kind === "error" ? "alert" : "status"}
+      onClick={() => dismissRef.current()}
+    >
       {message}
     </div>
   );

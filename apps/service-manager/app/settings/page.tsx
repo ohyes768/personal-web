@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, downloadBackup, type SummaryResponse } from "@/lib/api";
 import { formatRelative } from "@/lib/status";
-import { Toast } from "@/components/Widgets";
+import { StateBadge, Toast } from "@/components/Widgets";
 
 export default function SettingsPage() {
   return <SettingsView />;
@@ -21,6 +21,11 @@ function SettingsView() {
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [toastKind, setToastKind] = useState<"ok" | "error">("ok");
+  function notify(message: string, kind: "ok" | "error" = "ok") {
+    setToastKind(kind);
+    setToast(message);
+  }
   const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -40,9 +45,9 @@ function SettingsView() {
     try {
       const payload = await api.exportBackup();
       downloadBackup(payload);
-      setToast("已导出人工台账 JSON");
+      notify("已导出人工台账 JSON");
     } catch (caught) {
-      setToast(caught instanceof ApiError ? caught.message : "导出失败");
+      notify(caught instanceof ApiError ? caught.message : "导出失败", "error");
     }
   }
 
@@ -55,7 +60,7 @@ function SettingsView() {
     try {
       setPreview(await api.previewBackup(chosen));
     } catch (caught) {
-      setToast(caught instanceof ApiError ? caught.message : "预览失败");
+      notify(caught instanceof ApiError ? caught.message : "预览失败", "error");
     } finally {
       setBusy(false);
     }
@@ -77,13 +82,13 @@ function SettingsView() {
         preview.digest,
         preview.registry_revision,
       );
-      setToast(`已恢复：${result.restored.services} 个服务`);
+      notify(`已恢复：${result.restored.services} 个服务`);
       setPreview(null);
       setFile(null);
       if (inputRef.current) inputRef.current.value = "";
       await load();
     } catch (caught) {
-      setToast(caught instanceof ApiError ? caught.message : "恢复失败");
+      notify(caught instanceof ApiError ? caught.message : "恢复失败", "error");
     } finally {
       setBusy(false);
     }
@@ -92,21 +97,33 @@ function SettingsView() {
   return (
     <>
       <h1>设置</h1>
-      <p className="lead">数据导出与恢复、接入状态。系统凭据只在 NAS 环境变量里，网页不接收。</p>
+      <p className="lead">导出与恢复、接入状态。凭据只在 NAS 环境变量里。</p>
 
       <h2>接入状态</h2>
       <div className="card">
         {summary ? (
           <ul className="small" style={{ margin: 0, paddingLeft: 18 }}>
             <li>
-              Docker 读取：
-              <strong>{summary.docker_available ? "可用" : "不可用"}</strong>
-              {summary.docker_error ? `（${summary.docker_error}）` : ""}
+              Docker 读取：{" "}
+              <StateBadge
+                tone={
+                  summary.docker_available
+                    ? { tone: "ok", label: "可用" }
+                    : { tone: "bad", label: "不可用" }
+                }
+              />
+              {summary.docker_error ? (
+                <span className="muted">（{summary.docker_error}）</span>
+              ) : null}
               <div className="muted">上次成功扫描：{formatRelative(summary.docker_last_success_at)}</div>
             </li>
             <li>
-              检查循环心跳：
-              <strong>{formatRelative(summary.checker_heartbeat)}</strong>
+              检查循环心跳：{" "}
+              {summary.checker_heartbeat ? (
+                <span className="mono small">{formatRelative(summary.checker_heartbeat)}</span>
+              ) : (
+                <StateBadge tone={{ tone: "warn", label: "从未" }} />
+              )}
             </li>
             <li>
               台账版本号（registry_revision）：<span className="mono">{summary.registry_revision}</span>
@@ -187,7 +204,7 @@ function SettingsView() {
       </div>
 
       {error ? <p className="notice bad">{error}</p> : null}
-      <Toast message={toast} />
+      <Toast message={toast} kind={toastKind} onDismiss={() => setToast(null)} />
     </>
   );
 }

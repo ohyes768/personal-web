@@ -90,6 +90,10 @@ export interface PrimaryEndpointView {
   tls_days_remaining: number | null;
   tls_not_after: string | null;
   tls_invalid_reason: string | null;
+  /** TLS 检查本身的结果：success（拿到证书状态）/ error（检查失败）/ null（从未检查） */
+  tls_check_status: "success" | "error" | null;
+  /** 检查失败时的错误信息 */
+  tls_check_error: string | null;
   /** 服务器端口：主入口 URL 上的端口（省略时取 scheme 默认 443/80） */
   server_port: number | null;
 }
@@ -143,6 +147,8 @@ export interface DiscoveryResponse {
   docker_available: boolean;
   docker_error: string | null;
   last_success_at: string | null;
+  /** 全量对账（不受筛选影响）：容器总数 / 已入账 / 未入账 / 未入账中已忽略 */
+  counts: { total: number; bound: number; unbound: number; ignored: number };
   projects: string[];
 }
 

@@ -10,7 +10,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError, type PortOverviewResponse } from "@/lib/api";
 import { portKindLabel, portText } from "@/lib/status";
-import { Toast } from "@/components/Widgets";
 
 export default function ResourcesPage() {
   return <ResourcesView />;
@@ -21,7 +20,6 @@ function ResourcesView() {
   const [onlyRegistered, setOnlyRegistered] = useState(false);
   const [ports, setPorts] = useState<PortOverviewResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [toast] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -39,9 +37,7 @@ function ResourcesView() {
   return (
     <>
       <h1>资源总览</h1>
-      <p className="lead">
-        NAS 上各容器占用的端口与可能的重叠。镜像、部署路径、数据卷这些去 Docker 那边看。
-      </p>
+      <p className="lead">端口占用与重叠。</p>
 
       <div className="card tight">
         <div className="btn-row">
@@ -130,8 +126,6 @@ function ResourcesView() {
           )}
         </>
       ) : null}
-
-      <Toast message={toast} />
     </>
   );
 }

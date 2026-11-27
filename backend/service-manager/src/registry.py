@@ -629,6 +629,8 @@ class Registry:
                 tls_days_remaining=int(days) if isinstance(days, (int, float)) else None,
                 tls_not_after=payload.get("not_after"),
                 tls_invalid_reason=payload.get("invalid_reason"),
+                tls_check_status=check.get("status"),
+                tls_check_error=check.get("error"),
             )
         return views
 

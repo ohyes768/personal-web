@@ -375,6 +375,7 @@ def discovery_list(
         "docker_available": available,
         "docker_error": error,
         "last_success_at": discovery.last_success_at(),
+        "counts": discovery.counts(),
         "projects": sorted(
             {
                 item.project

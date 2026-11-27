@@ -7,6 +7,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { getTagCandidates } from "@/lib/tagCandidates";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 
 const MAX_TAG_LENGTH = 32;
 
@@ -34,6 +35,8 @@ export function TagEditor({
   const [draft, setDraft] = useState("");
   const [draftError, setDraftError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -74,6 +77,7 @@ export function TagEditor({
   return (
     <div className="dialog-backdrop">
       <div
+        ref={dialogRef}
         className="dialog"
         role="dialog"
         aria-modal="true"
