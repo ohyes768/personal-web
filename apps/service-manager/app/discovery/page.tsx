@@ -35,7 +35,7 @@ function DiscoveryView() {
         : "active",
   );
   const [bound, setBound] = useState<"all" | "unbound" | "bound">(
-    searchParams.get("bound") === "bound" ? "bound" : searchParams.get("bound") === "all" ? "all" : "unbound",
+    searchParams.get("bound") === "bound" ? "bound" : searchParams.get("bound") === "unbound" ? "unbound" : "all",
   );
   const [includeEphemeral, setIncludeEphemeral] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);

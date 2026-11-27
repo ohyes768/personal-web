@@ -166,6 +166,8 @@ export interface PortOverviewResponse {
   items: PortOverviewRow[];
   overlaps: { left: string; right: string }[];
   scope_note: string;
+  docker_available: boolean;
+  docker_error: string | null;
 }
 
 export interface SummaryResponse {

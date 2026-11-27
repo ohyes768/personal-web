@@ -83,6 +83,8 @@ th, td {
 }
 th { background: var(--bg); color: var(--muted); font-weight: 500; white-space: nowrap; }
 tr:last-child td { border-bottom: none; }
+/* 异常行（如证书检查失败）：左边框 3px 标记，不靠行高取胜 */
+tr.row-anomaly td:first-child { box-shadow: inset 3px 0 0 var(--bad); }
 
 .badge {
   display: inline-block;

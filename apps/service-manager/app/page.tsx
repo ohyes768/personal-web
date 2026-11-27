@@ -398,7 +398,15 @@ function ServiceList() {
             </thead>
             <tbody>
               {tabItems.map((item) => (
-                <tr key={item.id} data-service-id={item.id}>
+                <tr
+                  key={item.id}
+                  data-service-id={item.id}
+                  className={
+                    item.primary_endpoint?.tls_check_status === "error"
+                      ? "row-anomaly"
+                      : undefined
+                  }
+                >
                   <td>
                     <span className="service-name">{item.name}</span>
                     {item.description ? (
@@ -455,7 +463,10 @@ function ServiceList() {
                         <>
                           <StateBadge tone={{ tone: "warn", label: "检查失败" }} />
                           {item.primary_endpoint.tls_check_error ? (
-                            <div className="small muted wrap-anywhere">
+                            <div
+                              className="small muted truncate"
+                              title={item.primary_endpoint.tls_check_error}
+                            >
                               {item.primary_endpoint.tls_check_error}
                             </div>
                           ) : null}

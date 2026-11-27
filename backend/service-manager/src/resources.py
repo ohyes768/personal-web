@@ -180,10 +180,13 @@ class ResourceProjector:
             )
         )
         overlaps = find_potential_overlaps(rows)
+        available, docker_error = self.discovery.scan_available()
         return {
             "items": [row.model_dump() for row in rows],
             "overlaps": [{"left": left, "right": right} for left, right in overlaps],
             "scope_note": PORT_SCOPE_NOTE,
+            "docker_available": available,
+            "docker_error": docker_error,
         }
 
     def _note_to_row(

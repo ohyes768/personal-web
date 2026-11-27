@@ -93,6 +93,7 @@ export function tlsErrorHint(error: string | null): string {
 /** 容器原始状态 → 徽章（discovery 页用，与服务页 RUNTIME 同一套文案：running=运行中）。 */
 export const CONTAINER_STATE: Record<string, Tone> = {
   running: { tone: "ok", label: "运行中" },
+  stopped: { tone: "muted", label: "已停止" },
   restarting: { tone: "warn", label: "重启中" },
   created: { tone: "muted", label: "已创建" },
   exited: { tone: "muted", label: "已退出" },

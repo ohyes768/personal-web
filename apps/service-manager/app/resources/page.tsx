@@ -8,6 +8,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
+import { DockerNotice } from "@/components/DockerNotice";
 import { api, ApiError, type PortOverviewResponse } from "@/lib/api";
 import { portKindLabel, portText } from "@/lib/status";
 
@@ -64,6 +65,9 @@ function ResourcesView() {
 
       {ports ? (
         <>
+          {!ports.docker_available ? (
+            <DockerNotice error={ports.docker_error} />
+          ) : null}
           <div className="notice info">
             <span>{ports.scope_note}</span>
           </div>
