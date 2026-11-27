@@ -10,9 +10,8 @@ import {
   type ReportDetail,
   type ReportMeta,
   type ReportType,
-  type TodayData,
 } from "./api";
-import { mockEnabled, mockProjects, mockReportDetail, mockReports, mockToday } from "./mock";
+import { mockEnabled, mockProjects, mockReportDetail, mockReports } from "./mock";
 
 type WithReload<T> = {
   data: T | null;
@@ -49,13 +48,6 @@ function useFetchWithMock<T>(fetcher: () => Promise<T>, mock: () => T): WithRelo
   }, [reload]);
 
   return { ...state, reload };
-}
-
-export function useToday(date: string): WithReload<TodayData> {
-  return useFetchWithMock<TodayData>(
-    useCallback(() => apiGet<TodayData>(`/today?date=${date}`), [date]),
-    () => mockToday(date),
-  );
 }
 
 export function useProjects(): WithReload<ProjectSummary[]> {

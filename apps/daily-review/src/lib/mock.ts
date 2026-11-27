@@ -6,7 +6,6 @@ import type {
   ReportDetail,
   ReportMeta,
   ReportType,
-  TodayData,
 } from "./api";
 
 const now = new Date();
@@ -72,8 +71,6 @@ const items: ActivityItem[] = [
     ended_at: iso(15, 20),
   },
 ];
-
-export const mockToday = (date: string): TodayData => ({ date, items });
 
 export const mockProjects: ProjectSummary[] = [
   {

@@ -18,8 +18,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </a>
           <span className="font-semibold">每日工作回顾</span>
           <nav className="ml-auto flex gap-2 text-sm">
-            <NavLink href="/">今日</NavLink>
-            <NavLink href="/reports">报告</NavLink>
+            <NavLink href="/">报告</NavLink>
             <NavLink href="/projects">项目</NavLink>
           </nav>
         </header>

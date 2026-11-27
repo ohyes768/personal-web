@@ -11,11 +11,6 @@ export interface ActivityItem {
   ended_at: string;
 }
 
-export interface TodayData {
-  date: string;
-  items: ActivityItem[];
-}
-
 export interface ProjectSummary {
   project: string;
   last_active_at: string;
