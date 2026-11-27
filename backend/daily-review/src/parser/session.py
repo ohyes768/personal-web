@@ -19,7 +19,29 @@ import zstandard
 
 # 摘要要点上限：每会话最多保留的用户消息要点数与单条截断长度
 MAX_POINTS = 8
-POINT_MAX_CHARS = 200
+POINT_MAX_CHARS = 120
+
+# 用户消息里常被注入系统内容（system-reminder、workspace 指令、工具回显），
+# 不是用户的真实诉求，进入要点前整体丢弃该条。
+_NOISE_MARKS = (
+    "<system-reminder>", "<available_skills>", "<hindsight_", "[open-model state",
+    "current runtime context", "snapshot supersedes", "workspace instructions",
+    "agent teams is available", "browser time zone", "time sampled",
+    "progress_update", "state anchor", "dsh file policy", "rule: follow goal",
+    "files:", "draft a", "see the browser console",
+)
+
+
+def _is_noise_line(line: str) -> bool:
+    low = line.lower()
+    return any(m in low for m in _NOISE_MARKS)
+
+
+def _sanitize(body: str) -> str:
+    """按行剔除注入的系统内容，保留用户真实诉求行。"""
+    lines = [ln.strip() for ln in body.splitlines()]
+    kept = [ln for ln in lines if ln and not _is_noise_line(ln)]
+    return " ".join(kept).strip()
 
 
 def _bucket_to_project(bucket: str) -> str:
@@ -129,6 +151,7 @@ def parse_session_file(path: Path) -> dict | None:
                             title = t
                     elif "user" in et and "message" in et:
                         body = _extract_text(obj).strip()
+                        body = _sanitize(body)
                         if body and len(user_points) < MAX_POINTS:
                             user_points.append(body[:POINT_MAX_CHARS])
                     elif "assistant" in et and "message" in et:
