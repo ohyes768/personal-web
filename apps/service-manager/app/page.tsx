@@ -522,6 +522,8 @@ function ServiceList() {
                         info?.latest_version != null &&
                         info.current_version != null &&
                         norm(info.current_version) !== norm(info.latest_version);
+                      // 当前版本未知时没法比较，不能标「最新」，只能标「未同步」
+                      const comparable = info?.current_version != null;
                       return (
                         <div className="badge-stack">
                           <span className="mono small">{current ?? "—"}</span>
@@ -530,7 +532,7 @@ function ServiceList() {
                               <span className="mono small">→ {info.latest_version}</span>
                               <span className="badge warn">有更新</span>
                             </>
-                          ) : info?.latest_version ? (
+                          ) : info?.latest_version && comparable ? (
                             <span className="badge ok">最新</span>
                           ) : info ? (
                             <span className="badge muted">未同步</span>
