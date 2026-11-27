@@ -41,7 +41,9 @@ export interface ReportDetail {
   records: Pick<ActivityItem, "machine" | "kind" | "project" | "title" | "summary_text" | "started_at">[];
 }
 
-const API = "/api";
+// 浏览器端 fetch 带前导 "/" 会忽略 Next basePath，必须显式带 /review 前缀；
+// dev 与线上都由 basePath rewrite（/review/api/* → 后端 /api/review/*）承接。
+const API = "/review/api";
 
 export async function apiGet<T>(path: string): Promise<T> {
   const res = await fetch(`${API}${path}`, { cache: "no-store" });
