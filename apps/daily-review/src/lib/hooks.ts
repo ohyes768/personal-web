@@ -92,7 +92,9 @@ export function useReports(type: ReportType): WithReload<ReportMeta[]> {
 }
 
 export function useReport(id: string): WithReload<ReportDetail> {
-  return useFetchWithMock<ReportDetail>(
+  // id 为空/占位时跳过请求（首页日历翻页在索引未加载或无报日期会传占位值）
+  const skip = !id || id === "__none__";
+  const inner = useFetchWithMock<ReportDetail>(
     useCallback(async () => {
       const d = await apiGet<Record<string, unknown>>(`/reports/${id}`);
       // 后端详情返回扁平结构（报告字段在顶层 + records）；归一化成 {report, records}，
@@ -104,6 +106,8 @@ export function useReport(id: string): WithReload<ReportDetail> {
     }, [id]),
     () => mockReportDetail(id),
   );
+  if (skip) return { data: null, loading: false, error: "", reload: inner.reload };
+  return inner;
 }
 
 export async function generateReport(
