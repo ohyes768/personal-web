@@ -51,7 +51,7 @@ NAS 部署脚本（Ubuntu Server + docker-compose.nas.yml）
   ./scripts/deploy-nas.sh <target> [side] [options]
 
 target:
-  dividend | douyin | rss-relay | macro | fund-select | housing-map | skill-manager | kids-catalog | index-trends | task-web | service-manager | nginx | all
+  dividend | douyin | rss-relay | macro | fund-select | housing-map | skill-manager | kids-catalog | index-trends | task-web | service-manager | daily-review | nginx | all
   （nginx 只同步 nginx/web.conf 到 nginx 容器并 reload，不走 build/up，忽略 side）
 
 side:（默认 both）
@@ -279,10 +279,10 @@ get_services() {
             if [[ "$side" != "both" ]]; then
                 echo "提示: target=all 时 side 强制 both（忽略 '$side'）" >&2
             fi
-            echo "dividend-backend dividend-frontend douyin-backend douyin-frontend rss-relay-backend rss-relay-frontend macro-backend macro-frontend fund-select-backend fund-select-frontend housing-map-backend housing-map-frontend skill-manager-backend skill-manager-frontend index-trends-backend index-trends-frontend task-web-backend task-web-frontend service-manager-backend service-manager-frontend"
+            echo "dividend-backend dividend-frontend douyin-backend douyin-frontend rss-relay-backend rss-relay-frontend macro-backend macro-frontend fund-select-backend fund-select-frontend housing-map-backend housing-map-frontend skill-manager-backend skill-manager-frontend index-trends-backend index-trends-frontend task-web-backend task-web-frontend service-manager-backend service-manager-frontend daily-review-backend daily-review-frontend"
             ;;
         *)
-            echo "错误: target 必须是 dividend | douyin | rss-relay | macro | fund-select | housing-map | skill-manager | kids-catalog | index-trends | task-web | service-manager | all，实际 '$target'" >&2
+            echo "错误: target 必须是 dividend | douyin | rss-relay | macro | fund-select | housing-map | skill-manager | kids-catalog | index-trends | task-web | service-manager | daily-review | all，实际 '$target'" >&2
             exit 1
             ;;
     esac
@@ -307,6 +307,7 @@ get_buildx_config() {
         index-trends-frontend) echo "apps/index-trends:apps/index-trends/Dockerfile:index-trends-frontend" ;;
         task-web-frontend) echo "apps/task-web:apps/task-web/Dockerfile:task-web-frontend" ;;
         service-manager-frontend) echo "apps/service-manager:apps/service-manager/Dockerfile:service-manager-frontend" ;;
+        daily-review-frontend) echo "apps/daily-review:apps/daily-review/Dockerfile:daily-review-frontend" ;;
         *) return 1 ;;
     esac
 }

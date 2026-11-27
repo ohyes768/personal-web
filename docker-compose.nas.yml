@@ -727,6 +727,47 @@ services:
     networks: [app-net]
     depends_on:
       service-manager-backend: { condition: service_healthy }
+
+  # ---------------------------------------------------------------------------
+  # daily-review（每日工作回顾：两机 DSH 记录汇聚 + LLM 日报周报）
+  # NAS 本机 ~/.dsh 只读挂载，容器内 /data/dsh 由 /ingest/sync-nas 解析；
+  # Windows 侧经 token 鉴权 ingest API 上送（未配 token 时 fail closed 503）
+  # ---------------------------------------------------------------------------
+  daily-review-backend:
+    build: { context: ./backend/daily-review }
+    container_name: daily-review-backend
+    restart: unless-stopped
+    expose: ["8103"]
+    volumes:
+      - daily-review-data:/app/data
+      # DSH 会话原文只读进容器；解析器只出结构化摘要，绝不写回
+      - "${DAILY_REVIEW_DSH_HOST_PATH:-/home/ohyes768/.dsh}:/data/dsh:ro"
+    environment: [TZ=Asia/Shanghai,
+                  DAILY_REVIEW_PORT=8103,
+                  DAILY_REVIEW_DB=/app/data/daily-review.sqlite3,
+                  DAILY_REVIEW_DSH_DIR=/data/dsh,
+                  "DAILY_REVIEW_INGEST_TOKEN=${DAILY_REVIEW_INGEST_TOKEN:-}",
+                  "DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}",
+                  "DEEPSEEK_BASE_URL=${DEEPSEEK_BASE_URL:-https://api.deepseek.com}",
+                  "DEEPSEEK_MODEL=${DEEPSEEK_MODEL:-deepseek-chat}"]
+    networks: [app-net]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8103/api/review/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  daily-review-frontend:
+    image: daily-review-frontend:latest
+    container_name: daily-review-frontend
+    restart: unless-stopped
+    ports: ["127.0.0.1:3013:3013"]
+    build:
+      context: ./apps/daily-review
+      args: { DAILY_REVIEW_API_ORIGIN: http://daily-review-backend:8103 }
+    networks: [app-net]
+    depends_on:
+      daily-review-backend: { condition: service_healthy }
 # =============================================================================
 # 网络 & 数据卷
 # =============================================================================
@@ -777,5 +818,7 @@ volumes:
     name: index-trends-data
   task-web-data:
     name: task-web-data
+  daily-review-data:
+    name: daily-review-data
   service-manager-data:
     name: service-manager-data

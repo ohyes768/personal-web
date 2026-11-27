@@ -1,0 +1,20 @@
+@import "tailwindcss";
+
+/* markdown 渲染（报告详情）——Tailwind v4 无 typography 插件，手写必要元素 */
+.md-body { line-height: 1.7; font-size: 14px; }
+.md-body h1, .md-body h2, .md-body h3 { font-weight: 600; margin: 1em 0 .5em; }
+.md-body h1 { font-size: 1.35em; }
+.md-body h2 { font-size: 1.2em; }
+.md-body h3 { font-size: 1.05em; }
+.md-body p { margin: .5em 0; }
+.md-body ul, .md-body ol { padding-left: 1.4em; margin: .5em 0; }
+.md-body ul { list-style: disc; }
+.md-body ol { list-style: decimal; }
+.md-body li { margin: .2em 0; }
+.md-body code { background: #f3f4f6; border-radius: 4px; padding: 1px 5px; font-size: .9em; font-family: ui-monospace, Consolas, monospace; }
+.md-body pre { background: #0b1020; color: #d7e0ff; padding: 12px; border-radius: 8px; overflow: auto; }
+.md-body pre code { background: transparent; color: inherit; padding: 0; }
+.md-body blockquote { border-left: 3px solid #d1d5db; color: #6b7280; padding-left: 10px; margin: .6em 0; }
+.md-body strong { font-weight: 600; }
+.md-body hr { border: none; border-top: 1px solid #e5e7eb; margin: 1em 0; }
+.md-body a { color: #2563eb; }

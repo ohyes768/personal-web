@@ -729,6 +729,31 @@ tasks:
     cron: "15 8 * * *"
     timeout: 300
 
+  # 小宇宙播客更新监控 + FunASR 转写 + RSS 中转发布（channel=podcast-*，四个分类频道）
+  # 2026-11-27 新增：转写队列持久化在 xiaoyuzhou_state.json（挂载宿主），
+  # ASR 走 funasr-asr 容器（已接入 nginx_nginx-bridge 网络，8000 端口）
+  - id: podcast-asr-push
+    name: 播客更新转写推送
+    description: 小宇宙 16 档播客新单集 → 下载 → FunASR 转写 → RSS 中转（channel=podcast-licai/ai/tech/culture）
+    targets: [rss]
+    engine: docker
+    image: stock-info:latest
+    command: python xiaoyuzhou_monitor.py
+    cwd: /app
+    env:
+      RSS_DRY_RUN: "0"
+      ASR_URL: http://funasr-asr:8000/asr
+      RSS_RELAY_SKILL_DIR: /opt/rss-relay-publish
+      HOME: /tmp
+    network: nginx_nginx-bridge
+    user: "1000:1000"
+    volumes:
+      - "/home/ohyes768/stock-info-dingding/xiaoyuzhou_state.json:/app/xiaoyuzhou_state.json"
+      - "/home/ohyes768/stock-info-dingding/data:/app/data"
+      - "/home/ohyes768/skills/knowledge/rss-relay-publish:/opt/rss-relay-publish:ro"
+    cron: "5 3 * * *"
+    timeout: 7200
+
   # task-web 自检：查昨日定时执行结果，全部正常则不发 RSS，有异常才推报告
   # （2026-11-25 起因 sector-push / csi300-brief 连续失败，需要一个每日体检口径）
   # 走内网直连 task-web 后端读 /api/schedule/day 与 /api/runs/{id}/logs：
@@ -777,3 +802,37 @@ tasks:
       - "/home/ohyes768/.cache/ms-playwright:/ms-playwright:ro"
     cron: "0 6,18 * * *"
     timeout: 1800
+
+  # ---- daily-review（每日工作回顾，2026-11-27 上线）----
+  # 后端容器只读挂载 ~/.dsh，本机采集由 /ingest/sync-nas 完成（无需宿主脚本）；
+  # 报告默认回顾昨天/上周（_period_range），09:00 生成时上一周期已结束。
+  # 导入默认禁用（enabled=0），验证后页面手动启用。
+  - id: daily-review-sync
+    name: daily-review 记录同步
+    description: 触发 daily-review 后端解析 NAS 本机 ~/.dsh 会话/task board 并入库（幂等可重跑）
+    engine: docker
+    image: curlimages/curl:latest
+    command: '-s -X POST http://daily-review-backend:8103/api/review/ingest/sync-nas'
+    network: nginx_nginx-bridge
+    cron: "15 * * * *"
+    timeout: 600
+
+  - id: daily-review-daily-report
+    name: daily-review 日报生成
+    description: DeepSeek 生成昨日日报（回顾昨天全量结构化记录；推送由后续钉钉 relay 接入）
+    engine: docker
+    image: curlimages/curl:latest
+    command: '-s -X POST http://daily-review-backend:8103/api/review/reports/generate -H "Content-Type: application/json" -d "{\"report_type\":\"daily\"}"'
+    network: nginx_nginx-bridge
+    cron: "0 9 * * *"
+    timeout: 600
+
+  - id: daily-review-weekly-report
+    name: daily-review 周报生成
+    description: DeepSeek 生成上周周报（上周一~周日）
+    engine: docker
+    image: curlimages/curl:latest
+    command: '-s -X POST http://daily-review-backend:8103/api/review/reports/generate -H "Content-Type: application/json" -d "{\"report_type\":\"weekly\"}"'
+    network: nginx_nginx-bridge
+    cron: "0 9 * * 1"
+    timeout: 900

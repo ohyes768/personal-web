@@ -1,0 +1,133 @@
+"""
+SQLite 访问层（标准库 sqlite3，无 ORM）
+表：records / reports / ingest_log
+幂等去重关键唯一约束：records UNIQUE(machine, kind, external_id)、
+reports UNIQUE(report_type, period_start)。
+"""
+from __future__ import annotations
+
+import json
+import sqlite3
+import threading
+from datetime import datetime, timezone
+from pathlib import Path
+
+from .config import get_db_path
+
+_local = threading.local()
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS records (
+    id TEXT PRIMARY KEY,
+    machine TEXT NOT NULL,
+    kind TEXT NOT NULL,            -- session | task_board | git_commit
+    project TEXT DEFAULT '',
+    external_id TEXT NOT NULL,
+    session_id TEXT DEFAULT '',
+    title TEXT DEFAULT '',
+    summary_text TEXT DEFAULT '',
+    started_at TEXT DEFAULT '',
+    ended_at TEXT DEFAULT '',
+    payload_json TEXT DEFAULT '{}',
+    ingested_at TEXT NOT NULL,
+    UNIQUE(machine, kind, external_id)
+);
+CREATE INDEX IF NOT EXISTS idx_records_started ON records(started_at);
+CREATE INDEX IF NOT EXISTS idx_records_project ON records(project, started_at);
+
+CREATE TABLE IF NOT EXISTS reports (
+    id TEXT PRIMARY KEY,
+    report_type TEXT NOT NULL,     -- daily | weekly
+    period_start TEXT NOT NULL,
+    period_end TEXT NOT NULL,
+    generated_at TEXT,
+    summary_md TEXT DEFAULT '',
+    record_ids_json TEXT DEFAULT '[]',
+    status TEXT NOT NULL,          -- pending | done | failed
+    UNIQUE(report_type, period_start)
+);
+
+CREATE TABLE IF NOT EXISTS ingest_log (
+    machine TEXT NOT NULL,
+    batch_id TEXT NOT NULL,
+    received_at TEXT NOT NULL,
+    record_count INTEGER DEFAULT 0,
+    status TEXT NOT NULL           -- ok | failed
+);
+-- NAS sync 的处理游标：batch_id = 文件相对路径，同一文件成功处理过即不再解析
+CREATE INDEX IF NOT EXISTS idx_ingest_log_file ON ingest_log(machine, batch_id);
+"""
+
+
+def now_iso() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def get_conn() -> sqlite3.Connection:
+    """线程本地连接；API 线程与 sync 调用各自持有。"""
+    conn = getattr(_local, "conn", None)
+    if conn is None:
+        db_path = get_db_path()
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA foreign_keys=ON")
+        _local.conn = conn
+    return conn
+
+
+def init_db() -> None:
+    get_conn().executescript(SCHEMA)
+
+
+def upsert_record(row: dict) -> bool:
+    """按 UNIQUE(machine,kind,external_id) 幂等插入。返回是否新插入。"""
+    cur = get_conn().execute(
+        """
+        INSERT OR IGNORE INTO records
+        (id, machine, kind, project, external_id, session_id, title,
+         summary_text, started_at, ended_at, payload_json, ingested_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+        """,
+        (
+            row["id"],
+            row["machine"],
+            row["kind"],
+            row.get("project", ""),
+            row["external_id"],
+            row.get("session_id", ""),
+            row.get("title", ""),
+            row.get("summary_text", ""),
+            row.get("started_at", ""),
+            row.get("ended_at", ""),
+            json.dumps(row.get("payload", {}), ensure_ascii=False),
+            row.get("ingested_at", now_iso()),
+        ),
+    )
+    get_conn().commit()
+    return cur.rowcount > 0
+
+
+def get_record_by_external(machine: str, kind: str, external_id: str) -> sqlite3.Row | None:
+    return get_conn().execute(
+        "SELECT * FROM records WHERE machine=? AND kind=? AND external_id=?",
+        (machine, kind, external_id),
+    ).fetchone()
+
+
+def file_already_done(machine: str, batch_id: str) -> bool:
+    """NAS sync 游标：该文件（batch_id）是否已成功处理过。"""
+    row = get_conn().execute(
+        "SELECT 1 FROM ingest_log WHERE machine=? AND batch_id=? AND status='ok' LIMIT 1",
+        (machine, batch_id),
+    ).fetchone()
+    return row is not None
+
+
+def log_ingest(machine: str, batch_id: str, record_count: int, status: str) -> None:
+    get_conn().execute(
+        "INSERT INTO ingest_log (machine, batch_id, received_at, record_count, status) VALUES (?,?,?,?,?)",
+        (machine, batch_id, now_iso(), record_count, status),
+    )
+    get_conn().commit()
