@@ -100,9 +100,9 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
             );
           })}
         </ul>
+      )}
         </div>
       </details>
-      )}
 
       {confirming && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-10">
