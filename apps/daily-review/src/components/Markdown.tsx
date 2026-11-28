@@ -10,6 +10,7 @@ type Block =
   | { type: "code"; text: string }
   | { type: "quote"; text: string }
   | { type: "hr" }
+  | { type: "table"; rows: string[][] }
   | { type: "p"; text: string };
 
 function parse(md: string): Block[] {
@@ -30,6 +31,17 @@ function parse(md: string): Block[] {
     if (h) {
       blocks.push({ type: "heading", level: h[1].length, text: h[2] });
       i++;
+      continue;
+    }
+    if (/^\s*\|/.test(line)) {
+      const rows: string[][] = [];
+      while (i < lines.length && /^\s*\|/.test(lines[i])) {
+        const cells = lines[i].trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
+        // 跳过 |---|---| 分隔行
+        if (!cells.every((c) => /^:?-{2,}:?$/.test(c) || c === "")) rows.push(cells);
+        i++;
+      }
+      if (rows.length) blocks.push({ type: "table", rows });
       continue;
     }
     if (/^(-{3,}|\*{3,})\s*$/.test(line)) {
@@ -126,6 +138,26 @@ export function Markdown({ md }: { md: string }) {
             return <blockquote key={i}>{inline(b.text, `q${i}`)}</blockquote>;
           case "hr":
             return <hr key={i} />;
+          case "table":
+            return (
+              <table key={i}>
+                <thead>
+                  <tr>{b.rows[0].map((c, j) => <th key={j}>{inline(c, `t${i}h${j}`)}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {b.rows.slice(1).map((row, ri) => (
+                    <tr key={ri}>
+                      {row.map((c, j) => {
+                        const rich = /✅|🔄|📋/.test(c)
+                          ? c.split(/(?=✅|🔄|📋)/).map((seg, k) => <span key={k} className={`cell-status st-${seg.trim()[0] === "✅" ? "done" : seg.trim()[0] === "🔄" ? "doing" : "todo"}`}>{inline(seg, `t${i}r${ri}c${j}s${k}`)}</span>)
+                          : inline(c, `t${i}r${ri}c${j}`);
+                        return <td key={j}>{j === 0 ? <strong>{c}</strong> : rich}</td>;
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            );
           default:
             return <p key={i}>{inline(b.text, `p${i}`)}</p>;
         }

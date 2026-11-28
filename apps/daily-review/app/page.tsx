@@ -49,7 +49,7 @@ export default function DailyHomePage() {
   return (
     <div>
       {/* 日历翻页：‹ 日期 ›，今日之后不可前进 */}
-      <div className="flex items-center justify-center gap-3 mb-5">
+      <div className="flex items-center justify-center gap-3 mb-5 max-w-[900px] mx-auto">
         <button
           onClick={() => setDate(prev)}
           disabled={atMin}
@@ -96,11 +96,11 @@ export default function DailyHomePage() {
         <Empty hint="报告不存在" />
       ) : (
         <>
-          <div className="bg-white border border-gray-200 rounded-lg p-5">
+          <div className="bg-white border border-gray-200 rounded-lg p-5 max-w-[900px] mx-auto">
             {data.report.summary_md ? <Markdown md={data.report.summary_md} /> : <Empty hint="总结尚未生成" />}
           </div>
           {data.records.length > 0 && (
-            <details className="mt-5 group">
+            <details className="mt-5 group max-w-[900px] mx-auto">
               <summary className="text-sm font-semibold text-gray-500 cursor-pointer select-none">
                 原始记录 <span className="font-normal text-gray-400">{data.records.length}</span>
                 <span className="ml-2 text-xs text-gray-400 group-open:hidden">展开</span>

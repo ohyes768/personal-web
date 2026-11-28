@@ -71,7 +71,7 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
         {report.summary_md ? <Markdown md={report.summary_md} /> : <Empty hint="总结尚未生成" />}
       </div>
 
-      <details className="mt-5 group">
+      <details className="mt-5 group max-w-[900px] mx-auto">
         <summary className="text-sm font-semibold text-gray-500 cursor-pointer select-none">
           原始记录 <span className="font-normal text-gray-400">{records.length}</span>
           <span className="ml-2 text-xs text-gray-400 group-open:hidden">展开</span>

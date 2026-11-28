@@ -35,3 +35,15 @@
 .md-body strong { font-weight: 600; color: #111827; }
 .md-body hr { border: none; border-top: 1px solid #f3f4f6; margin: 1.2em 0; }
 .md-body a { color: #2563eb; }
+
+/* 日报表格视图 */
+.md-body table { width: 100%; border-collapse: collapse; margin: .6em 0 1em; font-size: 13px; }
+.md-body th, .md-body td { border: 1px solid #f0f0f2; padding: 8px 10px; text-align: left; vertical-align: top; line-height: 1.6; }
+.md-body thead th { background: #f9fafb; font-weight: 600; color: #111827; white-space: nowrap; }
+.md-body tbody tr:hover { background: #fafafa; }
+.md-body td:first-child { font-weight: 600; white-space: nowrap; color: #111827; }
+.md-body td:first-child strong { display: none; }
+.md-body .cell-status { display: block; }
+.md-body .cell-status.st-done { color: #15803d; }
+.md-body .cell-status.st-doing { color: #b45309; }
+.md-body .cell-status.st-todo { color: #6d28d9; }
