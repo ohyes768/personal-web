@@ -11,7 +11,8 @@ import {
   type ReportMeta,
   type ReportType,
 } from "./api";
-import { mockEnabled, mockProjects, mockReportDetail, mockReports } from "./mock";
+import { mockEnabled, mockProjects, mockReportDetail, mockReports, mockUsage } from "./mock";
+import { getUsage, type UsageData } from "./api";
 
 type WithReload<T> = {
   data: T | null;
@@ -97,6 +98,25 @@ export async function generateReport(
     period_start,
     period_end,
   });
+}
+
+// 单日 Token 用量：辅助信息，失败静默（旧后端 404 时不渲染用量行，不阻塞主内容）
+export function useUsage(date: string): { data: UsageData | null } {
+  const [data, setData] = useState<UsageData | null>(null);
+  useEffect(() => {
+    let alive = true;
+    setData(null);
+    getUsage({ date })
+      .then((d) => alive && setData(d))
+      .catch(() => {
+        if (!mockEnabled()) return;
+        alive && setData(mockUsage(date));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [date]);
+  return { data };
 }
 
 // 首页日历翻页用：日报日期索引（按 period_start 升序）+ 日期→id 映射

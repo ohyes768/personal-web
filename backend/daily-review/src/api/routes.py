@@ -15,6 +15,8 @@ from src import db, llm
 from src.config import get_dsh_dir, get_ingest_token
 from src.parser.session import parse_session_file
 
+from src.parser.usage import parse_usage_ledger
+
 # 杂项桶：家目录 / 默认工作区 / task-board 快照，非真实项目，项目维度直接隐藏
 HIDDEN_BUCKETS = {"home-ohyes768", "default-workspace", "task-board"}
 from src.parser.taskboard import parse_git_commits, parse_ledger
@@ -49,7 +51,33 @@ class SyncResult(BaseModel):
     sessions_skipped: int
     ledger_parsed: bool
     records_inserted: int
+    usage_upserted: int = 0
     errors: list[str]
+
+
+class UsageIn(BaseModel):
+    """单机单日单 provider/model 的 LLM 用量日汇总。"""
+
+    machine: str
+    date: str = Field(..., description="YYYY-MM-DD")
+    provider: str
+    model: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    reasoning_tokens: int = 0
+    calls: int = 0
+    cost: float = 0.0
+
+
+class UsageBatch(BaseModel):
+    usage: list[UsageIn]
+
+
+class UsageResult(BaseModel):
+    received: int
+    upserted: int
 
 
 class ReportGenerateIn(BaseModel):
@@ -155,6 +183,21 @@ def ingest_records(body: RecordsBatch, x_ingest_token: str | None = Header(defau
     return {"received": len(body.records), "inserted": inserted, "skipped": len(body.records) - inserted}
 
 
+@router.post("/ingest/usage", response_model=UsageResult)
+def ingest_usage(body: UsageBatch, x_ingest_token: str | None = Header(default=None)):
+    """批量 LLM 用量日汇总 upsert，按 UNIQUE(machine,date,provider,model) 幂等，重跑覆盖。"""
+    _require_ingest_token(x_ingest_token)
+    rows = [u.model_dump() for u in body.usage]
+    upserted = db.upsert_usage(rows)
+    db.log_ingest(
+        machine=rows[0]["machine"] if rows else "-",
+        batch_id=f"usage:{rows[0]['date'] if rows else '-'}",
+        record_count=len(rows),
+        status="ok",
+    )
+    return {"received": len(rows), "upserted": upserted}
+
+
 @router.post("/ingest/sync-nas", response_model=SyncResult)
 def sync_nas():
     """解析 NAS 只读挂载 ~/.dsh 下未处理的会话 / ledger（文件级游标防重复）。"""
@@ -204,11 +247,19 @@ def sync_nas():
                 ledger_parsed = True
                 db.log_ingest("nas", cursor, 1, "ok")
 
+    usage_upserted = 0
+    usage_ledger = dsh_dir / "dsh-usage" / "usage-ledger.json"
+    if usage_ledger.is_file():
+        usage_rows = parse_usage_ledger(usage_ledger, machine="nas")
+        if usage_rows:
+            usage_upserted = db.upsert_usage(usage_rows)
+
     return {
         "sessions_parsed": sessions_parsed,
         "sessions_skipped": sessions_skipped,
         "ledger_parsed": ledger_parsed,
         "records_inserted": inserted,
+        "usage_upserted": usage_upserted,
         "errors": errors,
     }
 
@@ -317,6 +368,67 @@ def projects(days: int = 7):
     return {"projects": out, "window_days": days}
 
 
+# ---------- usage ----------
+
+
+def _usage_summary_response(rows, start: str, end: str) -> dict:
+    fields = ("input_tokens", "output_tokens", "cache_read_tokens",
+              "cache_write_tokens", "reasoning_tokens", "calls", "cost")
+
+    def agg(rs):
+        out = {f: 0 for f in fields}
+        for r in rs:
+            for f in fields:
+                out[f] += r[f]
+        out["cost"] = round(out["cost"], 4)
+        return out
+
+    return {
+        "start": start,
+        "end": end,
+        "totals": agg(rows),
+        "by_day_machine": [
+            {**agg([r for r in rows if r["date"] == d and r["machine"] == m]), "date": d, "machine": m}
+            for d, m in sorted({(r["date"], r["machine"]) for r in rows})
+        ],
+        "by_model": [
+            {**agg([r for r in rows if (r["provider"], r["model"], r["machine"]) == k]),
+             "provider": k[0], "model": k[1], "machine": k[2]}
+            for k in sorted({(r["provider"], r["model"], r["machine"]) for r in rows})
+        ],
+    }
+
+
+@router.get("/usage")
+def get_usage(
+    date: str | None = None,
+    start: str | None = None,
+    end: str | None = None,
+    days: int | None = None,
+):
+    """LLM token/cost 查询：?date=YYYY-MM-DD 或 ?start=&end=（含首尾）；?days=N 最近 N 天（默认 7）。"""
+    try:
+        if date:
+            datetime.strptime(date, "%Y-%m-%d")
+            s = e = date
+        elif start and end:
+            s = datetime.strptime(start, "%Y-%m-%d").date()
+            e = datetime.strptime(end, "%Y-%m-%d").date()
+            if e < s:
+                raise HTTPException(status_code=400, detail="end earlier than start")
+            s, e = s.isoformat(), e.isoformat()
+        else:
+            e = datetime.now().date()
+            s = e - timedelta(days=(days or 7) - 1)
+            s, e = s.isoformat(), e.isoformat()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD")
+    rows = db.get_conn().execute(
+        "SELECT * FROM usage_daily WHERE date >= ? AND date <= ?", (s, e)
+    ).fetchall()
+    return _usage_summary_response([dict(r) for r in rows], s, e)
+
+
 # ---------- reports ----------
 
 
@@ -395,6 +507,29 @@ def _period_range(report_type: str, period_start: str | None, period_end: str | 
     return start.isoformat(), end.isoformat()
 
 
+def _usage_prompt_lines(start: str, end: str) -> str:
+    """period 内两机 usage 汇总文本；无数据返回空串。"""
+    rows = db.get_conn().execute(
+        "SELECT * FROM usage_daily WHERE date >= ? AND date <= ?", (start, end)
+    ).fetchall()
+    if not rows:
+        return ""
+    resp = _usage_summary_response([dict(r) for r in rows], start, end)
+    t = resp["totals"]
+    per_machine = "；".join(
+        f"{d['machine']} ${d['cost']}（{d['calls']} 次）" for d in resp["by_day_machine"]
+    )
+    models = "；".join(f"{m['provider']}/{m['model']}" for m in resp["by_model"])
+    return (
+        f"\n## LLM 用量（{start}~{end}，两机合计）\n"
+        f"input {t['input_tokens']}、output {t['output_tokens']}、"
+        f"cache_read {t['cache_read_tokens']}、cache_write {t['cache_write_tokens']}、"
+        f"reasoning {t['reasoning_tokens']} tokens；调用 {t['calls']} 次；成本 ${t['cost']}。"
+        f"分机器：{per_machine}。模型：{models}。"
+        "\n请在报告末尾加一节 \"## LLM 消耗\" 概述上述用量与成本。\n"
+    )
+
+
 def _build_prompt(records: list, report_type: str, start: str, end: str) -> str:
     lines = [
         f"以下是 {start} 至 {end} 的结构化工作记录（两台机器合并，已脱敏，仅摘要不含原文）。",
@@ -418,6 +553,7 @@ def _build_prompt(records: list, report_type: str, start: str, end: str) -> str:
         )
     if len(records) == 0:
         lines.append("（该时间段无记录）")
+    lines.append(_usage_prompt_lines(start, end))
     return "\n".join(lines)
 
 

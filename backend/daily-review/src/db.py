@@ -56,6 +56,24 @@ CREATE TABLE IF NOT EXISTS ingest_log (
 );
 -- NAS sync 的处理游标：batch_id = 文件相对路径，同一文件成功处理过即不再解析
 CREATE INDEX IF NOT EXISTS idx_ingest_log_file ON ingest_log(machine, batch_id);
+
+-- LLM token 消耗日汇总（两机合并展示）；upsert 幂等，重跑覆盖
+CREATE TABLE IF NOT EXISTS usage_daily (
+    machine TEXT NOT NULL,
+    date TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    input_tokens INTEGER DEFAULT 0,
+    output_tokens INTEGER DEFAULT 0,
+    cache_read_tokens INTEGER DEFAULT 0,
+    cache_write_tokens INTEGER DEFAULT 0,
+    reasoning_tokens INTEGER DEFAULT 0,
+    calls INTEGER DEFAULT 0,
+    cost REAL DEFAULT 0,
+    updated_at TEXT NOT NULL,
+    UNIQUE(machine, date, provider, model)
+);
+CREATE INDEX IF NOT EXISTS idx_usage_date ON usage_daily(date, machine);
 """
 
 
@@ -144,3 +162,35 @@ def log_ingest(machine: str, batch_id: str, record_count: int, status: str) -> N
         (machine, batch_id, now_iso(), record_count, status),
     )
     get_conn().commit()
+
+
+def upsert_usage(rows: list[dict]) -> int:
+    """批量 upsert usage_daily（幂等，重跑覆盖）。返回写入行数。"""
+    conn = get_conn()
+    n = 0
+    for r in rows:
+        conn.execute(
+            """
+            INSERT INTO usage_daily
+            (machine, date, provider, model, input_tokens, output_tokens,
+             cache_read_tokens, cache_write_tokens, reasoning_tokens, calls, cost, updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(machine, date, provider, model)
+            DO UPDATE SET input_tokens=excluded.input_tokens, output_tokens=excluded.output_tokens,
+                          cache_read_tokens=excluded.cache_read_tokens,
+                          cache_write_tokens=excluded.cache_write_tokens,
+                          reasoning_tokens=excluded.reasoning_tokens,
+                          calls=excluded.calls, cost=excluded.cost,
+                          updated_at=excluded.updated_at
+            """,
+            (
+                r["machine"], r["date"], r["provider"], r["model"],
+                r.get("input_tokens", 0), r.get("output_tokens", 0),
+                r.get("cache_read_tokens", 0), r.get("cache_write_tokens", 0),
+                r.get("reasoning_tokens", 0), r.get("calls", 0), r.get("cost", 0.0),
+                r.get("updated_at", now_iso()),
+            ),
+        )
+        n += 1
+    conn.commit()
+    return n

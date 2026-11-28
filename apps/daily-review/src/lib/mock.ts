@@ -6,6 +6,7 @@ import type {
   ReportDetail,
   ReportMeta,
   ReportType,
+  UsageData,
 } from "./api";
 
 const now = new Date();
@@ -140,3 +141,45 @@ export const mockReportDetail = (id: string): ReportDetail => {
 
 export const mockEnabled = () => process.env.NEXT_PUBLIC_DAILY_REVIEW_MOCK === "1";
 export const mockType = (t: ReportType) => t;
+
+// ---- usage mock：按日期做个稳定的伪随机量级，便于翻页时观察布局 ----
+
+const bucket = (scale: number) => ({
+  input_tokens: Math.round(82000 * scale),
+  output_tokens: Math.round(14000 * scale),
+  cache_read_tokens: Math.round(1250000 * scale),
+  cache_write_tokens: Math.round(160000 * scale),
+  reasoning_tokens: Math.round(32000 * scale),
+  calls: Math.round(26 * scale),
+  cost: Math.round(310 * scale) / 100,
+});
+
+export const mockUsage = (date: string): UsageData => {
+  // 伪随机系数：同一日期取值稳定，不同日期有差异
+  const seed = [...date].reduce((a, c) => a + c.charCodeAt(0), 0);
+  const w = 0.6 + ((seed * 7) % 30) / 50;
+  const n = 0.5 + ((seed * 13) % 30) / 60;
+  const win = bucket(w);
+  const nas = bucket(n);
+  const sum = (a: typeof win, b: typeof win) => ({
+    input_tokens: a.input_tokens + b.input_tokens,
+    output_tokens: a.output_tokens + b.output_tokens,
+    cache_read_tokens: a.cache_read_tokens + b.cache_read_tokens,
+    cache_write_tokens: a.cache_write_tokens + b.cache_write_tokens,
+    reasoning_tokens: a.reasoning_tokens + b.reasoning_tokens,
+    calls: a.calls + b.calls,
+    cost: Math.round((a.cost + b.cost) * 100) / 100,
+  });
+  return {
+    date,
+    totals: sum(win, nas),
+    by_day_machine: [
+      { date, machine: "windows", ...win },
+      { date, machine: "nas", ...nas },
+    ],
+    by_model: [
+      { machine: "windows", provider: "deepseek", model: "deepseek-chat", ...win },
+      { machine: "nas", provider: "deepseek", model: "deepseek-reasoner", ...nas },
+    ],
+  };
+};

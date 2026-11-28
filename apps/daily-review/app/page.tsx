@@ -6,6 +6,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useDailyIndex, useReport, generateReport } from "@/lib/hooks";
 import { Markdown } from "@/components/Markdown";
+import { UsageRow } from "@/components/UsageRow";
 import { Empty, ErrorState, Loading } from "@/components/States";
 
 const DAY_MS = 86400000;
@@ -69,6 +70,9 @@ export default function DailyHomePage() {
           ›
         </button>
       </div>
+
+      {/* 当日 Token 用量：随日期翻页联动；后端未提供时整行消失，不影响主内容 */}
+      <UsageRow date={date} />
 
       {idxLoading ? (
         <Loading />

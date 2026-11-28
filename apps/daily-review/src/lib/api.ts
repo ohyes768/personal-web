@@ -45,6 +45,49 @@ export interface ReportDetail {
   records: Pick<ActivityItem, "machine" | "kind" | "project" | "title" | "summary_text" | "started_at">[];
 }
 
+export interface UsageBucket {
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  reasoning_tokens: number;
+  calls: number;
+  cost: number; // 美元估算值，展示用 ≈
+}
+
+export interface UsageData {
+  date?: string;
+  start?: string;
+  end?: string;
+  totals: UsageBucket;
+  by_day_machine: (UsageBucket & { date: string; machine: string })[];
+  by_model: (UsageBucket & { provider: string; model: string; machine: string })[];
+}
+
+/** 按 machine 聚合 by_day_machine（单日查询时每机一条，求和以保证区间查询也正确） */
+export function usageByMachine(usage: UsageData): Record<string, UsageBucket> {
+  const out: Record<string, UsageBucket> = {};
+  for (const r of usage.by_day_machine) {
+    const b = (out[r.machine] ??= {
+      input_tokens: 0,
+      output_tokens: 0,
+      cache_read_tokens: 0,
+      cache_write_tokens: 0,
+      reasoning_tokens: 0,
+      calls: 0,
+      cost: 0,
+    });
+    b.input_tokens += r.input_tokens;
+    b.output_tokens += r.output_tokens;
+    b.cache_read_tokens += r.cache_read_tokens;
+    b.cache_write_tokens += r.cache_write_tokens;
+    b.reasoning_tokens += r.reasoning_tokens;
+    b.calls += r.calls;
+    b.cost += r.cost;
+  }
+  return out;
+}
+
 // 浏览器端 fetch 带前导 "/" 会忽略 Next basePath，必须显式带 /review 前缀；
 // dev 与线上都由 basePath rewrite（/review/api/* → 后端 /api/review/*）承接。
 const API = "/review/api";
@@ -68,6 +111,11 @@ export async function apiSend<T>(
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error((data as { detail?: string })?.detail || `${method} ${path}: ${res.status}`);
   return data as T;
+}
+
+export async function getUsage(params: { date: string } | { start: string; end: string }): Promise<UsageData> {
+  const q = new URLSearchParams(params as Record<string, string>).toString();
+  return apiGet<UsageData>(`/usage?${q}`);
 }
 
 export const MACHINE_META: Record<string, { label: string; dot: string }> = {
