@@ -42,7 +42,6 @@
 .md-body thead th { background: #f9fafb; font-weight: 600; color: #111827; white-space: nowrap; }
 .md-body tbody tr:hover { background: #fafafa; }
 .md-body td:first-child { font-weight: 600; white-space: nowrap; color: #111827; }
-.md-body td:first-child strong { display: none; }
 .md-body .cell-status { display: block; }
 .md-body .cell-status.st-done { color: #15803d; }
 .md-body .cell-status.st-doing { color: #b45309; }
