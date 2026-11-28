@@ -11,7 +11,7 @@ import {
   type ReportMeta,
   type ReportType,
 } from "./api";
-import { mockEnabled, mockProjects, mockReportDetail, mockReports, mockUsage } from "./mock";
+import { mockEnabled, mockProjects, mockReportDetail, mockReports, mockUsage, mockUsageDays } from "./mock";
 import { getUsage, type UsageData } from "./api";
 
 type WithReload<T> = {
@@ -116,6 +116,33 @@ export function useUsage(date: string): { data: UsageData | null } {
       alive = false;
     };
   }, [date]);
+  return { data };
+}
+
+// 区间用量（热力图）：start 对齐到 N 天前所在周的周一，end = 今天；失败静默。
+export function useUsageDays(days: number): { data: UsageData | null } {
+  const [data, setData] = useState<UsageData | null>(null);
+  useEffect(() => {
+    let alive = true;
+    setData(null);
+    const end = new Date();
+    const start = new Date(end);
+    start.setDate(start.getDate() - (days - 1));
+    // 对齐到当周周一（getDay: 周日=0）
+    const dow = (start.getDay() + 6) % 7;
+    start.setDate(start.getDate() - dow);
+    const fmt = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    getUsage({ start: fmt(start), end: fmt(end) })
+      .then((d) => alive && setData(d))
+      .catch(() => {
+        if (!mockEnabled()) return;
+        alive && setData(mockUsageDays(fmt(start), fmt(end)));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [days]);
   return { data };
 }
 

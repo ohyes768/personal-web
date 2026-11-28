@@ -6,6 +6,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useDailyIndex, useReport, generateReport } from "@/lib/hooks";
 import { Markdown } from "@/components/Markdown";
+import { ContributionGrid } from "@/components/ContributionGrid";
 import { UsageRow } from "@/components/UsageRow";
 import { Empty, ErrorState, Loading } from "@/components/States";
 
@@ -49,6 +50,9 @@ export default function DailyHomePage() {
 
   return (
     <div>
+      {/* 贡献格子热力图：点击格子切到该日期，与下方翻页器共用同一 date 状态 */}
+      <ContributionGrid selected={date} onSelect={setDate} />
+
       {/* 日历翻页：‹ 日期 ›，今日之后不可前进 */}
       <div className="flex items-center justify-center gap-3 mb-5 max-w-[900px] mx-auto">
         <button

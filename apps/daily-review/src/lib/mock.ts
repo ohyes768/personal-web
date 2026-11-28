@@ -142,6 +142,38 @@ export const mockReportDetail = (id: string): ReportDetail => {
 export const mockEnabled = () => process.env.NEXT_PUBLIC_DAILY_REVIEW_MOCK === "1";
 export const mockType = (t: ReportType) => t;
 
+// 区间 mock：逐日生成 mockUsage 的 by_day_machine 行拼起来（同日两机两行，与真实契约一致）
+export const mockUsageDays = (start: string, end: string): UsageData => {
+  const rows: UsageData["by_day_machine"] = [];
+  const models: UsageData["by_model"] = [];
+  const totals = {
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_read_tokens: 0,
+    cache_write_tokens: 0,
+    reasoning_tokens: 0,
+    calls: 0,
+    cost: 0,
+  };
+  const cur = new Date(`${start}T00:00:00`);
+  const stop = new Date(`${end}T00:00:00`);
+  while (cur <= stop) {
+    const day = cur.toISOString().slice(0, 10);
+    const u = mockUsage(day);
+    rows.push(...u.by_day_machine);
+    models.push(...u.by_model);
+    totals.input_tokens += u.totals.input_tokens;
+    totals.output_tokens += u.totals.output_tokens;
+    totals.cache_read_tokens += u.totals.cache_read_tokens;
+    totals.cache_write_tokens += u.totals.cache_write_tokens;
+    totals.reasoning_tokens += u.totals.reasoning_tokens;
+    totals.calls += u.totals.calls;
+    totals.cost += u.totals.cost;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return { start, end, totals, by_day_machine: rows, by_model: models };
+};
+
 // ---- usage mock：按日期做个稳定的伪随机量级，便于翻页时观察布局 ----
 
 const bucket = (scale: number) => ({
