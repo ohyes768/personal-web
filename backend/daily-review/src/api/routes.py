@@ -93,13 +93,37 @@ def _record_to_out(row) -> dict:
     }
 
 
+def normalize_project(project: str) -> str:
+    """项目名归一化：Windows 会话桶/cwd 会带盘符路径，同一仓库出现多种写法。
+
+    - 路径形态（含 / 或 \\）：取最后一段  f:/personal-projects/personal-web → personal-web
+    - 盘符虚线形态（首段是单字母盘符）：剥掉盘符段、虚线当路径分隔、取末段
+      F-personal-projects-personal-web → personal-web
+      F-personal-projects-esp32-s3 → esp32-s3（仓库名里的连字符不受影响）
+    - 其余（本就是纯项目名，如 daily-review / stock-info-dingding）原样保留
+    """
+    if not project:
+        return project
+    p = project.replace("\\", "/").strip().strip("/")
+    if "/" in p:
+        return p.split("/")[-1]
+    parts = p.split("-")
+    if len(parts) > 1 and len(parts[0]) == 1 and parts[0].isalpha():
+        # 剥掉盘符段后，虚线当路径分隔；仓库名里的连字符不可恢复，
+        # 但实测取末两段拼回即稳定命中仓库根目录名（esp32-s3 / personal-web / datagen-dev）
+        rest = parts[1:]
+        tail = rest[-2:] if len(rest) >= 2 else rest
+        return "-".join(tail)
+    return p
+
+
 def _insert_record(item: RecordIn, machine: str | None = None) -> bool:
     return db.upsert_record(
         {
             "id": str(uuid.uuid4()),
             "machine": machine or item.machine,
             "kind": item.kind,
-            "project": item.project,
+            "project": normalize_project(item.project),
             "external_id": item.external_id,
             "session_id": item.session_id,
             "title": item.title,

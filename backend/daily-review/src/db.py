@@ -82,13 +82,26 @@ def init_db() -> None:
 
 
 def upsert_record(row: dict) -> bool:
-    """按 UNIQUE(machine,kind,external_id) 幂等插入。返回是否新插入。"""
+    """按 UNIQUE(machine,kind,external_id) 幂等插入；冲突时更新内容字段。
+
+    返回是否新插入（冲突更新返回 False）。冲突更新（而不是 IGNORE）让
+    采集口径/项目名归一化等规则改进后，采集端重发同一条记录即可自愈。
+    """
+    exists = get_record_by_external(row["machine"], row["kind"], row["external_id"]) is not None
     cur = get_conn().execute(
         """
-        INSERT OR IGNORE INTO records
+        INSERT INTO records
         (id, machine, kind, project, external_id, session_id, title,
          summary_text, started_at, ended_at, payload_json, ingested_at)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(machine, kind, external_id) DO UPDATE SET
+            project=excluded.project,
+            title=excluded.title,
+            summary_text=excluded.summary_text,
+            started_at=excluded.started_at,
+            ended_at=excluded.ended_at,
+            payload_json=excluded.payload_json,
+            ingested_at=excluded.ingested_at
         """,
         (
             row["id"],
@@ -106,7 +119,7 @@ def upsert_record(row: dict) -> bool:
         ),
     )
     get_conn().commit()
-    return cur.rowcount > 0
+    return not exists
 
 
 def get_record_by_external(machine: str, kind: str, external_id: str) -> sqlite3.Row | None:

@@ -71,3 +71,19 @@ class TestIngestIdempotency:
 
     def test_bad_date_format(self, client):
         assert client.get("/api/review/today", params={"date": "not-a-date"}).status_code == 400
+
+
+def test_ingest_normalizes_windows_path_projects(client):
+    """盘符路径/虚线桶形态的项目名归一化为最后一段；纯项目名保留。"""
+    r = client.post("/api/review/ingest/records",
+        headers={"X-Ingest-Token": "test-token"},
+        json={"records": [
+            {"machine": "windows", "kind": "session", "project": "f:/personal-projects/personal-web", "external_id": "n1", "started_at": "2026-11-28T10:00:00"},
+            {"machine": "windows", "kind": "session", "project": "F-personal-projects-esp32-s3", "external_id": "n2", "started_at": "2026-11-28T10:30:00"},
+            {"machine": "windows", "kind": "session", "project": "daily-review", "external_id": "n3", "started_at": "2026-11-28T11:00:00"},
+        ]})
+    assert r.status_code == 200 and r.json()["inserted"] == 3
+    rows = client.get("/api/review/projects").json()["projects"]
+    names = {p["project"] for p in rows}
+    assert "personal-web" in names and "esp32-s3" in names and "daily-review" in names
+    assert not any("/" in n or n.startswith("F-") for n in names)
