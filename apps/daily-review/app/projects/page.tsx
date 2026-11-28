@@ -75,7 +75,14 @@ export default function ProjectsPage() {
                 <ul className="mt-3 pt-3 border-t border-gray-100 space-y-1.5">
                   {p.recent_summaries.map((s, i) => (
                     <li key={i} className="text-xs text-gray-600 flex gap-2">
-                      <span className="text-gray-300">·</span>
+                      <span
+                        className={`flex-none mt-0.5 px-1.5 rounded text-[10px] leading-4 ${
+                          s.machine === "windows" ? "bg-sky-100 text-sky-700" : "bg-emerald-100 text-emerald-700"
+                        }`}
+                        title={s.machine === "windows" ? "来自 Windows" : "来自 NAS"}
+                      >
+                        {s.machine === "windows" ? "win" : "nas"}
+                      </span>
                       <span className="min-w-0">{s.title}</span>
                     </li>
                   ))}

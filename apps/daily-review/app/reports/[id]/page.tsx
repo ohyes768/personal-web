@@ -91,7 +91,14 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
                 </span>
                 <div className="min-w-0">
                   <p className="truncate">
-                    <span className="text-gray-400 mr-1.5">{r.project}</span>
+                    <span
+                          className={`flex-none px-1.5 rounded text-[10px] leading-4 mt-0.5 ${
+                            r.machine === "windows" ? "bg-sky-100 text-sky-700" : "bg-emerald-100 text-emerald-700"
+                          }`}
+                        >
+                          {r.machine === "windows" ? "win" : "nas"}
+                        </span>
+                        <span className="text-gray-400 mr-1.5">{r.project}</span>
                     {r.title}
                   </p>
                   {r.summary_text && <p className="text-xs text-gray-500 mt-0.5">{r.summary_text}</p>}

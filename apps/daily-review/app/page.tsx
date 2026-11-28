@@ -109,6 +109,13 @@ export default function DailyHomePage() {
                 <ul className="bg-white border border-gray-200 rounded-lg divide-y divide-gray-100">
                   {data.records.map((r, i) => (
                     <li key={i} className="flex gap-3 px-4 py-2.5 text-sm">
+                      <span
+                        className={`flex-none px-1.5 rounded text-[10px] leading-4 mt-0.5 ${
+                          r.machine === "windows" ? "bg-sky-100 text-sky-700" : "bg-emerald-100 text-emerald-700"
+                        }`}
+                      >
+                        {r.machine === "windows" ? "win" : "nas"}
+                      </span>
                       <span className="text-gray-400 mr-1.5">{r.project}</span>
                       {r.title}
                     </li>
