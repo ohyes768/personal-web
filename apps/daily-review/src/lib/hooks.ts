@@ -48,33 +48,12 @@ function useFetchWithMock<T>(fetcher: () => Promise<T>, mock: () => T): WithRelo
   return { ...state, reload };
 }
 
-export function useProjects(): WithReload<ProjectSummary[]> {
+export function useProjects(days: number): WithReload<ProjectSummary[]> {
   return useFetchWithMock<ProjectSummary[]>(
-    useCallback(async () => {
-      const d = await apiGet<{ projects: Record<string, unknown>[] }>("/projects");
-      // 后端返回 last_activity + recent_summaries:[{title,summary_text,...}]；归一化成
-      // 前端契约的 last_active_at + recent:string[]，字段缺失时安全兜底避免页面崩溃。
-      return (d.projects ?? []).map((p) => {
-        const s = p as {
-          project?: string; last_activity?: string; last_active_at?: string;
-          session_count?: number; commit_count?: number;
-          recent_summaries?: { title?: string; summary_text?: string }[];
-          recent?: string[];
-        };
-        const recent = Array.isArray(s.recent)
-          ? s.recent
-          : (s.recent_summaries ?? []).map((r) =>
-              [r.title, r.summary_text].filter(Boolean).join(" — "),
-            );
-        return {
-          project: s.project ?? "未知项目",
-          last_active_at: s.last_active_at ?? s.last_activity ?? "",
-          session_count: s.session_count ?? 0,
-          commit_count: s.commit_count ?? 0,
-          recent,
-        };
-      });
-    }, []),
+    useCallback(
+      () => apiGet<{ projects: ProjectSummary[] }>(`/projects?days=${days}`).then((d) => d.projects),
+      [days],
+    ),
     () => mockProjects,
   );
 }

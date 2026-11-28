@@ -11,12 +11,21 @@ export interface ActivityItem {
   ended_at: string;
 }
 
+export interface DailyCount {
+  day: string;
+  count: number;
+}
+
 export interface ProjectSummary {
   project: string;
-  last_active_at: string;
+  last_activity: string;
   session_count: number;
   commit_count: number;
-  recent: string[]; // 近期工作摘要
+  task_board_count: number;
+  active_days: number;
+  total_count: number;
+  daily_counts: DailyCount[];
+  recent_summaries: { title: string; summary_text: string; started_at: string; kind: string; machine: string }[];
 }
 
 export type ReportType = "daily";

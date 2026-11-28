@@ -75,33 +75,39 @@ const items: ActivityItem[] = [
 export const mockProjects: ProjectSummary[] = [
   {
     project: "personal-web",
-    last_active_at: iso(12, 0),
+    last_activity: iso(1, 0),
     session_count: 6,
     commit_count: 14,
-    recent: ["daily-review 设计定稿", "nginx 驾驶舱 KPI 调整", "deploy 脚本梳理"],
+    task_board_count: 0,
+    active_days: 5,
+    total_count: 20,
+    daily_counts: Array.from({ length: 14 }, (_, i) => ({
+      day: iso(13 - i, 0),
+      count: [2, 0, 1, 3, 1, 0, 0, 2, 1, 0, 4, 1, 2, 3][i],
+    })),
+    recent_summaries: [
+      { title: "daily-review 设计定稿", summary_text: "", started_at: iso(1, 0), kind: "session", machine: "nas" },
+      { title: "nginx 驾驶舱 KPI 调整", summary_text: "", started_at: iso(2, 0), kind: "session", machine: "nas" },
+    ],
   },
   {
-    project: "task-web",
-    last_active_at: iso(12, 10),
+    project: "skills",
+    last_activity: iso(2, 0),
     session_count: 3,
-    commit_count: 7,
-    recent: ["排期日历视图迭代", "运行记录筛选优化"],
-  },
-  {
-    project: "rss-relay",
-    last_active_at: iso(10, 9),
-    session_count: 2,
-    commit_count: 3,
-    recent: ["上游 429 退避修复", "重试队列落库"],
-  },
-  {
-    project: "index-trends",
-    last_active_at: iso(15, 20),
-    session_count: 4,
-    commit_count: 5,
-    recent: ["周线通道阈值调参", "估值分位口径修正"],
+    commit_count: 1,
+    task_board_count: 0,
+    active_days: 2,
+    total_count: 4,
+    daily_counts: Array.from({ length: 14 }, (_, i) => ({
+      day: iso(13 - i, 0),
+      count: [1, 0, 0, 2, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0][i],
+    })),
+    recent_summaries: [
+      { title: "理财筛选 skill 迭代", summary_text: "", started_at: iso(2, 0), kind: "session", machine: "nas" },
+    ],
   },
 ];
+;
 
 export const mockReports: ReportMeta[] = [
   

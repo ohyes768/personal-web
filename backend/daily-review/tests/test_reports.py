@@ -119,3 +119,40 @@ def test_default_period_is_yesterday_for_daily_and_last_week_for_weekly():
     ws, we = _period_range("weekly", None, None)
     last_monday = today - timedelta(days=today.weekday()) - timedelta(days=7)
     assert ws == last_monday.isoformat() and we == (last_monday + timedelta(days=6)).isoformat()
+
+
+def test_projects_window_and_hidden_buckets(client, auth_headers):
+    """/projects：窗口统计、活动量降序、杂项桶隐藏、近 14 天逐日计数。"""
+    from datetime import date, timedelta
+
+    from fastapi.testclient import TestClient
+    from src.main import app
+
+    c = TestClient(app)
+    recs = [
+        {"machine": "nas", "kind": "session", "project": "personal-web", "external_id": f"p{i}",
+         "title": f"t{i}", "started_at": (date.today() - timedelta(days=2-i)).isoformat() + "T09:00:00"} for i in range(3)
+    ]
+    recs.append({"machine": "nas", "kind": "session", "project": "personal-web", "external_id": "old",
+                 "title": "old", "started_at": "2025-01-01T09:00:00"})
+    recs.append({"machine": "nas", "kind": "session", "project": "default-workspace", "external_id": "j1",
+                 "title": "j", "started_at": "2026-01-15T09:00:00"})
+    for i in range(2):
+        recs.append({"machine": "nas", "kind": "session", "project": "study", "external_id": f"s{i}",
+                     "title": "s", "started_at": (date.today() - timedelta(days=1)).isoformat() + "T10:00:00"})
+    assert c.post("/api/review/ingest/records", json={"records": recs}, headers=auth_headers).status_code == 200
+
+    r = c.get("/api/review/projects?days=7")
+    assert r.status_code == 200
+    body = r.json()
+    names = [p["project"] for p in body["projects"]]
+    assert "default-workspace" not in names          # 杂项桶隐藏
+    assert names[0] == "personal-web"                # 活动量降序
+    top = body["projects"][0]
+    assert top["session_count"] == 3                 # 只计窗口内
+    assert top["active_days"] == 3
+    assert len(top["daily_counts"]) == 14            # 固定 14 天条形数据
+    assert sum(d["count"] for d in top["daily_counts"]) == 3  # 14 天条形窗口内只有近 3 条
+
+    r_all = c.get("/api/review/projects?days=0")
+    assert r_all.json()["projects"][0]["session_count"] == 4  # 全部含 old

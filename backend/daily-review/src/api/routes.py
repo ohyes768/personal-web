@@ -14,6 +14,9 @@ from pydantic import BaseModel, Field
 from src import db, llm
 from src.config import get_dsh_dir, get_ingest_token
 from src.parser.session import parse_session_file
+
+# 杂项桶：家目录 / 默认工作区 / task-board 快照，非真实项目，项目维度直接隐藏
+HIDDEN_BUCKETS = {"home-ohyes768", "default-workspace", "task-board"}
 from src.parser.taskboard import parse_git_commits, parse_ledger
 
 router = APIRouter(prefix="/api/review")
@@ -210,40 +213,84 @@ def today(date: str | None = None):
 
 
 @router.get("/projects")
-def projects():
-    """按 project 聚合最近工作。"""
+def projects(days: int = 7):
+    """按 project 聚合窗口内活跃度（days=0 表示全部）。
+
+    排序按窗口内活动总量降序；杂项桶（家目录/默认工作区/task-board 快照）直接隐藏。
+    每项目附近 14 天逐日活动计数（前端迷你条形图）。
+    """
+    window_start = ""
+    if days > 0:
+        window_start = (datetime.now() - timedelta(days=days - 1)).strftime("%Y-%m-%d")
+    where = "WHERE substr(started_at, 1, 10) >= ?" if window_start else ""
+    args = (window_start,) if window_start else ()
+
     rows = db.get_conn().execute(
-        """
+        f"""
         SELECT project,
                MAX(started_at) AS last_activity,
                SUM(CASE WHEN kind='session' THEN 1 ELSE 0 END) AS session_count,
                SUM(CASE WHEN kind='git_commit' THEN 1 ELSE 0 END) AS commit_count,
-               SUM(CASE WHEN kind='task_board' THEN 1 ELSE 0 END) AS task_board_count
+               SUM(CASE WHEN kind='task_board' THEN 1 ELSE 0 END) AS task_board_count,
+               COUNT(DISTINCT substr(started_at, 1, 10)) AS active_days,
+               COUNT(*) AS total_count
         FROM records
+        {where}
         GROUP BY project
-        ORDER BY last_activity DESC
-        """
+        ORDER BY total_count DESC
+        """,
+        args,
     ).fetchall()
+
+    # 近 14 天逐日计数（与窗口无关，固定给迷你条形图）
+    bars: dict[str, list[dict]] = {}
+    for row in rows:
+        day_rows = db.get_conn().execute(
+            """
+            SELECT substr(started_at, 1, 10) AS day, COUNT(*) AS n FROM records
+            WHERE project = ? AND substr(started_at, 1, 10) >= ?
+            GROUP BY day ORDER BY day
+            """,
+            (row["project"], (datetime.now() - timedelta(days=13)).strftime("%Y-%m-%d")),
+        ).fetchall()
+        by_day = {r["day"]: r["n"] for r in day_rows}
+        seq = []
+        d = datetime.now() - timedelta(days=13)
+        for _ in range(14):
+            key = d.strftime("%Y-%m-%d")
+            seq.append({"day": key, "count": by_day.get(key, 0)})
+            d += timedelta(days=1)
+        bars[row["project"]] = seq
+
     out = []
     for r in rows:
-        summaries = db.get_conn().execute(
-            """
+        project = r["project"] or "(unknown)"
+        if project in HIDDEN_BUCKETS:
+            continue
+        summary_sql = """
             SELECT title, summary_text, started_at, kind, machine FROM records
-            WHERE project = ? ORDER BY started_at DESC LIMIT 5
-            """,
-            (r["project"],),
+            WHERE project = ?"""
+        summary_args = (project,)
+        if window_start:
+            summary_sql += " AND substr(started_at, 1, 10) >= ?"
+            summary_args += (window_start,)
+        summaries = db.get_conn().execute(
+            summary_sql + " ORDER BY started_at DESC LIMIT 5", summary_args
         ).fetchall()
         out.append(
             {
-                "project": r["project"] or "(unknown)",
+                "project": project,
                 "last_activity": r["last_activity"],
                 "session_count": r["session_count"],
                 "commit_count": r["commit_count"],
                 "task_board_count": r["task_board_count"],
+                "active_days": r["active_days"],
+                "total_count": r["total_count"],
+                "daily_counts": bars.get(project, []),
                 "recent_summaries": [dict(s) for s in summaries],
             }
         )
-    return {"projects": out}
+    return {"projects": out, "window_days": days}
 
 
 # ---------- reports ----------
