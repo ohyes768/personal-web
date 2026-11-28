@@ -210,7 +210,8 @@ def parse_session_file(path: Path) -> dict | None:
         "project": _bucket_to_project(bucket),
         "external_id": session_id,
         "session_id": session_id,
-        "title": title or f"会话 {session_id[:8]}",
+        "title": title
+        or (user_points[0][:40] if user_points else f"未命名会话 {(started_at or '')[:10]}"),
         "summary_text": summary_text,
         "started_at": started_at,
         "ended_at": ended_at,
@@ -371,7 +372,8 @@ def parse_session_file(path: Path) -> dict | None:
         "project": _bucket_to_project(bucket),
         "external_id": session_id,
         "session_id": session_id,
-        "title": title or f"会话 {session_id[:8]}",
+        "title": title
+        or (user_points[0][:40] if user_points else f"未命名会话 {(started_at or '')[:10]}"),
         "summary_text": summary_text,
         "started_at": started_at,
         "ended_at": ended_at,
